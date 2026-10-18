@@ -1,0 +1,246 @@
+import { Session5250 } from '../engine/session';
+import type { KeyAction } from '../shared/keymap';
+import type { ConnectionStatus, OiaState, ScreenSnapshot } from '../shared/protocol';
+import type { TerminalSettings } from '../shared/settings';
+import { HostConnection } from './connection';
+
+export interface SessionControllerEvents {
+  screen(snapshot: ScreenSnapshot, oia: OiaState): void;
+  status(status: ConnectionStatus, detail: string): void;
+  alarm(): void;
+  log(message: string): void;
+  /** Password for bypass sign-on, if one is stored. */
+  password?(): Promise<string | undefined>;
+}
+
+/** One entry of a session trace, in the same shape as scripts/capture.mjs output. */
+export interface TraceEvent {
+  t: number;
+  dir: 'in' | 'out';
+  hex: string;
+}
+
+const TRACE_LIMIT = 5000;
+const NUL = String.fromCharCode(0);
+const LF = String.fromCharCode(10);
+const RECONNECT_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
+
+function hex(bytes: Uint8Array): string {
+  let out = '';
+  for (const b of bytes) out += b.toString(16).padStart(2, '0');
+  return out;
+}
+
+/** Owns one host connection and its 5250 session; feeds screens to a panel. */
+export class SessionController {
+  private session: Session5250;
+  private connection: HostConnection | undefined;
+  private status: ConnectionStatus = 'idle';
+  private trace: TraceEvent[] = [];
+  private traceStart = 0;
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private idleTimer: ReturnType<typeof setTimeout> | undefined;
+  private wantConnected = false;
+  private signonDone = false;
+
+  constructor(
+    readonly profile: TerminalSettings,
+    private readonly events: SessionControllerEvents,
+  ) {
+    this.session = this.createSession();
+  }
+
+  private createSession(): Session5250 {
+    return new Session5250(
+      {
+        screenSize: this.profile.screenSize,
+        codePage: this.profile.codePage,
+        deviceName: this.profile.deviceName,
+      },
+      {
+        send: (bytes) => {
+          this.record('out', bytes);
+          this.connection?.write(bytes);
+        },
+        update: () => {
+          this.publish();
+          void this.maybeSignon();
+        },
+        alarm: () => {
+          if (this.profile.alarm) this.events.alarm();
+        },
+        error: (err) => {
+          this.events.log(`protocol error: ${err.message}`);
+          this.disconnect();
+        },
+      },
+    );
+  }
+
+  get connected(): boolean {
+    return this.status === 'connected';
+  }
+
+  async connect(): Promise<void> {
+    if (this.status === 'connecting' || this.status === 'connected') return;
+    this.wantConnected = true;
+    this.clearTimers();
+    this.session = this.createSession();
+    this.signonDone = false;
+    this.trace = [];
+    this.traceStart = Date.now();
+    this.setStatus('connecting', `${this.profile.host}:${this.profile.port}`);
+    const connection = new HostConnection({
+      data: (bytes) => {
+        this.record('in', bytes);
+        this.session.feed(bytes);
+        this.touch();
+      },
+      close: () => {
+        if (this.connection !== connection) return;
+        this.connection = undefined;
+        this.setStatus('disconnected', 'connection closed by host');
+        this.publish();
+        this.scheduleReconnect();
+      },
+      error: (err) => this.events.log(`socket error: ${err.message}`),
+    });
+    this.connection = connection;
+    try {
+      await connection.connect({
+        host: this.profile.host,
+        port: this.profile.port,
+        tls: this.profile.tls,
+        trustAnyCertificate: !this.profile.verifyCertificate,
+        timeoutMs: this.profile.connectTimeoutSeconds * 1000,
+        keepAlive: this.profile.keepAlive,
+      });
+    } catch (err) {
+      this.connection = undefined;
+      this.setStatus('disconnected', err instanceof Error ? err.message : String(err));
+      this.scheduleReconnect();
+      return;
+    }
+    this.reconnectAttempt = 0;
+    this.setStatus('connected', `${this.profile.host}:${this.profile.port}`);
+    this.publish();
+    this.touch();
+  }
+
+  disconnect(): void {
+    this.wantConnected = false;
+    this.clearTimers();
+    const c = this.connection;
+    this.connection = undefined;
+    c?.close();
+    if (this.status !== 'disconnected') this.setStatus('disconnected', 'disconnected');
+    this.publish();
+  }
+
+  dispose(): void {
+    this.disconnect();
+  }
+
+  press(action: KeyAction): void {
+    if (!this.connected) return;
+    this.session.press(action);
+    this.touch();
+  }
+
+  type(text: string): void {
+    if (!this.connected) return;
+    this.session.type(text);
+    this.touch();
+  }
+
+  /** Moves the cursor to a cell (mouse click). */
+  setCursor(row: number, col: number): void {
+    if (!this.connected) return;
+    this.session.setCursor(row, col);
+  }
+
+  publish(): void {
+    this.events.screen(this.session.snapshot(), this.session.oia(this.connected));
+  }
+
+  /** Text of the current screen, nulls as blanks, one line per row. */
+  screenText(): string {
+    const snap = this.session.snapshot();
+    const rows: string[] = [];
+    for (let r = 0; r < snap.rows; r++) {
+      rows.push(snap.text.slice(r * snap.cols, (r + 1) * snap.cols).split(NUL).join(' ').trimEnd());
+    }
+    return rows.join(LF);
+  }
+
+  /** Bypass sign-on: fill the first input screen after connecting (user, password, Enter). */
+  private async maybeSignon(): Promise<void> {
+    if (this.signonDone || !this.connected || !this.profile.autoSignon || !this.profile.signonUser.trim()) return;
+    const s = this.session.screen;
+    const inputs = s.fields.filter((f) => !f.bypass);
+    if (this.session.state.inputInhibited !== 'none' || inputs.length < 2) return;
+    this.signonDone = true;
+    const password = await this.events.password?.();
+    if (!password) {
+      this.events.log('bypass sign-on: no password stored (TN5250: Set Password)');
+      return;
+    }
+    if (!this.connected) return;
+    s.cursor = inputs[0]!.start;
+    this.session.type(this.profile.signonUser.trim());
+    s.cursor = inputs[1]!.start;
+    this.session.type(password);
+    this.session.press('enter');
+    this.events.log('bypass sign-on sent');
+  }
+
+  /** The raw byte trace of the current connection, loadable by `npm run dump`. */
+  exportTrace(): Record<string, unknown> {
+    return {
+      description: `TN5250 trace (${this.session.terminalType}) - ${this.profile.name}`,
+      port: this.profile.port,
+      term: this.session.terminalType,
+      negotiated: [],
+      records: this.trace.filter((e) => e.dir === 'in' && e.hex.endsWith('ffef')).length,
+      events: this.trace,
+    };
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.wantConnected || !this.profile.autoReconnect) return;
+    const delay = RECONNECT_DELAYS_MS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)] as number;
+    this.reconnectAttempt += 1;
+    this.events.log(`reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempt})`);
+    this.reconnectTimer = setTimeout(() => void this.connect(), delay);
+  }
+
+  /** Restarts the inactivity timer. */
+  private touch(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    const minutes = this.profile.inactivityTimeoutMinutes;
+    if (minutes > 0 && this.connected) {
+      this.idleTimer = setTimeout(() => {
+        this.events.log(`inactive for ${minutes} min, disconnecting`);
+        this.disconnect();
+      }, minutes * 60000);
+    }
+  }
+
+  private clearTimers(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.reconnectTimer = undefined;
+    this.idleTimer = undefined;
+  }
+
+  private record(dir: 'in' | 'out', bytes: Uint8Array): void {
+    this.trace.push({ t: Date.now() - this.traceStart, dir, hex: hex(bytes) });
+    if (this.trace.length > TRACE_LIMIT) this.trace.splice(0, this.trace.length - TRACE_LIMIT);
+  }
+
+  private setStatus(status: ConnectionStatus, detail: string): void {
+    this.status = status;
+    this.events.status(status, detail);
+  }
+}

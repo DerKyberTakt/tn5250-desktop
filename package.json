@@ -1,0 +1,1529 @@
+{
+  "name": "tn5250-terminal",
+  "displayName": "TN5250 Terminal for IBM i",
+  "description": "5250 terminal emulator for IBM i (AS/400) that opens as a VS Code editor tab. Pure TypeScript TN5250 client, nothing else to install.",
+  "version": "0.1.0",
+  "publisher": "DerKyberTakt",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DerKyberTakt/tn5250-terminal.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "ibm i",
+    "as400",
+    "iseries",
+    "5250",
+    "tn5250",
+    "terminal",
+    "emulator"
+  ],
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onWebviewPanel:tn5250.terminal"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "tn5250.newConnection",
+        "title": "New Connection",
+        "category": "TN5250",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tn5250.sortSessions",
+        "title": "Sort Connections",
+        "category": "TN5250",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "tn5250.refreshSessions",
+        "title": "Refresh",
+        "category": "TN5250",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "tn5250.connectPrevious",
+        "title": "Connect to Previous IBM i",
+        "category": "TN5250",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "tn5250.openSettings",
+        "title": "Settings",
+        "category": "TN5250",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "tn5250.editSession",
+        "title": "Edit Session",
+        "category": "TN5250",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "tn5250.connectSession",
+        "title": "Connect",
+        "category": "TN5250",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "tn5250.removeSession",
+        "title": "Remove Session",
+        "category": "TN5250",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "tn5250.disconnect",
+        "title": "Disconnect",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.reconnect",
+        "title": "Reconnect",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.saveTrace",
+        "title": "Save Session Trace (debug)",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.demoScreen",
+        "title": "Open Demo Screen (no connection)",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.toggleScreenSize",
+        "title": "Toggle 24x80 / 27x132 (demo screen)",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.toggleKeyDebug",
+        "title": "Toggle Key Debug Overlay",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.shadowKey",
+        "title": "Key handled by the 5250 terminal",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.importKmp",
+        "title": "Import ACS Keyboard Map (.kmp)",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.setPassword",
+        "title": "Set Sign-On Password (defaults)",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.printScreen",
+        "title": "Print Screen (open as text)",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.newTab",
+        "title": "New Tab (same session)",
+        "category": "TN5250",
+        "icon": "$(empty-window)"
+      },
+      {
+        "command": "tn5250.disconnectAll",
+        "title": "Disconnect All",
+        "category": "TN5250"
+      },
+      {
+        "command": "tn5250.duplicateSession",
+        "title": "Duplicate Connection",
+        "category": "TN5250",
+        "icon": "$(copy)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "tn5250.shadowKey",
+          "when": "false"
+        },
+        {
+          "command": "tn5250.connectSession",
+          "when": "false"
+        },
+        {
+          "command": "tn5250.removeSession",
+          "when": "false"
+        },
+        {
+          "command": "tn5250.disconnect",
+          "when": "activeWebviewPanelId == 'tn5250.terminal'"
+        },
+        {
+          "command": "tn5250.reconnect",
+          "when": "activeWebviewPanelId == 'tn5250.terminal'"
+        },
+        {
+          "command": "tn5250.saveTrace",
+          "when": "activeWebviewPanelId == 'tn5250.terminal'"
+        },
+        {
+          "command": "tn5250.toggleScreenSize",
+          "when": "activeWebviewPanelId == 'tn5250.terminal'"
+        },
+        {
+          "command": "tn5250.toggleKeyDebug",
+          "when": "activeWebviewPanelId == 'tn5250.terminal'"
+        },
+        {
+          "command": "tn5250.editSession",
+          "when": "false"
+        },
+        {
+          "command": "tn5250.printScreen",
+          "when": "activeWebviewPanelId == 'tn5250.terminal'"
+        },
+        {
+          "command": "tn5250.duplicateSession",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "tn5250.newConnection",
+          "when": "view == tn5250.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tn5250.newTab",
+          "when": "view == tn5250.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tn5250.sortSessions",
+          "when": "view == tn5250.sessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "tn5250.refreshSessions",
+          "when": "view == tn5250.sessions",
+          "group": "navigation@3"
+        },
+        {
+          "command": "tn5250.connectPrevious",
+          "when": "view == tn5250.sessions",
+          "group": "navigation@4"
+        },
+        {
+          "command": "tn5250.openSettings",
+          "when": "view == tn5250.sessions",
+          "group": "navigation@5"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "tn5250.connectSession",
+          "when": "view == tn5250.sessions && viewItem == session",
+          "group": "inline@1"
+        },
+        {
+          "command": "tn5250.editSession",
+          "when": "view == tn5250.sessions && viewItem == session",
+          "group": "inline@2"
+        },
+        {
+          "command": "tn5250.duplicateSession",
+          "when": "view == tn5250.sessions && viewItem == session",
+          "group": "inline@2"
+        },
+        {
+          "command": "tn5250.removeSession",
+          "when": "view == tn5250.sessions && viewItem == session",
+          "group": "inline@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "TN5250 Terminal",
+      "properties": {
+        "tn5250.debug.keyOverlay": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the last key events in the terminal tab (used to verify keyboard capture)."
+        },
+        "tn5250.sessions": {
+          "type": "array",
+          "default": [],
+          "description": "Saved sessions shown in the TN5250 side bar.",
+          "items": {
+            "type": "object",
+            "required": [
+              "host"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "description": "Only values that differ from the defaults are stored."
+          }
+        },
+        "tn5250.sessionsSort": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "name"
+          ],
+          "default": "manual",
+          "description": "Order of the connections in the side bar."
+        },
+        "tn5250.connection.defaultHost": {
+          "default": "",
+          "type": "string",
+          "description": "Host used by Connect to Previous when no connection is saved."
+        },
+        "tn5250.connection.defaultPort": {
+          "default": 23,
+          "type": "integer",
+          "description": "TN5250: port. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.tls": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: tls. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.verifyCertificate": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: verify certificate. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.deviceName": {
+          "default": "",
+          "type": "string",
+          "description": "Workstation ID template: &COMPN computer name, &USERN user name, * letter per open tab, = digit per open tab (e.g. OD1N*=). Blank lets the host assign QPADEVnnnn."
+        },
+        "tn5250.connection.defaultScreenSize": {
+          "default": "24x80",
+          "type": "string",
+          "enum": [
+            "24x80",
+            "27x132"
+          ],
+          "description": "TN5250: screen size. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.defaultCodePage": {
+          "default": 37,
+          "type": "integer",
+          "enum": [
+            37,
+            273,
+            500,
+            1140,
+            1141,
+            1142,
+            1143,
+            1144,
+            1145,
+            1146,
+            1147,
+            1148,
+            1149
+          ],
+          "description": "TN5250: code page. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.autoConnect": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: auto connect. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.autoReconnect": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: auto reconnect. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.connectTimeoutSeconds": {
+          "default": 15,
+          "type": "integer",
+          "description": "TN5250: connect timeout seconds. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.inactivityTimeoutMinutes": {
+          "default": 0,
+          "type": "integer",
+          "description": "TN5250: inactivity timeout minutes. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.keepAlive": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: keep alive. Set it on the TN5250 Settings page."
+        },
+        "tn5250.connection.autoSignon": {
+          "default": false,
+          "type": "boolean",
+          "description": "Fill the Sign On screen with the user ID and the password from the secret store."
+        },
+        "tn5250.connection.signonUser": {
+          "default": "",
+          "type": "string",
+          "description": "TN5250: signon user. Set it on the TN5250 Settings page."
+        },
+        "tn5250.display.cursorStyle": {
+          "default": "block",
+          "type": "string",
+          "enum": [
+            "block",
+            "underline"
+          ],
+          "description": "TN5250: cursor style. Set it on the TN5250 Settings page."
+        },
+        "tn5250.display.cursorBlink": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: cursor blink. Set it on the TN5250 Settings page."
+        },
+        "tn5250.display.pointer": {
+          "default": "default",
+          "type": "string",
+          "enum": [
+            "default",
+            "crosshair"
+          ],
+          "description": "TN5250: pointer. Set it on the TN5250 Settings page."
+        },
+        "tn5250.display.blinkText": {
+          "default": "blink",
+          "type": "string",
+          "enum": [
+            "blink",
+            "hostColor",
+            "mapped"
+          ],
+          "description": "TN5250: blink text. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.blinkMapped": {
+          "default": "#ff9040",
+          "type": "string",
+          "description": "TN5250: color blink mapped. Set it on the TN5250 Settings page."
+        },
+        "tn5250.display.ruleLine": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: rule line. Set it on the TN5250 Settings page."
+        },
+        "tn5250.display.ruleLineStyle": {
+          "default": "crosshair",
+          "type": "string",
+          "enum": [
+            "crosshair",
+            "horizontal",
+            "vertical"
+          ],
+          "description": "TN5250: rule line style. Set it on the TN5250 Settings page."
+        },
+        "tn5250.display.ruleLineFollowsCursor": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: rule line follows cursor. Set it on the TN5250 Settings page."
+        },
+        "tn5250.display.columnSeparators": {
+          "default": "dot",
+          "type": "string",
+          "enum": [
+            "dot",
+            "line",
+            "none"
+          ],
+          "description": "TN5250: column separators. Set it on the TN5250 Settings page."
+        },
+        "tn5250.display.showStatusLine": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: show status line. Set it on the TN5250 Settings page."
+        },
+        "tn5250.font.autoFit": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: auto fit. Set it on the TN5250 Settings page."
+        },
+        "tn5250.font.family": {
+          "default": "",
+          "type": "string",
+          "description": "TN5250: font family. Set it on the TN5250 Settings page."
+        },
+        "tn5250.font.size": {
+          "default": 14,
+          "type": "integer",
+          "description": "TN5250: font size. Set it on the TN5250 Settings page."
+        },
+        "tn5250.font.style": {
+          "default": "plain",
+          "type": "string",
+          "enum": [
+            "plain",
+            "bold"
+          ],
+          "description": "TN5250: font style. Set it on the TN5250 Settings page."
+        },
+        "tn5250.font.rendering": {
+          "default": "smooth",
+          "type": "string",
+          "enum": [
+            "smooth",
+            "crisp"
+          ],
+          "description": "TN5250: text rendering. Set it on the TN5250 Settings page."
+        },
+        "tn5250.watermark.type": {
+          "default": "text",
+          "type": "string",
+          "enum": [
+            "text",
+            "image"
+          ],
+          "description": "TN5250: watermark type. Set it on the TN5250 Settings page."
+        },
+        "tn5250.watermark.text": {
+          "default": "",
+          "type": "string",
+          "description": "TN5250: watermark text. Set it on the TN5250 Settings page."
+        },
+        "tn5250.watermark.image": {
+          "default": "",
+          "type": "string",
+          "description": "TN5250: watermark image. Set it on the TN5250 Settings page."
+        },
+        "tn5250.watermark.opacity": {
+          "default": 0.15,
+          "type": "number",
+          "description": "TN5250: watermark opacity. Set it on the TN5250 Settings page."
+        },
+        "tn5250.watermark.position": {
+          "default": "center",
+          "type": "string",
+          "enum": [
+            "center",
+            "topLeft",
+            "topRight",
+            "bottomLeft",
+            "bottomRight"
+          ],
+          "description": "TN5250: watermark position. Set it on the TN5250 Settings page."
+        },
+        "tn5250.watermark.padding": {
+          "default": 10,
+          "type": "integer",
+          "description": "TN5250: watermark padding. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.green": {
+          "default": "#00d060",
+          "type": "string",
+          "description": "TN5250: color green. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.white": {
+          "default": "#f0f0f0",
+          "type": "string",
+          "description": "TN5250: color white. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.red": {
+          "default": "#ff5050",
+          "type": "string",
+          "description": "TN5250: color red. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.turquoise": {
+          "default": "#20d0d0",
+          "type": "string",
+          "description": "TN5250: color turquoise. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.yellow": {
+          "default": "#f0e040",
+          "type": "string",
+          "description": "TN5250: color yellow. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.pink": {
+          "default": "#ff70ff",
+          "type": "string",
+          "description": "TN5250: color pink. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.blue": {
+          "default": "#6a9cff",
+          "type": "string",
+          "description": "TN5250: color blue. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.background": {
+          "default": "#000000",
+          "type": "string",
+          "description": "TN5250: color background. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.cursor": {
+          "default": "#f0f0f0",
+          "type": "string",
+          "description": "TN5250: color cursor. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.oiaStatus": {
+          "default": "#8fb8ff",
+          "type": "string",
+          "description": "TN5250: color oia status. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.oiaInfo": {
+          "default": "#f0e040",
+          "type": "string",
+          "description": "TN5250: color oia info. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.oiaAttention": {
+          "default": "#ff8080",
+          "type": "string",
+          "description": "TN5250: color oia attention. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.oiaError": {
+          "default": "#ff5050",
+          "type": "string",
+          "description": "TN5250: color oia error. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.oiaBackground": {
+          "default": "#101010",
+          "type": "string",
+          "description": "TN5250: color oia background. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.activeField": {
+          "default": "#1e2a3a",
+          "type": "string",
+          "description": "TN5250: color active field. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.ruleLine": {
+          "default": "#505050",
+          "type": "string",
+          "description": "TN5250: color rule line. Set it on the TN5250 Settings page."
+        },
+        "tn5250.colors.columnSeparator": {
+          "default": "",
+          "type": "string",
+          "description": "TN5250: color column separator. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.mode": {
+          "default": "classic",
+          "type": "string",
+          "enum": [
+            "classic",
+            "enhanced"
+          ],
+          "description": "TN5250: ui mode. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.gradientStart": {
+          "default": "#0b1020",
+          "type": "string",
+          "description": "TN5250: enhanced gradient start. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.gradientEnd": {
+          "default": "#1a1f3a",
+          "type": "string",
+          "description": "TN5250: enhanced gradient end. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.gradientAngle": {
+          "default": 135,
+          "type": "integer",
+          "description": "TN5250: enhanced gradient angle. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.fieldBorder": {
+          "default": "#4a6fa5",
+          "type": "string",
+          "description": "TN5250: enhanced field border. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.fieldFill": {
+          "default": "#4a6fa520",
+          "type": "string",
+          "description": "Fill colour of input field boxes (8-digit hex allowed for transparency)."
+        },
+        "tn5250.enhanced.activeField": {
+          "default": "#7aa2ff",
+          "type": "string",
+          "description": "TN5250: enhanced active field. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.cornerRadius": {
+          "default": 4,
+          "type": "integer",
+          "description": "TN5250: enhanced corner radius. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.textGlow": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: enhanced text glow. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.glowColor": {
+          "default": "",
+          "type": "string",
+          "description": "TN5250: enhanced glow color. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.scanlines": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: enhanced scanlines. Set it on the TN5250 Settings page."
+        },
+        "tn5250.enhanced.padding": {
+          "default": 24,
+          "type": "integer",
+          "description": "TN5250: enhanced padding. Set it on the TN5250 Settings page."
+        },
+        "tn5250.edit.pasteFieldWrap": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: paste field wrap. Set it on the TN5250 Settings page."
+        },
+        "tn5250.edit.pasteStopAtProtected": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: paste stop at protected. Set it on the TN5250 Settings page."
+        },
+        "tn5250.edit.pasteMoveCursorToEnd": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: paste move cursor to end. Set it on the TN5250 Settings page."
+        },
+        "tn5250.edit.pasteTabMode": {
+          "default": "spaces",
+          "type": "string",
+          "enum": [
+            "spaces",
+            "nextField",
+            "tabStop"
+          ],
+          "description": "TN5250: paste tab mode. Set it on the TN5250 Settings page."
+        },
+        "tn5250.edit.pasteTabSpaces": {
+          "default": 1,
+          "type": "integer",
+          "description": "TN5250: paste tab spaces. Set it on the TN5250 Settings page."
+        },
+        "tn5250.edit.pasteTabColumns": {
+          "default": 4,
+          "type": "integer",
+          "description": "TN5250: paste tab columns. Set it on the TN5250 Settings page."
+        },
+        "tn5250.edit.copyTrimTrailing": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: copy trim trailing. Set it on the TN5250 Settings page."
+        },
+        "tn5250.edit.copyKeepSelection": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: copy keep selection. Set it on the TN5250 Settings page."
+        },
+        "tn5250.hotspots.pf": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: hotspots p f. Set it on the TN5250 Settings page."
+        },
+        "tn5250.hotspots.fp": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: hotspots f p. Set it on the TN5250 Settings page."
+        },
+        "tn5250.hotspots.f": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: hotspots f. Set it on the TN5250 Settings page."
+        },
+        "tn5250.hotspots.number": {
+          "default": false,
+          "type": "boolean",
+          "description": "Clicking a menu option number such as \"15.\" enters that option."
+        },
+        "tn5250.hotspots.url": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: hotspots url. Set it on the TN5250 Settings page."
+        },
+        "tn5250.hotspots.buttons": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: hotspots3d. Set it on the TN5250 Settings page."
+        },
+        "tn5250.hotspots.enterAtCursorClick": {
+          "default": false,
+          "type": "boolean",
+          "description": "A click also presses Enter."
+        },
+        "tn5250.tabs.titleParts": {
+          "default": [
+            "sessionId",
+            "name"
+          ],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "sessionId",
+              "name",
+              "host",
+              "dimensions",
+              "deviceName"
+            ]
+          },
+          "description": "Parts of the tab title, in order: sessionId, name, host, dimensions, deviceName."
+        },
+        "tn5250.tabs.titleSeparator": {
+          "default": " - ",
+          "type": "string",
+          "description": "TN5250: title separator. Set it on the TN5250 Settings page."
+        },
+        "tn5250.tabs.titleMaxLength": {
+          "default": 25,
+          "type": "integer",
+          "description": "TN5250: title max length. Set it on the TN5250 Settings page."
+        },
+        "tn5250.tabs.switchToNewTab": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: switch to new tab. Set it on the TN5250 Settings page."
+        },
+        "tn5250.tabs.warnOnCloseMultiple": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: warn on close multiple. Set it on the TN5250 Settings page."
+        },
+        "tn5250.behavior.mouseWheelPaging": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: mouse wheel paging. Set it on the TN5250 Settings page."
+        },
+        "tn5250.behavior.doubleClick": {
+          "default": "none",
+          "type": "string",
+          "enum": [
+            "none",
+            "enter"
+          ],
+          "description": "TN5250: double click. Set it on the TN5250 Settings page."
+        },
+        "tn5250.behavior.alarm": {
+          "default": true,
+          "type": "boolean",
+          "description": "TN5250: alarm. Set it on the TN5250 Settings page."
+        },
+        "tn5250.behavior.keyClick": {
+          "default": false,
+          "type": "boolean",
+          "description": "TN5250: key click. Set it on the TN5250 Settings page."
+        },
+        "tn5250.keyboard.keymap": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": "Key overrides on top of the ACS layout (key name to action, null unbinds). Edit with TN5250: Settings."
+        },
+        "tn5250.enhanced.glowStrength": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 20,
+          "description": "Enhanced UI: text glow radius in pixels (0 = none)."
+        },
+        "tn5250.enhanced.textHighlight": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enhanced UI: draw protected text on gradient-filled outlined boxes with contrasting text."
+        },
+        "tn5250.enhanced.highlightStart": {
+          "type": "string",
+          "default": "#2b3a67",
+          "description": "Enhanced UI: highlight gradient start colour."
+        },
+        "tn5250.enhanced.highlightEnd": {
+          "type": "string",
+          "default": "#4a6fa5",
+          "description": "Enhanced UI: highlight gradient end colour."
+        },
+        "tn5250.enhanced.highlightText": {
+          "type": "string",
+          "default": "auto",
+          "description": "Enhanced UI: text colour on highlighted boxes; auto = black or white for contrast."
+        },
+        "tn5250.enhanced.highlightOpacity": {
+          "type": "number",
+          "default": 0.55,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Enhanced UI: opacity of the highlight boxes."
+        },
+        "tn5250.connection.demoMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Mark sessions as demo/test: tilted watermark, coloured frame, DEMO in the tab title and status line."
+        },
+        "tn5250.connection.demoLabel": {
+          "type": "string",
+          "default": "DEMO",
+          "description": "Label shown for demo sessions."
+        },
+        "tn5250.connection.demoColor": {
+          "type": "string",
+          "default": "#ff9f1c",
+          "description": "Colour of the demo watermark and frame."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "key": "f1",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f1",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f1",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f1",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f1",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f1",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f2",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f2",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f2",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f2",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f2",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f2",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f3",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f3",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f3",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f3",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f3",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f3",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f4",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f4",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f4",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f4",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f4",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f5",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f5",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f5",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f5",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f5",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f5",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f6",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f6",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f6",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f6",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f6",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f6",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f7",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f7",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f7",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f7",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f7",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f7",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f8",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f8",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f8",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f8",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f8",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f8",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f9",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f9",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f9",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f9",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f9",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f9",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f10",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f10",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f10",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f10",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f10",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f10",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f11",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f11",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f11",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f11",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f11",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f11",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "f12",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+f12",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+f12",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "alt+f12",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+f12",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+alt+f12",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "escape",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+escape",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "tab",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+tab",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "enter",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+enter",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+enter",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "pageup",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "pagedown",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+pageup",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+pagedown",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "home",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "end",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+home",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+end",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+home",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+end",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "insert",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+insert",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+insert",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "delete",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+delete",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "backspace",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+backspace",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "up",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "down",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "left",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "right",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+left",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+right",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+up",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+down",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+a",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+c",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+v",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+x",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+r",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+=",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+=",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+-",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+-",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+0",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+numpad_add",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+numpad_subtract",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "ctrl+alt+5",
+        "command": "tn5250.connectPrevious"
+      },
+      {
+        "key": "ctrl+alt+p",
+        "command": "tn5250.printScreen",
+        "when": "activeWebviewPanelId == 'tn5250.terminal'"
+      },
+      {
+        "key": "ctrl+alt+n",
+        "command": "tn5250.newTab",
+        "when": "activeWebviewPanelId == 'tn5250.terminal'"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "tn5250",
+          "title": "TN5250",
+          "icon": "media/sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "tn5250": [
+        {
+          "id": "tn5250.sessions",
+          "name": "Sessions",
+          "icon": "media/sidebar.svg",
+          "contextualTitle": "TN5250 Sessions"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "tn5250.sessions",
+        "contents": "No connections yet.\n[New Connection](command:tn5250.newConnection)\n[Settings](command:tn5250.openSettings)"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.engine.json",
+    "lint": "eslint src test scripts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "gen:keybindings": "node scripts/gen-keybindings.mjs",
+    "package": "npm run check && node esbuild.mjs --production && vsce package --no-dependencies",
+    "vscode:prepublish": "node esbuild.mjs --production"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.13.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.5"
+  },
+  "bugs": {
+    "url": "https://github.com/DerKyberTakt/tn5250-terminal/issues"
+  },
+  "homepage": "https://github.com/DerKyberTakt/tn5250-terminal#readme",
+  "icon": "media/icon.png"
+}

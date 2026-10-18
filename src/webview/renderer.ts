@@ -1,0 +1,721 @@
+import { ATTR_NORMAL, decodeAttribute, isAttribute, type Color } from '../engine/attributes';
+import type { ScreenSnapshot } from '../shared/protocol';
+import { fieldRanges, keyLabelsIn, rowText, urlsIn, type FieldRange } from '../shared/screenText';
+import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
+
+export interface Theme {
+  background: string;
+  colors: Record<Color, string>;
+  cursor: string;
+  activeField: string;
+  ruleLine: string;
+  /** Empty = the field colour. */
+  columnSeparator: string;
+  blinkMapped: string;
+  enhanced: {
+    gradientStart: string;
+    gradientEnd: string;
+    gradientAngle: number;
+    fieldBorder: string;
+    fieldFill: string;
+    activeField: string;
+    cornerRadius: number;
+    textGlow: boolean;
+    glowStrength: number;
+    glowColor: string;
+    textHighlight: boolean;
+    highlightStart: string;
+    highlightEnd: string;
+    highlightText: string;
+    highlightOpacity: number;
+    scanlines: boolean;
+    padding: number;
+  };
+}
+
+export const DEFAULT_THEME: Theme = {
+  background: '#000000',
+  colors: {
+    green: '#00d060',
+    white: '#f0f0f0',
+    red: '#ff5050',
+    turquoise: '#20d0d0',
+    yellow: '#f0e040',
+    pink: '#ff70ff',
+    blue: '#6a9cff',
+  },
+  cursor: '#f0f0f0',
+  activeField: '#1e2a3a',
+  ruleLine: '#505050',
+  columnSeparator: '',
+  blinkMapped: '#ff9040',
+  enhanced: {
+    gradientStart: '#0b1020',
+    gradientEnd: '#1a1f3a',
+    gradientAngle: 135,
+    fieldBorder: '#4a6fa5',
+    fieldFill: '#4a6fa520',
+    activeField: '#7aa2ff',
+    cornerRadius: 4,
+    textGlow: true,
+    glowStrength: 3,
+    glowColor: '',
+    textHighlight: true,
+    highlightStart: '#2b3a67',
+    highlightEnd: '#4a6fa5',
+    highlightText: 'auto',
+    highlightOpacity: 0.55,
+    scanlines: false,
+    padding: 24,
+  },
+};
+
+export interface RendererOptions {
+  uiMode: 'classic' | 'enhanced';
+  fontFamily: string;
+  autoFit: boolean;
+  /** Font size in CSS pixels when autoFit is off. */
+  fontSize: number;
+  fontStyle: 'plain' | 'bold';
+  textRendering: 'smooth' | 'crisp';
+  /** 1 = the size that fits the viewport; larger zooms in, smaller zooms out. */
+  zoom: number;
+  columnSeparators: ColumnSeparators;
+  cursorStyle: CursorStyle;
+  cursorBlink: boolean;
+  blinkText: 'blink' | 'hostColor' | 'mapped';
+  ruleLine: boolean;
+  ruleLineStyle: 'crosshair' | 'horizontal' | 'vertical';
+  ruleLineFollowsCursor: boolean;
+  highlightActiveField: boolean;
+  watermarkType: 'text' | 'image';
+  watermarkText: string;
+  watermarkOpacity: number;
+  watermarkPosition: WatermarkPosition;
+  watermarkPadding: number;
+  underlineUrls: boolean;
+  keyButtons: boolean;
+  demoMode: boolean;
+  demoLabel: string;
+  demoColor: string;
+}
+
+const NULL = '\u0000';
+const LINE_HEIGHT = 1.2;
+const MIN_FONT_PX = 6;
+const FALLBACK_FONT = 'Consolas, "Courier New", monospace';
+
+/** Draws a ScreenSnapshot on a canvas as a fixed character grid. */
+export class Renderer {
+  private readonly ctx: CanvasRenderingContext2D;
+  private screen: ScreenSnapshot | undefined;
+  /** 1 where the cell belongs to a field (decorations apply even to null cells). */
+  private fieldMask = new Uint8Array(0);
+  private ranges: FieldRange[] = [];
+  private options: RendererOptions = {
+    uiMode: 'classic',
+    fontFamily: '',
+    autoFit: true,
+    fontSize: 14,
+    fontStyle: 'plain',
+    textRendering: 'smooth',
+    zoom: 1,
+    columnSeparators: 'dot',
+    cursorStyle: 'block',
+    cursorBlink: true,
+    blinkText: 'blink',
+    ruleLine: false,
+    ruleLineStyle: 'crosshair',
+    ruleLineFollowsCursor: true,
+    highlightActiveField: false,
+    watermarkType: 'text',
+    watermarkText: '',
+    watermarkOpacity: 0.15,
+    watermarkPosition: 'center',
+    watermarkPadding: 10,
+    underlineUrls: true,
+    keyButtons: false,
+    demoMode: false,
+    demoLabel: 'DEMO',
+    demoColor: '#ff9f1c',
+  };
+  private theme: Theme = DEFAULT_THEME;
+  private viewportW = 0;
+  private viewportH = 0;
+  private fontPx = 16;
+  private cellW = 10;
+  private cellH = 19;
+  private pad = 0;
+  private blinkOn = true;
+  private watermarkImage: HTMLImageElement | undefined;
+  private ruleCell: { row: number; col: number } | undefined;
+
+  constructor(private readonly canvas: HTMLCanvasElement) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('2D canvas context unavailable');
+    }
+    this.ctx = ctx;
+    window.setInterval(() => {
+      this.blinkOn = !this.blinkOn;
+      this.draw();
+    }, 500);
+  }
+
+  get cursor(): { row: number; col: number } | undefined {
+    return this.screen?.cursor;
+  }
+
+  get size(): { rows: number; cols: number } | undefined {
+    return this.screen ? { rows: this.screen.rows, cols: this.screen.cols } : undefined;
+  }
+
+  get zoom(): number {
+    return this.options.zoom;
+  }
+
+  setScreen(screen: ScreenSnapshot): void {
+    const resized = !this.screen || this.screen.rows !== screen.rows || this.screen.cols !== screen.cols;
+    this.screen = screen;
+    const mask = new Uint8Array(screen.rows * screen.cols);
+    for (const f of screen.fields) mask.fill(1, f.start, Math.min(mask.length, f.start + f.length));
+    this.fieldMask = mask;
+    this.ranges = fieldRanges(screen);
+    if (resized) this.layout();
+    this.draw();
+  }
+
+  setCursor(row: number, col: number): void {
+    if (!this.screen) return;
+    this.screen = { ...this.screen, cursor: { row, col } };
+    this.draw();
+  }
+
+  setRuleCell(row: number, col: number): void {
+    this.ruleCell = { row, col };
+    this.draw();
+  }
+
+  setTheme(theme: Theme): void {
+    this.theme = theme;
+    this.draw();
+  }
+
+  setOptions(options: Partial<RendererOptions>): void {
+    this.options = { ...this.options, ...options };
+    this.layout();
+    this.draw();
+  }
+
+  setWatermarkImage(dataUrl: string): void {
+    if (!dataUrl) {
+      this.watermarkImage = undefined;
+      this.draw();
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      this.watermarkImage = img;
+      this.draw();
+    };
+    img.src = dataUrl;
+  }
+
+  resize(viewportW: number, viewportH: number): void {
+    this.viewportW = viewportW;
+    this.viewportH = viewportH;
+    this.layout();
+    this.draw();
+  }
+
+  /** Converts a point in canvas CSS pixels to a cell, clamped to the screen. */
+  cellAt(x: number, y: number): { row: number; col: number } | undefined {
+    if (!this.screen) return undefined;
+    const col = Math.min(this.screen.cols - 1, Math.max(0, Math.floor((x - this.pad) / this.cellW)));
+    const row = Math.min(this.screen.rows - 1, Math.max(0, Math.floor((y - this.pad) / this.cellH)));
+    return { row, col };
+  }
+
+  rowText(row: number): string {
+    return this.screen ? rowText(this.screen, row) : '';
+  }
+
+  /** Plain text of the screen (nulls as spaces), for copying. */
+  textRows(): string[] {
+    const s = this.screen;
+    if (!s) return [];
+    return Array.from({ length: s.rows }, (_, r) => rowText(s, r));
+  }
+
+  // ---- layout --------------------------------------------------------------
+
+  private fontFamily(): string {
+    if (this.options.fontFamily.trim()) return this.options.fontFamily;
+    const editorFont = getComputedStyle(document.body).getPropertyValue('--vscode-editor-font-family').trim();
+    return editorFont || FALLBACK_FONT;
+  }
+
+  private font(px = this.fontPx): string {
+    return `${this.options.fontStyle === 'bold' ? 'bold ' : ''}${px}px ${this.fontFamily()}`;
+  }
+
+  private measureCharWidth(px: number): number {
+    this.ctx.font = this.font(px);
+    return this.ctx.measureText('M').width;
+  }
+
+  private layout(): void {
+    if (!this.screen || this.viewportW <= 0 || this.viewportH <= 0) return;
+    const { rows, cols } = this.screen;
+    this.pad = this.options.uiMode === 'enhanced' ? this.theme.enhanced.padding : 0;
+    const availW = this.viewportW - this.pad * 2;
+    const availH = this.viewportH - this.pad * 2;
+
+    let px: number;
+    if (this.options.autoFit) {
+      px = availH / rows / LINE_HEIGHT;
+      const cw = this.measureCharWidth(px);
+      if (cols * cw > availW) px = px * (availW / (cols * cw));
+    } else {
+      px = this.options.fontSize;
+    }
+    px = Math.max(MIN_FONT_PX, Math.floor(px * this.options.zoom));
+
+    this.fontPx = px;
+    this.cellW = this.measureCharWidth(px);
+    if (this.options.textRendering === 'crisp') this.cellW = Math.max(1, Math.floor(this.cellW));
+    this.cellH = Math.round(px * LINE_HEIGHT);
+
+    const cssW = Math.ceil(cols * this.cellW) + this.pad * 2;
+    const cssH = rows * this.cellH + this.pad * 2;
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.style.width = `${cssW}px`;
+    this.canvas.style.height = `${cssH}px`;
+    this.canvas.width = Math.round(cssW * dpr);
+    this.canvas.height = Math.round(cssH * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, this.pad, this.pad);
+  }
+
+  private x(col: number): number {
+    const v = col * this.cellW;
+    return this.options.textRendering === 'crisp' ? Math.round(v) : v;
+  }
+
+  private y(row: number): number {
+    return row * this.cellH;
+  }
+
+  private attributeAt(idx: number) {
+    const s = this.screen;
+    if (s) {
+      for (let i = idx; i >= 0; i--) {
+        const a = s.attrs[i] ?? 0;
+        if (isAttribute(a)) return decodeAttribute(a);
+      }
+    }
+    return decodeAttribute(ATTR_NORMAL);
+  }
+
+  // ---- drawing -------------------------------------------------------------
+
+  draw(): void {
+    const s = this.screen;
+    if (!s) return;
+    const ctx = this.ctx;
+    const { rows, cols } = s;
+    const enhanced = this.options.uiMode === 'enhanced';
+    const w = cols * this.cellW;
+    const h = rows * this.cellH;
+
+    ctx.save();
+    ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+    this.drawBackground(w + this.pad * 2, h + this.pad * 2, enhanced);
+    ctx.restore();
+
+    ctx.font = this.font();
+    ctx.textBaseline = 'middle';
+    ctx.imageSmoothingEnabled = this.options.textRendering !== 'crisp';
+
+    const activeIndex = s.fields.findIndex((f) => {
+      const idx = s.cursor.row * cols + s.cursor.col;
+      return !f.bypass && idx >= f.start && idx < f.start + f.length;
+    });
+    if (enhanced) this.drawFieldBoxes(activeIndex);
+    else if (this.options.highlightActiveField && activeIndex >= 0) {
+      ctx.fillStyle = this.theme.activeField;
+      for (const r of this.ranges) {
+        if (r.fieldIndex === activeIndex) ctx.fillRect(this.x(r.col), this.y(r.row), r.length * this.cellW + 0.5, this.cellH);
+      }
+    }
+    if (this.options.keyButtons) this.drawKeyButtons(enhanced);
+    const highlighted = enhanced && this.theme.enhanced.textHighlight ? this.drawTextHighlights() : undefined;
+    const highlightFg = this.highlightTextColor();
+
+    let current = decodeAttribute(ATTR_NORMAL);
+    const total = rows * cols;
+    const glow = enhanced && this.theme.enhanced.textGlow && this.theme.enhanced.glowStrength > 0;
+    for (let i = 0; i < total; i++) {
+      const attrByte = s.attrs[i] ?? 0;
+      if (isAttribute(attrByte)) {
+        current = decodeAttribute(attrByte);
+        continue; // the attribute position itself displays as a blank
+      }
+      const ch = s.text.charAt(i);
+      // A null cell outside any field shows nothing: no underline, no reverse.
+      const decorated = ch !== NULL || this.fieldMask[i] === 1;
+      if (!decorated || current.nondisplay) continue;
+
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const x = this.x(col);
+      const y = this.y(row);
+      let fg = this.theme.colors[current.color];
+      if (current.blink && this.options.blinkText === 'mapped') fg = this.theme.blinkMapped;
+
+      if (current.reverse) {
+        ctx.fillStyle = fg;
+        ctx.fillRect(x, y, this.cellW + 0.5, this.cellH);
+      }
+      if (current.underline && !enhanced) {
+        ctx.fillStyle = current.reverse ? this.theme.background : fg;
+        ctx.fillRect(x, y + this.cellH - 2, this.cellW + 0.5, 1);
+      }
+      if (current.columnSeparators && this.options.columnSeparators !== 'none' && !enhanced) {
+        ctx.fillStyle = this.theme.columnSeparator || fg;
+        if (this.options.columnSeparators === 'line') ctx.fillRect(x, y, 1, this.cellH);
+        else ctx.fillRect(x, y + this.cellH - 2, 1, 1);
+      }
+      const hidden = current.blink && this.options.blinkText === 'blink' && !this.blinkOn;
+      if (ch !== NULL && ch !== ' ' && !hidden) {
+        const onBox = highlighted?.[i] === 1;
+        ctx.fillStyle = current.reverse ? this.theme.background : onBox ? highlightFg : fg;
+        if (glow && !onBox) {
+          ctx.shadowColor = this.theme.enhanced.glowColor || fg;
+          ctx.shadowBlur = this.theme.enhanced.glowStrength;
+          ctx.fillText(ch, x, y + this.cellH / 2);
+          ctx.shadowBlur = 0;
+        }
+        ctx.fillText(ch, x, y + this.cellH / 2);
+      }
+    }
+
+    if (this.options.underlineUrls) this.drawUrlUnderlines();
+    this.drawWatermark(w, h);
+    if (this.options.demoMode) this.drawDemo(w, h);
+    this.drawRuleLine(w, h);
+
+    // Selection rectangle.
+    if (this.selection) {
+      const r = this.selection;
+      ctx.fillStyle = 'rgba(120, 160, 255, 0.35)';
+      ctx.fillRect(this.x(r.col1), this.y(r.row1), (r.col2 - r.col1 + 1) * this.cellW, (r.row2 - r.row1 + 1) * this.cellH);
+    }
+
+    // Cursor. Never reveal nondisplay data under a block cursor.
+    const { row, col } = s.cursor;
+    if (row >= 0 && row < rows && col >= 0 && col < cols && (this.blinkOn || !this.options.cursorBlink)) {
+      const x = this.x(col);
+      const y = this.y(row);
+      ctx.fillStyle = this.theme.cursor;
+      if (this.options.cursorStyle === 'underline') {
+        ctx.fillRect(x, y + this.cellH - 3, this.cellW + 0.5, 2);
+      } else {
+        ctx.fillRect(x, y, this.cellW + 0.5, this.cellH);
+        const idx = row * cols + col;
+        const ch = s.text.charAt(idx);
+        if (ch !== ' ' && ch !== NULL && !this.attributeAt(idx).nondisplay) {
+          ctx.fillStyle = this.theme.background;
+          ctx.fillText(ch, x, y + this.cellH / 2);
+        }
+      }
+    }
+  }
+
+  private drawBackground(w: number, h: number, enhanced: boolean): void {
+    const ctx = this.ctx;
+    if (!enhanced) {
+      ctx.fillStyle = this.theme.background;
+      ctx.fillRect(0, 0, w, h);
+      return;
+    }
+    const e = this.theme.enhanced;
+    const a = ((e.gradientAngle % 360) * Math.PI) / 180;
+    const cx = w / 2;
+    const cy = h / 2;
+    const len = Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a));
+    const g = ctx.createLinearGradient(cx - (Math.sin(a) * len) / 2, cy + (Math.cos(a) * len) / 2, cx + (Math.sin(a) * len) / 2, cy - (Math.cos(a) * len) / 2);
+    g.addColorStop(0, e.gradientStart);
+    g.addColorStop(1, e.gradientEnd);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    if (e.scanlines) {
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
+    }
+  }
+
+  private roundRect(x: number, y: number, w: number, h: number, r: number): void {
+    const ctx = this.ctx;
+    const rr = Math.min(r, h / 2, w / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.lineTo(x + w - rr, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+    ctx.lineTo(x + w, y + h - rr);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+    ctx.lineTo(x + rr, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+    ctx.lineTo(x, y + rr);
+    ctx.quadraticCurveTo(x, y, x + rr, y);
+    ctx.closePath();
+  }
+
+  /** Enhanced mode: every input field is a rounded box; the active one glows. */
+  private drawFieldBoxes(activeIndex: number): void {
+    const ctx = this.ctx;
+    const e = this.theme.enhanced;
+    for (const r of this.ranges) {
+      if (r.bypass) continue;
+      const x = this.x(r.col) - 2;
+      const y = this.y(r.row) + 1;
+      const w = r.length * this.cellW + 4;
+      const h = this.cellH - 2;
+      const active = r.fieldIndex === activeIndex;
+      this.roundRect(x, y, w, h, e.cornerRadius);
+      ctx.fillStyle = e.fieldFill;
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = active ? e.activeField : e.fieldBorder;
+      if (active) {
+        ctx.shadowColor = e.activeField;
+        ctx.shadowBlur = 8;
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  /** Contrasting text colour for highlight boxes ('auto' = by gradient luminance). */
+  private highlightTextColor(): string {
+    const e = this.theme.enhanced;
+    if (e.highlightText && e.highlightText !== 'auto') return e.highlightText;
+    const lum = (hex: string): number => {
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
+      if (!m) return 0;
+      const [r, g, b] = [parseInt(m[1] as string, 16), parseInt(m[2] as string, 16), parseInt(m[3] as string, 16)];
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const avg = (lum(e.highlightStart) + lum(e.highlightEnd)) / 2;
+    return avg > 150 ? '#101010' : '#ffffff';
+  }
+
+  /**
+   * Enhanced highlight mode: every run of protected text (a label, a title, a
+   * menu line) sits on a gradient-filled outlined box. Returns a mask of the
+   * cells that are on a box so the text is drawn in the contrasting colour.
+   */
+  private drawTextHighlights(): Uint8Array | undefined {
+    const s = this.screen;
+    if (!s) return undefined;
+    const ctx = this.ctx;
+    const e = this.theme.enhanced;
+    const mask = new Uint8Array(s.rows * s.cols);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, e.highlightOpacity));
+    for (let row = 0; row < s.rows; row++) {
+      const base = row * s.cols;
+      let col = 0;
+      while (col < s.cols) {
+        // Skip blanks, nulls, attribute positions and cells inside input fields.
+        const cellIsText = (c: number): boolean => {
+          const idx = base + c;
+          const ch = s.text.charAt(idx);
+          return ch !== NULL && ch !== ' ' && this.fieldMask[idx] !== 1 && !isAttribute(s.attrs[idx] ?? 0);
+        };
+        if (!cellIsText(col)) {
+          col += 1;
+          continue;
+        }
+        let end = col;
+        // A run continues across single spaces; two blanks end it.
+        while (end < s.cols) {
+          if (cellIsText(end)) end += 1;
+          else if (end + 1 < s.cols && s.text.charAt(base + end) === ' ' && this.fieldMask[base + end] !== 1 && cellIsText(end + 1)) end += 1;
+          else break;
+        }
+        const x = this.x(col) - 3;
+        const y = this.y(row) + 1;
+        const w = (end - col) * this.cellW + 6;
+        const h = this.cellH - 2;
+        const g = ctx.createLinearGradient(x, y, x + w, y);
+        g.addColorStop(0, e.highlightStart);
+        g.addColorStop(1, e.highlightEnd);
+        this.roundRect(x, y, w, h, e.cornerRadius);
+        ctx.fillStyle = g;
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = e.fieldBorder;
+        ctx.stroke();
+        mask.fill(1, base + col, base + end);
+        col = end;
+      }
+    }
+    ctx.restore();
+    return mask;
+  }
+
+  /** Function-key labels drawn as buttons (ACS "3-D buttons"). */
+  private drawKeyButtons(enhanced: boolean): void {
+    const s = this.screen;
+    if (!s) return;
+    const ctx = this.ctx;
+    for (let row = 0; row < s.rows; row++) {
+      const line = rowText(s, row);
+      for (const k of keyLabelsIn(line)) {
+        const x = this.x(k.start) - 2;
+        const y = this.y(row) + 1;
+        const w = k.length * this.cellW + 4;
+        const h = this.cellH - 2;
+        this.roundRect(x, y, w, h, enhanced ? this.theme.enhanced.cornerRadius : 2);
+        ctx.fillStyle = enhanced ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.12)';
+        ctx.fill();
+        ctx.strokeStyle = enhanced ? this.theme.enhanced.fieldBorder : 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
+
+  private drawUrlUnderlines(): void {
+    const s = this.screen;
+    if (!s) return;
+    const ctx = this.ctx;
+    ctx.fillStyle = this.theme.colors.blue;
+    for (let row = 0; row < s.rows; row++) {
+      for (const u of urlsIn(rowText(s, row))) {
+        ctx.fillRect(this.x(u.start), this.y(row) + this.cellH - 2, (u.end - u.start) * this.cellW, 1);
+      }
+    }
+  }
+
+  private drawRuleLine(w: number, h: number): void {
+    const s = this.screen;
+    if (!s || !this.options.ruleLine) return;
+    const cell = this.options.ruleLineFollowsCursor ? s.cursor : (this.ruleCell ?? s.cursor);
+    const ctx = this.ctx;
+    ctx.fillStyle = this.theme.ruleLine;
+    const style = this.options.ruleLineStyle;
+    if (style !== 'vertical') ctx.fillRect(0, this.y(cell.row) + this.cellH - 1, w, 1);
+    if (style !== 'horizontal') ctx.fillRect(this.x(cell.col), 0, 1, h);
+  }
+
+  /** Demo sessions: a tilted label across the screen and a coloured frame. */
+  private drawDemo(w: number, h: number): void {
+    const ctx = this.ctx;
+    const label = (this.options.demoLabel || 'DEMO').toUpperCase();
+    ctx.save();
+    ctx.strokeStyle = this.options.demoColor;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1.5, 1.5, w - 3, h - 3);
+    ctx.globalAlpha = 0.14;
+    ctx.fillStyle = this.options.demoColor;
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(-Math.atan2(h, w));
+    ctx.font = `bold ${Math.floor(Math.min(w, h) / Math.max(3, label.length) * 1.6)}px ${this.fontFamily()}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  }
+
+  private drawWatermark(w: number, h: number): void {
+    const ctx = this.ctx;
+    const o = this.options;
+    const pad = o.watermarkPadding;
+    const place = (mw: number, mh: number): [number, number] => {
+      let x = (w - mw) / 2;
+      let y = (h - mh) / 2;
+      const p = o.watermarkPosition;
+      if (p.startsWith('top')) y = pad;
+      if (p.startsWith('bottom')) y = h - mh - pad;
+      if (p.endsWith('Left')) x = pad;
+      if (p.endsWith('Right')) x = w - mw - pad;
+      return [x, y];
+    };
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, o.watermarkOpacity));
+    if (o.watermarkType === 'image' && this.watermarkImage) {
+      const img = this.watermarkImage;
+      const scale = Math.min(1, (w * 0.5) / img.width, (h * 0.5) / img.height);
+      const mw = img.width * scale;
+      const mh = img.height * scale;
+      const [x, y] = place(mw, mh);
+      ctx.drawImage(img, x, y, mw, mh);
+    } else if (o.watermarkType === 'text' && o.watermarkText.trim()) {
+      ctx.fillStyle = this.theme.colors.white;
+      ctx.font = `bold ${Math.max(16, Math.floor(this.cellH * 4))}px ${this.fontFamily()}`;
+      ctx.textBaseline = 'top';
+      const mh = this.cellH * 4;
+      const mw = ctx.measureText(o.watermarkText.trim()).width;
+      const [x, y] = place(mw, mh);
+      ctx.fillText(o.watermarkText.trim(), x, y);
+    }
+    ctx.restore();
+  }
+
+  // ---- selection -----------------------------------------------------------
+
+  private selection: { row1: number; col1: number; row2: number; col2: number } | undefined;
+  private anchor: { row: number; col: number } | undefined;
+
+  startSelection(row: number, col: number): void {
+    this.anchor = { row, col };
+    this.selection = undefined;
+    this.draw();
+  }
+
+  extendSelection(row: number, col: number): void {
+    if (!this.anchor) return;
+    this.selection = {
+      row1: Math.min(this.anchor.row, row),
+      col1: Math.min(this.anchor.col, col),
+      row2: Math.max(this.anchor.row, row),
+      col2: Math.max(this.anchor.col, col),
+    };
+    this.draw();
+  }
+
+  endSelection(): void {
+    this.anchor = undefined;
+  }
+
+  clearSelection(): void {
+    this.anchor = undefined;
+    if (this.selection) {
+      this.selection = undefined;
+      this.draw();
+    }
+  }
+
+  get hasSelection(): boolean {
+    return this.selection !== undefined;
+  }
+
+  /** Text inside the selection rectangle (whole screen when nothing is selected), nondisplay cells masked. */
+  selectedText(trimTrailing = true): string {
+    const s = this.screen;
+    if (!s) return '';
+    const r = this.selection ?? { row1: 0, col1: 0, row2: s.rows - 1, col2: s.cols - 1 };
+    const lines: string[] = [];
+    for (let row = r.row1; row <= r.row2; row++) {
+      let line = '';
+      for (let col = r.col1; col <= r.col2; col++) {
+        const idx = row * s.cols + col;
+        const ch = s.text.charAt(idx);
+        line += ch === NULL || this.attributeAt(idx).nondisplay ? ' ' : ch;
+      }
+      lines.push(trimTrailing ? line.trimEnd() : line);
+    }
+    return lines.join('\n');
+  }
+}
