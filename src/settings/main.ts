@@ -46,6 +46,108 @@ type FieldSpec = { showIf?: Key; hideIf?: Key } & (
   | { kind: 'preview' }
 );
 
+
+/** Information bubbles: what each setting does, with generic examples. */
+const HELP: Partial<Record<Key, string>> = {
+  name: 'Name shown in the side bar and in the tab title. Example: Production, Test box.',
+  host: 'Host name or IP address of the IBM i. Example: myibmi.example.com or 192.168.1.10.',
+  port: 'Telnet port. 23 for plain telnet, 992 for telnet over TLS.',
+  tls: 'Telnet sends everything in clear text. Telnet over TLS encrypts the session; the host must have the TLS telnet server started (usually port 992).',
+  deviceName: 'Workstation (device) name requested from the host; blank lets the host assign QPADEVnnnn. Templates: &COMPN = computer name, &USERN = user name, * = a letter A-Z that differs for each open tab, = = a digit 0-9 per open tab. Example: USER*= gives USERA0 for the first tab and USERB1 for the second. If a name is already in use the tab automatically tries the next one.',
+  screenSize: '24x80 negotiates an IBM-3179-2 terminal; 27x132 negotiates an IBM-3477-FC, which also shows 80-column screens.',
+  codePage: 'EBCDIC code page the host uses for this session. 037 for US English; others for European keyboards and the euro sign.',
+  autoConnect: 'Connect as soon as the tab opens. Off: the tab opens disconnected and you use TN5250: Reconnect.',
+  autoReconnect: 'When the host closes the connection, reconnect automatically with increasing delays (2 s, 5 s, 10 s, 20 s, 30 s).',
+  demoMode: 'Marks the session as a demo or test system: tilted label across the screen, coloured frame, label in the tab title and status line. Duplicate a connection and turn this on for the copy.',
+  demoLabel: 'Text used for the demo watermark and badges. Example: DEMO, TEST, TRAINING.',
+  demoColor: 'Colour of the demo watermark, frame and badge.',
+  connectTimeoutSeconds: 'How long to wait for the host to answer the connection before giving up.',
+  inactivityTimeoutMinutes: 'Disconnect after this many minutes without keyboard or host activity. 0 keeps the session open.',
+  keepAlive: 'Send TCP keep-alive probes so firewalls do not drop an idle session.',
+  autoSignon: 'Fill the Sign On screen automatically: the user ID below, the password from the secret store, then Enter. Works at every system password level because it types into the screen.',
+  signonUser: 'User profile typed into the Sign On screen. Example: USER1.',
+  verifyCertificate: 'Check that the host certificate is valid and matches the host name. Turn off for self-signed certificates on internal systems.',
+  cursorStyle: 'Block fills the whole cell; Underline draws a line under it.',
+  pointer: 'Mouse pointer shape over the screen.',
+  cursorBlink: 'Blink the cursor. Off keeps it steady.',
+  blinkText: 'How fields with the 5250 blink attribute are shown: blinking, steady in the host colour, or steady in the mapped colour below.',
+  colorBlinkMapped: 'Colour used for blinking text when "Mapped colour" is selected.',
+  ruleLine: 'Draws a thin guide line through the cursor row and/or column, like the ACS rule line.',
+  ruleLineStyle: 'Crosshair = both lines, Horizontal = row only, Vertical = column only.',
+  ruleLineFollowsCursor: 'On: the rule line moves with the cursor. Off: it stays where you last clicked.',
+  columnSeparators: 'How the 5250 column separator attribute (turquoise and yellow fields) is drawn: a dot at the base of each cell, a vertical line, or nothing.',
+  showStatusLine: 'Show the operator information area under the screen: connection, X SYSTEM / X II, insert mode, message waiting, cursor position.',
+  autoFit: 'On: the font scales so the whole screen fits the tab (zoom with Ctrl+wheel, Ctrl+0 resets). Off: the fixed font size below is used.',
+  fontSize: 'Font size in pixels when Font Scaling is off.',
+  textRendering: 'Smooth = antialiased text. Crisp = cells snapped to whole pixels for sharper edges at small sizes.',
+  fontFamily: 'Any monospace font installed on this computer. Blank uses the VS Code editor font. Examples: Cascadia Mono, Consolas, Courier New, IBM Plex Mono.',
+  fontStyle: 'Plain or bold text.',
+  watermarkType: 'Show text or a picture faintly over the screen, for example to mark an environment.',
+  watermarkText: 'Text of the watermark. Example: PRODUCTION.',
+  watermarkImage: 'Picture file (PNG, JPG, GIF, SVG, WebP) drawn as the watermark. Browse to pick it.',
+  watermarkPosition: 'Where the watermark sits on the screen.',
+  watermarkPadding: 'Distance in pixels from the screen edge for the corner positions.',
+  watermarkOpacity: '0 = invisible, 1 = solid. 0.1 to 0.2 is a typical watermark.',
+  colorGreen: 'Colour for the 5250 green attribute (normal text and most input fields).',
+  colorWhite: 'Colour for the white (high intensity) attribute.',
+  colorRed: 'Colour for the red attribute (errors, warnings).',
+  colorTurquoise: 'Colour for the turquoise attribute (often column headings).',
+  colorYellow: 'Colour for the yellow attribute (often option numbers).',
+  colorPink: 'Colour for the pink attribute.',
+  colorBlue: 'Colour for the blue attribute (often function key labels).',
+  colorBackground: 'Screen background in Classic mode.',
+  colorCursor: 'Cursor colour.',
+  colorActiveField: 'Background tint of the input field that holds the cursor (Classic mode).',
+  colorRuleLine: 'Colour of the rule line.',
+  colorColumnSeparator: 'Colour of the column separator dots or lines. Blank uses the field colour.',
+  colorOiaStatus: 'Status line: connection and cursor position.',
+  colorOiaInfo: 'Status line: device name, insert mode, message waiting.',
+  colorOiaAttention: 'Status line: X SYSTEM and disconnected.',
+  colorOiaError: 'Status line: X II and operator error codes.',
+  colorOiaBackground: 'Status line background (Classic mode).',
+  uiMode: 'Classic draws the screen like a terminal. Enhanced adds a gradient background, outlined input fields, highlighted text, function keys as buttons and glow.',
+  enhancedGradientStart: 'First colour of the background gradient.',
+  enhancedGradientEnd: 'Second colour of the background gradient.',
+  enhancedGradientAngle: 'Direction of the gradient in degrees. 0 = bottom to top, 90 = left to right, 135 = diagonal.',
+  enhancedFieldBorder: 'Outline colour of input fields.',
+  enhancedFieldFill: 'Fill colour of input fields. Use 8 hex digits for transparency, for example #4a6fa520.',
+  enhancedActiveField: 'Outline and glow colour of the input field that holds the cursor.',
+  enhancedCornerRadius: 'Rounding of field boxes, text highlights and buttons, in pixels.',
+  enhancedTextGlow: 'Soft glow behind text that is not on a highlight box.',
+  enhancedGlowStrength: 'Glow radius in pixels. 0 = no glow, 3 = subtle, 10+ = strong.',
+  enhancedGlowColor: 'Glow colour. Blank uses the text colour.',
+  enhancedTextHighlight: 'Protected text (labels, titles, menu lines) sits on gradient-filled outlined boxes with contrasting text.',
+  enhancedHighlightStart: 'Left colour of the highlight gradient.',
+  enhancedHighlightEnd: 'Right colour of the highlight gradient.',
+  enhancedHighlightText: 'Text colour on highlight boxes. "auto" picks black or white for contrast; or enter a colour like #ffffff.',
+  enhancedHighlightOpacity: 'Opacity of the highlight boxes. 0 = invisible, 1 = solid.',
+  enhancedScanlines: 'Faint horizontal lines over the screen, like a CRT.',
+  enhancedPadding: 'Space around the screen in pixels so it floats like a card.',
+  pasteFieldWrap: 'A line break in pasted text presses Field Exit (next field). Off: it presses New Line instead.',
+  pasteStopAtProtected: 'Stop when pasted text runs into a protected area instead of leaving the keyboard in an error state.',
+  pasteMoveCursorToEnd: 'Leave the cursor after the pasted text. Off: return it to where the paste started.',
+  pasteTabMode: 'What a tab character in pasted text does: replaced by spaces, padded to the next tab stop, or pressed as Tab to move to the next field.',
+  pasteTabSpaces: 'Spaces per tab character when tabs are replaced with spaces.',
+  pasteTabColumns: 'Width of a tab stop when tabs advance to the next tab stop.',
+  copyTrimTrailing: 'Remove blanks at the end of each copied line.',
+  copyKeepSelection: 'Keep the selection rectangle highlighted after copying.',
+  hotspotsUrl: 'Underline web addresses on the screen; a click opens them in the browser.',
+  hotspotsPF: 'A click on text like PF3 presses that function key.',
+  hotspotsFP: 'A click on text like FP3 presses that function key.',
+  hotspotsF: 'A click on text like F3=Exit presses that function key.',
+  hotspotsNumber: 'A click on a menu option number such as 15. enters that option and presses Enter.',
+  hotspots3d: 'Draw function key labels as buttons so hotspots are easy to see. Always on in Enhanced mode.',
+  enterAtCursorClick: 'A click moves the cursor and also presses Enter.',
+  doubleClick: 'What a double-click on the screen does.',
+  titleSeparator: 'Text placed between the parts of the tab title. Example: " - ".',
+  titleMaxLength: 'Longer titles are shortened with an ellipsis. 0 = no limit.',
+  switchToNewTab: 'Focus a new tab as soon as it opens. Off: it opens in the background.',
+  warnOnCloseMultiple: 'Ask for confirmation when TN5250: Disconnect All would disconnect more than one tab.',
+  alarm: 'Play a short tone when the host sounds the alarm.',
+  keyClick: 'Play a quiet click for every key press.',
+  mouseWheelPaging: 'The mouse wheel presses Page Up and Page Down (Roll). Ctrl+wheel always zooms.',
+};
+
 const YESNO = (key: Key, label: string, note?: string): FieldSpec => ({ kind: 'bool', key, label, note });
 const CODEPAGES: Array<[string, string]> = [
   ['37', '037 United States'],
@@ -74,13 +176,12 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'number', key: 'port', label: 'Destination Port', min: 1, max: 65535 },
       { kind: 'select', key: 'tls', label: 'Protocol', options: [['false', 'Telnet'], ['true', 'Telnet over TLS (telnet-ssl, usually port 992)']] },
       { kind: 'text', key: 'deviceName', label: 'Workstation ID', placeholder: 'blank = assigned by the host' },
-      { kind: 'static', label: '', text: 'Templates: &COMPN computer name, &USERN user name, * letter per open tab, = digit per open tab. Example: OD1N*= gives OD1NA0, OD1NB1, ...' },
       { kind: 'select', key: 'screenSize', label: 'Screen Size', options: [['24x80', '24x80 (IBM-3179-2)'], ['27x132', '27x132 (IBM-3477-FC)']] },
       { kind: 'select', key: 'codePage', label: 'Host Code Page', options: CODEPAGES },
       YESNO('autoConnect', 'Auto-Connect'),
       YESNO('autoReconnect', 'Auto-Reconnect'),
       { kind: 'heading', label: 'Demo / test system' },
-      YESNO('demoMode', 'Demo session', 'Tilted watermark, coloured frame, DEMO in the tab title and status line.'),
+      YESNO('demoMode', 'Demo session'),
       { kind: 'text', key: 'demoLabel', label: 'Label', showIf: 'demoMode' },
       { kind: 'color', key: 'demoColor', label: 'Colour', showIf: 'demoMode' },
     ],
@@ -95,7 +196,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       YESNO('keepAlive', 'Keep-Alive'),
       { kind: 'static', label: 'Enable ENPTUI', text: 'Not supported yet. Windows and menus are drawn as text by the host.' },
       { kind: 'heading', label: 'IBM i signon information' },
-      YESNO('autoSignon', 'Bypass signon', 'Fills the Sign On screen with the user ID and the stored password.'),
+      YESNO('autoSignon', 'Bypass signon'),
       { kind: 'text', key: 'signonUser', label: 'User ID', showIf: 'autoSignon' },
       { kind: 'button', label: 'Password', text: 'Set Password…', message: 'setPassword', showIf: 'autoSignon' },
     ],
@@ -105,8 +206,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     title: 'TLS/SSL',
     group: 'Connection',
     fields: [
-      { kind: 'static', label: '', text: 'Enable via the Protocol field on the Connection page.' },
-      YESNO('verifyCertificate', 'Server Authentication', 'Validate the host certificate. Turn off for self-signed certificates.'),
+      YESNO('verifyCertificate', 'Server Authentication'),
       { kind: 'static', label: 'Client Authentication', text: 'Not supported yet.' },
     ],
   },
@@ -135,7 +235,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     title: 'Font',
     group: 'Screen',
     fields: [
-      YESNO('autoFit', 'Font Scaling', 'Scale the screen to the tab. Off = fixed size.'),
+      YESNO('autoFit', 'Font Scaling'),
       { kind: 'number', key: 'fontSize', label: 'Fixed Font Size', min: 6, max: 72, hideIf: 'autoFit' },
       { kind: 'select', key: 'textRendering', label: 'Antialiasing', options: [['smooth', 'Yes (smooth)'], ['crisp', 'No (crisp, pixel-aligned)']] },
       { kind: 'text', key: 'fontFamily', label: 'Font Name', placeholder: 'blank = editor font; e.g. Cascadia Mono, Consolas, Lucida Sans Typewriter' },
@@ -193,7 +293,6 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     group: 'Appearance',
     fields: [
       { kind: 'select', key: 'uiMode', label: 'Screen style', options: [['classic', 'Classic (ACS-like)'], ['enhanced', 'Enhanced (modern)']] },
-      { kind: 'static', label: '', text: 'Enhanced mode draws a gradient background, outlines every input field, highlights the active field, shows function keys as buttons and adds a soft glow to text.' },
       { kind: 'color', key: 'enhancedGradientStart', label: 'Gradient start' },
       { kind: 'color', key: 'enhancedGradientEnd', label: 'Gradient end' },
       { kind: 'number', key: 'enhancedGradientAngle', label: 'Gradient angle (degrees)', min: 0, max: 360 },
@@ -205,7 +304,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'range', key: 'enhancedGlowStrength', label: 'Glow strength', min: 0, max: 20, step: 1, showIf: 'enhancedTextGlow' },
       { kind: 'text', key: 'enhancedGlowColor', label: 'Glow colour', placeholder: 'blank = text colour', showIf: 'enhancedTextGlow' },
       { kind: 'heading', label: 'Text highlight' },
-      YESNO('enhancedTextHighlight', 'Highlight protected text', 'Labels and titles sit on gradient-filled outlined boxes with contrasting text.'),
+      YESNO('enhancedTextHighlight', 'Highlight protected text'),
       { kind: 'color', key: 'enhancedHighlightStart', label: 'Highlight gradient start', showIf: 'enhancedTextHighlight' },
       { kind: 'color', key: 'enhancedHighlightEnd', label: 'Highlight gradient end', showIf: 'enhancedTextHighlight' },
       { kind: 'text', key: 'enhancedHighlightText', label: 'Highlight text colour', placeholder: 'auto = black or white for contrast', showIf: 'enhancedTextHighlight' },
@@ -220,7 +319,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     title: 'Paste',
     group: 'Edit',
     fields: [
-      YESNO('pasteFieldWrap', 'Field Wrap', 'A line break moves to the next field (off = New Line).'),
+      YESNO('pasteFieldWrap', 'Field Wrap'),
       YESNO('pasteStopAtProtected', 'Stop pasting when protected line encountered'),
       YESNO('pasteMoveCursorToEnd', 'Move cursor to end of paste'),
       { kind: 'heading', label: 'Tab character processing' },
@@ -236,7 +335,6 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     fields: [
       YESNO('copyTrimTrailing', 'Trim trailing blanks'),
       YESNO('copyKeepSelection', 'Trim rectangle remains after copy'),
-      { kind: 'static', label: '', text: 'Ctrl+C or Ctrl+Insert copies the selected rectangle; nothing selected copies the whole screen. Password fields are always blanked.' },
     ],
   },
   {
@@ -314,8 +412,45 @@ function setValue(key: Key, raw: string | boolean | number): void {
   }
 }
 
+function infoBubble(text: string): HTMLElement {
+  const i = el('span', 'info', '\u24D8');
+  i.tabIndex = 0;
+  i.setAttribute('role', 'button');
+  i.setAttribute('aria-label', 'Information');
+  const tip = el('span', 'tip', text);
+  i.append(tip);
+  return i;
+}
+
+/** Fields across all pages whose label or help text matches the search. */
+function searchFields(query: string): Array<{ page: (typeof PAGES)[number]; field: FieldSpec }> {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const out: Array<{ page: (typeof PAGES)[number]; field: FieldSpec }> = [];
+  for (const p of PAGES) {
+    for (const f of p.fields) {
+      if (f.kind === 'heading' || f.kind === 'preview' || f.kind === 'static') continue;
+      const hay = [f.label, 'key' in f ? String(f.key) : '', 'key' in f ? (HELP[f.key] ?? '') : '', p.title, p.group].join(' ').toLowerCase();
+      if (hay.includes(q)) out.push({ page: p, field: f });
+    }
+  }
+  return out;
+}
+
+let searchQuery = '';
+
 function renderNav(): HTMLElement {
   const nav = el('div', 'nav');
+  const search = el('input', 'search');
+  search.type = 'search';
+  search.placeholder = 'Search settings\u2026';
+  search.value = searchQuery;
+  search.oninput = () => {
+    searchQuery = search.value;
+    const main = document.getElementById('main');
+    if (main) renderMain(main);
+  };
+  nav.append(search);
   const entries = el('div', 'entries');
   entries.append(el('h3', undefined, 'Profiles'));
   const mk = (label: string, index: number): void => {
@@ -456,7 +591,10 @@ function renderField(f: FieldSpec): HTMLElement | undefined {
     return box;
   }
   const row = el('div', 'row');
-  row.append(el('label', undefined, f.label));
+  const label = el('label', undefined, f.label);
+  const helpText = 'key' in f ? HELP[f.key] : f.kind === 'button' && f.message === 'setPassword' ? 'Stored in the VS Code secret store, never in settings or files.' : f.kind === 'titleParts' ? 'Parts of the tab title, in this order. The session ID is a letter A, B, C per open tab, like ACS.' : undefined;
+  if (helpText) label.append(infoBubble(helpText));
+  row.append(label);
   if (f.kind === 'static') {
     row.append(el('span', 'static', f.text));
     return row;
@@ -476,7 +614,6 @@ function renderField(f: FieldSpec): HTMLElement | undefined {
     };
     const wrap = el('span');
     wrap.append(b);
-    if (f.message === 'setPassword') wrap.append(el('span', 'note', ' Stored in the VS Code secret store, never in settings.'));
     row.append(wrap);
     return row;
   }
@@ -523,7 +660,6 @@ function renderField(f: FieldSpec): HTMLElement | undefined {
       wrap.append(lab);
     }
     row.append(wrap);
-    if (f.note) row.append(el('span', 'note', f.note));
     return row;
   }
   if (f.kind === 'select') {
@@ -659,25 +795,52 @@ function renderButtons(): void {
   bar.append(json);
 }
 
+function renderMain(main: HTMLElement): void {
+  main.replaceChildren();
+  const title = selected < 0 ? 'Defaults' : sessions[selected]?.name || sessions[selected]?.host || 'Session';
+  if (searchQuery.trim()) {
+    main.append(el('h2', undefined, `${title} › Search: ${searchQuery.trim()}`));
+    const hits = searchFields(searchQuery);
+    if (!hits.length) main.append(el('p', 'note', 'No settings match.'));
+    let lastPage = '';
+    for (const hit of hits) {
+      if (hit.page.id !== lastPage) {
+        lastPage = hit.page.id;
+        const h = el('h4', 'heading link', `${hit.page.group} › ${hit.page.title}`);
+        h.onclick = () => {
+          searchQuery = '';
+          page = hit.page.id;
+          render();
+        };
+        main.append(h);
+      }
+      const node = renderField({ ...hit.field, showIf: undefined, hideIf: undefined });
+      if (node) main.append(node);
+    }
+  } else {
+    const p = PAGES.find((x) => x.id === page) ?? PAGES[0]!;
+    main.append(el('h2', undefined, `${title} › ${p.group} › ${p.title}`));
+    if (p.id === 'keyboard') main.append(renderKeyboard());
+    else
+      for (const f of p.fields) {
+        const node = renderField(f);
+        if (node) main.append(node);
+      }
+  }
+  const bar = el('div', 'buttons');
+  bar.id = 'buttons';
+  main.append(bar);
+  previewRenderer = undefined;
+  renderButtons();
+}
+
 function render(): void {
   app.replaceChildren();
   app.append(renderNav());
   const main = el('div', 'main');
-  const p = PAGES.find((x) => x.id === page) ?? PAGES[0]!;
-  const title = selected < 0 ? 'Defaults' : sessions[selected]?.name || sessions[selected]?.host || 'Session';
-  main.append(el('h2', undefined, `${title} › ${p.group} › ${p.title}`));
-  if (p.id === 'keyboard') main.append(renderKeyboard());
-  else
-    for (const f of p.fields) {
-      const node = renderField(f);
-      if (node) main.append(node);
-    }
-  const bar = el('div', 'buttons');
-  bar.id = 'buttons';
-  main.append(bar);
+  main.id = 'main';
   app.append(main);
-  previewRenderer = undefined;
-  renderButtons();
+  renderMain(main);
 }
 
 function select(index: number): void {

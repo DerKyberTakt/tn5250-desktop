@@ -38,6 +38,19 @@ export class TerminalPanel {
   private static readonly letters = new Set<string>();
   static readonly open = new Set<TerminalPanel>();
 
+  /** Expands a workstation template with the next free ordinal for that template. */
+  static expandDevice(template: string): string {
+    const ordinal = TerminalPanel.deviceOrdinals.get(template) ?? 0;
+    TerminalPanel.deviceOrdinals.set(template, ordinal + 1);
+    let userName: string;
+    try {
+      userName = os.userInfo().username;
+    } catch {
+      userName = '';
+    }
+    return expandDeviceName(template, { computerName: os.hostname(), userName, ordinal });
+  }
+
   private static nextLetter(): string {
     for (let i = 0; i < 26; i++) {
       const l = String.fromCharCode(65 + i);
@@ -50,17 +63,10 @@ export class TerminalPanel {
   }
 
   static create(context: vscode.ExtensionContext, output: vscode.OutputChannel, profile?: TerminalSettings): TerminalPanel {
+    let deviceTemplate = '';
     if (profile?.deviceName.trim()) {
-      const template = profile.deviceName.trim();
-      const ordinal = TerminalPanel.deviceOrdinals.get(template) ?? 0;
-      TerminalPanel.deviceOrdinals.set(template, ordinal + 1);
-      let userName: string;
-      try {
-        userName = os.userInfo().username;
-      } catch {
-        userName = '';
-      }
-      profile = { ...profile, deviceName: expandDeviceName(template, { computerName: os.hostname(), userName, ordinal }) };
+      deviceTemplate = profile.deviceName.trim();
+      profile = { ...profile, deviceName: TerminalPanel.expandDevice(deviceTemplate) };
     }
     const letter = profile ? TerminalPanel.nextLetter() : '';
     const panel = vscode.window.createWebviewPanel(
@@ -73,7 +79,7 @@ export class TerminalPanel {
         localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview')],
       },
     );
-    return new TerminalPanel(context, output, panel, profile, letter);
+    return new TerminalPanel(context, output, panel, profile, letter, deviceTemplate);
   }
 
   static restore(
@@ -84,7 +90,7 @@ export class TerminalPanel {
   ): TerminalPanel {
     const profile = (state as PanelState | undefined)?.profile;
     const p = isProfile(profile) ? { ...SETTINGS_DEFAULTS, ...profile } : undefined;
-    return new TerminalPanel(context, output, panel, p, p ? TerminalPanel.nextLetter() : '');
+    return new TerminalPanel(context, output, panel, p, p ? TerminalPanel.nextLetter() : '', '');
   }
 
   private static setActive(panel: TerminalPanel | undefined): void {
@@ -98,6 +104,7 @@ export class TerminalPanel {
     private readonly panel: vscode.WebviewPanel,
     readonly profile: TerminalSettings | undefined,
     private readonly letter: string,
+    private readonly deviceTemplate: string,
   ) {
     TerminalPanel.open.add(this);
     this.keyOverlay = vscode.workspace.getConfiguration('tn5250').get<boolean>('debug.keyOverlay', false);
@@ -122,6 +129,7 @@ export class TerminalPanel {
           TerminalPanel.onActiveChanged?.();
         },
         alarm: () => this.post({ type: 'alarm' }),
+        nextDeviceName: () => (this.deviceTemplate && /[*=]/.test(this.deviceTemplate) ? TerminalPanel.expandDevice(this.deviceTemplate) : undefined),
         password: async () => (await context.secrets.get(passwordKey(profile.name, profile.host))) ?? (await context.secrets.get(passwordKey('', profile.host))),
         log: (message) => this.output.appendLine(`[${label}] ${message}`),
       });

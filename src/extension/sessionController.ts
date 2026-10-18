@@ -11,6 +11,8 @@ export interface SessionControllerEvents {
   log(message: string): void;
   /** Password for bypass sign-on, if one is stored. */
   password?(): Promise<string | undefined>;
+  /** Next workstation name to try when the host rejects the current one (undefined = give up). */
+  nextDeviceName?(): string | undefined;
 }
 
 /** One entry of a session trace, in the same shape as scripts/capture.mjs output. */
@@ -43,6 +45,9 @@ export class SessionController {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private wantConnected = false;
   private signonDone = false;
+  private screensReceived = 0;
+  private connectedAt = 0;
+  private deviceRetries = 0;
 
   constructor(
     readonly profile: TerminalSettings,
@@ -64,6 +69,7 @@ export class SessionController {
           this.connection?.write(bytes);
         },
         update: () => {
+          this.screensReceived += 1;
           this.publish();
           void this.maybeSignon();
         },
@@ -100,7 +106,21 @@ export class SessionController {
       close: () => {
         if (this.connection !== connection) return;
         this.connection = undefined;
-        this.setStatus('disconnected', 'connection closed by host');
+        // Dropped right after negotiation with no screen: the workstation name is
+        // most likely already in use (for example by an ACS session). Try the next one.
+        const early = this.screensReceived === 0 && Date.now() - this.connectedAt < 8000;
+        if (early && this.profile.deviceName && this.deviceRetries < 10) {
+          const next = this.events.nextDeviceName?.();
+          if (next) {
+            this.deviceRetries += 1;
+            this.events.log(`workstation ${this.profile.deviceName} refused by the host, trying ${next}`);
+            this.profile.deviceName = next;
+            this.status = 'idle';
+            void this.connect();
+            return;
+          }
+        }
+        this.setStatus('disconnected', early && this.profile.deviceName ? `connection closed by host (workstation ${this.profile.deviceName} in use?)` : 'connection closed by host');
         this.publish();
         this.scheduleReconnect();
       },
@@ -123,6 +143,8 @@ export class SessionController {
       return;
     }
     this.reconnectAttempt = 0;
+    this.screensReceived = 0;
+    this.connectedAt = Date.now();
     this.setStatus('connected', `${this.profile.host}:${this.profile.port}`);
     this.publish();
     this.touch();

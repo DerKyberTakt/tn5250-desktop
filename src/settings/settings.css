@@ -321,3 +321,64 @@ h4.heading {
   text-align: right;
   font-family: var(--vscode-editor-font-family);
 }
+
+.nav input.search {
+  box-sizing: border-box;
+  width: calc(100% - 24px);
+  margin: 4px 12px 8px;
+  padding: 5px 8px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  font: inherit;
+}
+
+.row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info {
+  position: relative;
+  display: inline-block;
+  color: var(--vscode-textLink-foreground);
+  cursor: help;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+}
+
+.info .tip {
+  display: none;
+  position: absolute;
+  left: 18px;
+  top: -6px;
+  z-index: 10;
+  width: 320px;
+  padding: 8px 10px;
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+  background: var(--vscode-editorHoverWidget-background, #252526);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.info:hover .tip,
+.info:focus .tip {
+  display: block;
+}
+
+h4.heading.link {
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  opacity: 1;
+}
