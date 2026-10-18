@@ -23,6 +23,10 @@ export interface Theme {
     textGlow: boolean;
     glowStrength: number;
     glowColor: string;
+    selectionStart: string;
+    selectionEnd: string;
+    selectionText: string;
+    selectionOpacity: number;
     scanlines: boolean;
     padding: number;
   };
@@ -55,6 +59,10 @@ export const DEFAULT_THEME: Theme = {
     textGlow: true,
     glowStrength: 3,
     glowColor: '',
+    selectionStart: '',
+    selectionEnd: '',
+    selectionText: 'auto',
+    selectionOpacity: 0.75,
     scanlines: false,
     padding: 24,
   },
@@ -492,13 +500,14 @@ export class Renderer {
   /** Contrasting text colour for the enhanced selection box. */
   private selectionTextColor(): string {
     const e = this.theme.enhanced;
+    if (e.selectionText && e.selectionText !== 'auto') return e.selectionText;
     const lum = (hex: string): number => {
       const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
       if (!m) return 0;
       const [r, g, b] = [parseInt(m[1] as string, 16), parseInt(m[2] as string, 16), parseInt(m[3] as string, 16)];
       return 0.2126 * r + 0.7152 * g + 0.0722 * b;
     };
-    return (lum(e.fieldBorder) + lum(e.activeField)) / 2 > 150 ? '#101010' : '#ffffff';
+    return (lum(e.selectionStart || e.fieldBorder) + lum(e.selectionEnd || e.activeField)) / 2 > 150 ? '#101010' : '#ffffff';
   }
 
   /**
@@ -517,10 +526,10 @@ export class Renderer {
     const w = (r.col2 - r.col1 + 1) * this.cellW + 4;
     const h = (r.row2 - r.row1 + 1) * this.cellH - 2;
     const g = ctx.createLinearGradient(x, y, x + w, y + h);
-    g.addColorStop(0, e.fieldBorder);
-    g.addColorStop(1, e.activeField);
+    g.addColorStop(0, e.selectionStart || e.fieldBorder);
+    g.addColorStop(1, e.selectionEnd || e.activeField);
     ctx.save();
-    ctx.globalAlpha = 0.75;
+    ctx.globalAlpha = Math.max(0, Math.min(1, e.selectionOpacity));
     this.roundRect(x, y, w, h, e.cornerRadius);
     ctx.fillStyle = g;
     ctx.fill();

@@ -882,6 +882,28 @@
           "type": "integer",
           "default": 0,
           "description": "Watermark vertical offset in pixels."
+        },
+        "tn5250.enhanced.selectionStart": {
+          "type": "string",
+          "default": "",
+          "description": "Enhanced UI: selection highlight gradient start (blank = field border colour)."
+        },
+        "tn5250.enhanced.selectionEnd": {
+          "type": "string",
+          "default": "",
+          "description": "Enhanced UI: selection highlight gradient end (blank = active field colour)."
+        },
+        "tn5250.enhanced.selectionText": {
+          "type": "string",
+          "default": "auto",
+          "description": "Enhanced UI: text colour inside the selection; auto = black or white for contrast."
+        },
+        "tn5250.enhanced.selectionOpacity": {
+          "type": "number",
+          "default": 0.75,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Enhanced UI: opacity of the selection highlight."
         }
       }
     },

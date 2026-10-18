@@ -103,6 +103,12 @@ export interface TerminalSettings {
   enhancedGlowStrength: number;
   /** Empty = the text colour. */
   enhancedGlowColor: string;
+  /** Selection highlight gradient; blank = field border to active field colour. */
+  enhancedSelectionStart: string;
+  enhancedSelectionEnd: string;
+  /** 'auto' = black or white for contrast. */
+  enhancedSelectionText: string;
+  enhancedSelectionOpacity: number;
   enhancedScanlines: boolean;
   enhancedPadding: number;
 
@@ -220,6 +226,10 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   enhancedTextGlow: true,
   enhancedGlowStrength: 3,
   enhancedGlowColor: '',
+  enhancedSelectionStart: '',
+  enhancedSelectionEnd: '',
+  enhancedSelectionText: 'auto',
+  enhancedSelectionOpacity: 0.75,
   enhancedScanlines: false,
   enhancedPadding: 24,
 

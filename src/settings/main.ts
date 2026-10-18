@@ -125,6 +125,10 @@ const HELP: Partial<Record<Key, string>> = {
   enhancedGlowStrength: 'Glow radius in pixels. 0 = no glow, 3 = subtle, 10+ = strong.',
   enhancedGlowColor: 'Glow colour. Blank uses the text colour.',
   enhancedScanlines: 'Faint horizontal lines over the screen, like a CRT.',
+  enhancedSelectionStart: 'Left colour of the gradient drawn behind a mouse selection or a double-clicked word. Blank uses the field border colour.',
+  enhancedSelectionEnd: 'Right colour of the selection gradient. Blank uses the active field colour.',
+  enhancedSelectionText: 'Text colour inside the selection. "auto" picks black or white for contrast; or enter a colour like #ffffff.',
+  enhancedSelectionOpacity: 'Opacity of the selection highlight. 0 = invisible, 1 = solid.',
   enhancedPadding: 'Space around the screen in pixels so it floats like a card.',
   pasteFieldWrap: 'A line break in pasted text presses Field Exit (next field). Off: it presses New Line instead.',
   pasteStopAtProtected: 'Stop when pasted text runs into a protected area instead of leaving the keyboard in an error state.',
@@ -311,6 +315,12 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       YESNO('enhancedTextGlow', 'Text glow'),
       { kind: 'range', key: 'enhancedGlowStrength', label: 'Glow strength', min: 0, max: 20, step: 1, showIf: 'enhancedTextGlow' },
       { kind: 'color', key: 'enhancedGlowColor', label: 'Glow colour', showIf: 'enhancedTextGlow' },
+      { kind: 'heading', label: 'Highlight (mouse selection)' },
+      { kind: 'color', key: 'enhancedSelectionStart', label: 'Gradient start' },
+      { kind: 'color', key: 'enhancedSelectionEnd', label: 'Gradient end' },
+      { kind: 'text', key: 'enhancedSelectionText', label: 'Text colour', placeholder: 'auto = black or white for contrast, or #rrggbb' },
+      { kind: 'range', key: 'enhancedSelectionOpacity', label: 'Opacity', min: 0, max: 1, step: 0.05 },
+      { kind: 'heading', label: 'Effects' },
       YESNO('enhancedScanlines', 'Scanlines'),
       { kind: 'number', key: 'enhancedPadding', label: 'Padding around the screen', min: 0, max: 120 },
       { kind: 'preview' },
@@ -520,8 +530,8 @@ function colorInput(key: Key): HTMLElement {
     }
   };
   wrap.append(c, t);
-  if (key === 'enhancedGlowColor' || key === 'colorColumnSeparator') {
-    const clear = el('button', 'secondary', 'Use text colour');
+  if (key === 'enhancedGlowColor' || key === 'colorColumnSeparator' || key === 'enhancedSelectionStart' || key === 'enhancedSelectionEnd') {
+    const clear = el('button', 'secondary', key.startsWith('enhancedSelection') ? 'Use default' : 'Use text colour');
     clear.onclick = () => {
       t.value = '';
       setValue(key, '');
@@ -557,6 +567,10 @@ function updatePreview(): void {
       textGlow: v.enhancedTextGlow,
       glowStrength: v.enhancedGlowStrength,
       glowColor: v.enhancedGlowColor,
+      selectionStart: v.enhancedSelectionStart,
+      selectionEnd: v.enhancedSelectionEnd,
+      selectionText: v.enhancedSelectionText,
+      selectionOpacity: v.enhancedSelectionOpacity,
       scanlines: v.enhancedScanlines,
       padding: Math.min(12, v.enhancedPadding),
     },
