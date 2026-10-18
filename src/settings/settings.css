@@ -385,14 +385,35 @@ h4.heading.link {
 
 .fontrow {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .fontrow select {
-  width: auto;
-  min-width: 260px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fontrow label.check {
+  white-space: nowrap;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+button.iconbtn {
+  flex: none;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  line-height: 1;
+  font-size: 14px;
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
 }
 
 .fontrow .note {
