@@ -382,3 +382,25 @@ h4.heading.link {
   font-size: 13px;
   opacity: 1;
 }
+
+.fontrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.fontrow select {
+  width: auto;
+  min-width: 260px;
+}
+
+.fontrow .note {
+  width: 100%;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.preview canvas {
+  cursor: move;
+}

@@ -4,7 +4,7 @@ import { SettingsPanel } from './settingsPanel';
 import { SessionItem, SessionsProvider } from './sessionsView';
 import { readDefaults, readSessions, removeSessionAt, resolvedSessions, writeSessions } from './settingsStore';
 import { importKmpInteractive } from './kmpCommand';
-import { setPasswordInteractive } from './secrets';
+import { setCertPassphraseInteractive, setPasswordInteractive } from './secrets';
 
 const LAST_SESSION_KEY = 'tn5250.lastSession';
 
@@ -122,7 +122,13 @@ export function activate(context: vscode.ExtensionContext): void {
     if (ok === 'Remove') await removeSessionAt(item.index);
     sessions.refresh();
   });
-  register('tn5250.openSettings', () => SettingsPanel.show(context, output, -1));
+  register('tn5250.openSettings', () => {
+    const list = resolvedSessions();
+    const last = context.globalState.get<string>(LAST_SESSION_KEY);
+    const index = list.length ? Math.max(0, list.findIndex((s) => s.name === last)) : -1;
+    SettingsPanel.show(context, output, index);
+  });
+  register('tn5250.setCertPassphrase', () => setCertPassphraseInteractive(context, -1));
   register('tn5250.newTab', () => {
     const p = TerminalPanel.active?.profile;
     if (p) TerminalPanel.create(context, output, p);

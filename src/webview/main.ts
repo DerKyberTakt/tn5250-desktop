@@ -79,6 +79,17 @@ function renderOia(): void {
   oiaEl.classList.toggle('error', oia.inputInhibited === 'error');
 }
 
+let fontStyleEl: HTMLStyleElement | undefined;
+function applyFontFace(face: { family: string; url: string } | undefined): void {
+  fontStyleEl?.remove();
+  fontStyleEl = undefined;
+  if (!face) return;
+  fontStyleEl = document.createElement('style');
+  fontStyleEl.textContent = `@font-face { font-family: ${JSON.stringify(face.family)}; src: url(${JSON.stringify(face.url)}); }`;
+  document.head.append(fontStyleEl);
+  void document.fonts.load(`16px ${JSON.stringify(face.family)}`).then(() => renderer.setOptions({}));
+}
+
 function applyConfig(): void {
   const st = config.settings;
   const root = document.documentElement.style;
@@ -134,6 +145,8 @@ function applyConfig(): void {
     watermarkOpacity: st.watermarkOpacity,
     watermarkPosition: st.watermarkPosition,
     watermarkPadding: st.watermarkPadding,
+    watermarkOffsetX: st.watermarkOffsetX,
+    watermarkOffsetY: st.watermarkOffsetY,
     underlineUrls: st.hotspotsUrl,
     keyButtons: st.hotspots3d || st.uiMode === 'enhanced',
     demoMode: st.demoMode,
@@ -142,6 +155,7 @@ function applyConfig(): void {
   });
   root.setProperty('--demo-color', st.demoColor);
   renderer.setWatermarkImage(config.watermarkImageData ?? '');
+  applyFontFace(config.fontFace);
   canvas.style.cursor = st.pointer === 'crosshair' ? 'crosshair' : 'default';
   root.setProperty('--oia-status', st.colorOiaStatus);
   root.setProperty('--oia-info', st.colorOiaInfo);

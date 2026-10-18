@@ -13,6 +13,8 @@ export interface SessionControllerEvents {
   password?(): Promise<string | undefined>;
   /** Next workstation name to try when the host rejects the current one (undefined = give up). */
   nextDeviceName?(): string | undefined;
+  /** Client certificate material for TLS, if configured. */
+  clientAuth?(): Promise<{ pfx?: Buffer; cert?: Buffer; key?: Buffer; passphrase?: string } | undefined>;
 }
 
 /** One entry of a session trace, in the same shape as scripts/capture.mjs output. */
@@ -128,6 +130,7 @@ export class SessionController {
     });
     this.connection = connection;
     try {
+      const auth = this.profile.tls ? await this.events.clientAuth?.() : undefined;
       await connection.connect({
         host: this.profile.host,
         port: this.profile.port,
@@ -135,6 +138,7 @@ export class SessionController {
         trustAnyCertificate: !this.profile.verifyCertificate,
         timeoutMs: this.profile.connectTimeoutSeconds * 1000,
         keepAlive: this.profile.keepAlive,
+        ...(auth ?? {}),
       });
     } catch (err) {
       this.connection = undefined;

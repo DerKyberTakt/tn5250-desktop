@@ -150,6 +150,11 @@
         "title": "Duplicate Connection",
         "category": "TN5250",
         "icon": "$(copy)"
+      },
+      {
+        "command": "tn5250.setCertPassphrase",
+        "title": "Set TLS Certificate Passphrase (defaults)",
+        "category": "TN5250"
       }
     ],
     "menus": {
@@ -851,6 +856,41 @@
           "type": "string",
           "default": "#ff9f1c",
           "description": "Colour of the demo watermark and frame."
+        },
+        "tn5250.connection.tlsClientAuth": {
+          "type": "string",
+          "enum": [
+            "none",
+            "pfx",
+            "pem"
+          ],
+          "default": "none",
+          "description": "TLS client authentication: none, a PKCS#12 file, or PEM certificate and key files. Experimental: not verified against an IBM i that requires client certificates."
+        },
+        "tn5250.connection.tlsClientCert": {
+          "type": "string",
+          "default": "",
+          "description": "Path of the PKCS#12 (.pfx/.p12) file or the PEM certificate."
+        },
+        "tn5250.connection.tlsClientKey": {
+          "type": "string",
+          "default": "",
+          "description": "Path of the PEM private key (PEM mode only)."
+        },
+        "tn5250.font.file": {
+          "type": "string",
+          "default": "",
+          "description": "Font file imported through Settings > Font."
+        },
+        "tn5250.watermark.offsetX": {
+          "type": "integer",
+          "default": 0,
+          "description": "Watermark horizontal offset in pixels."
+        },
+        "tn5250.watermark.offsetY": {
+          "type": "integer",
+          "default": 0,
+          "description": "Watermark vertical offset in pixels."
         }
       }
     },

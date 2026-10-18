@@ -50,6 +50,8 @@ export interface TerminalConfig {
   keyOverlay: boolean;
   /** Watermark image as a data URL, loaded by the host from settings.watermarkImage. */
   watermarkImageData?: string;
+  /** An imported font to register with @font-face before use. */
+  fontFace?: { family: string; url: string };
 }
 
 export interface KeyEventInfo {

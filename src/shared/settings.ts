@@ -15,6 +15,10 @@ export interface TerminalSettings {
   tls: boolean;
   /** TLS only: validate the host certificate (ACS "server authentication"). */
   verifyCertificate: boolean;
+  /** TLS client authentication: none, a PKCS#12 (.pfx/.p12) file, or PEM certificate + key files. */
+  tlsClientAuth: 'none' | 'pfx' | 'pem';
+  tlsClientCert: string;
+  tlsClientKey: string;
   deviceName: string;
   screenSize: ScreenSize;
   codePage: number;
@@ -47,6 +51,8 @@ export interface TerminalSettings {
   // Screen > Font
   autoFit: boolean;
   fontFamily: string;
+  /** A font file imported through Settings > Font (loaded with @font-face). */
+  fontFile: string;
   /** Used when autoFit is off. */
   fontSize: number;
   fontStyle: 'plain' | 'bold';
@@ -59,6 +65,9 @@ export interface TerminalSettings {
   watermarkOpacity: number;
   watermarkPosition: WatermarkPosition;
   watermarkPadding: number;
+  /** Fine adjustment from the chosen position, in pixels (drag in the preview). */
+  watermarkOffsetX: number;
+  watermarkOffsetY: number;
 
   // Appearance > Colors
   colorGreen: string;
@@ -139,6 +148,9 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   port: 23,
   tls: false,
   verifyCertificate: true,
+  tlsClientAuth: 'none',
+  tlsClientCert: '',
+  tlsClientKey: '',
   deviceName: '',
   screenSize: '24x80',
   codePage: 37,
@@ -166,6 +178,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
 
   autoFit: true,
   fontFamily: '',
+  fontFile: '',
   fontSize: 14,
   fontStyle: 'plain',
   textRendering: 'smooth',
@@ -176,6 +189,8 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   watermarkOpacity: 0.15,
   watermarkPosition: 'center',
   watermarkPadding: 10,
+  watermarkOffsetX: 0,
+  watermarkOffsetY: 0,
 
   colorGreen: '#00d060',
   colorWhite: '#f0f0f0',

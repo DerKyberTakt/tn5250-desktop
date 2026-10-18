@@ -83,6 +83,8 @@ export interface RendererOptions {
   watermarkOpacity: number;
   watermarkPosition: WatermarkPosition;
   watermarkPadding: number;
+  watermarkOffsetX: number;
+  watermarkOffsetY: number;
   underlineUrls: boolean;
   keyButtons: boolean;
   demoMode: boolean;
@@ -123,6 +125,8 @@ export class Renderer {
     watermarkOpacity: 0.15,
     watermarkPosition: 'center',
     watermarkPadding: 10,
+    watermarkOffsetX: 0,
+    watermarkOffsetY: 0,
     underlineUrls: true,
     keyButtons: false,
     demoMode: false,
@@ -608,7 +612,7 @@ export class Renderer {
       if (p.startsWith('bottom')) y = h - mh - pad;
       if (p.endsWith('Left')) x = pad;
       if (p.endsWith('Right')) x = w - mw - pad;
-      return [x, y];
+      return [x + o.watermarkOffsetX, y + o.watermarkOffsetY];
     };
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, o.watermarkOpacity));

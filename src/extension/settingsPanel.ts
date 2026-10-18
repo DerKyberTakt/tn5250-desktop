@@ -2,7 +2,9 @@ import * as vscode from 'vscode';
 import type { HostToSettings, SettingsToHost } from '../shared/settingsProtocol';
 import { COLOR_KEYS, resolveSettings, type TerminalSettings } from '../shared/settings';
 import { importKmpInteractive } from './kmpCommand';
-import { setPasswordInteractive } from './secrets';
+import { setCertPassphraseInteractive, setPasswordInteractive } from './secrets';
+import { importFontFile, listSystemFonts } from './fonts';
+import * as path from 'node:path';
 import { readDefaults, readSessions, removeSessionAt, saveSession, writeDefaults, writeSessions } from './settingsStore';
 import { TerminalPanel } from './terminalPanel';
 
@@ -28,7 +30,7 @@ export class SettingsPanel {
     const panel = vscode.window.createWebviewPanel(SettingsPanel.viewType, 'TN5250 Settings', vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview')],
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'), vscode.Uri.joinPath(context.globalStorageUri, 'fonts')],
     });
     SettingsPanel.current = new SettingsPanel(context, output, panel, select);
   }
@@ -63,8 +65,31 @@ export class SettingsPanel {
   }
 
   private push(patch?: Partial<TerminalSettings>): void {
-    const msg: HostToSettings = { type: 'data', defaults: readDefaults(), sessions: readSessions(), select: this.select, patch };
-    void this.panel.webview.postMessage(msg);
+    void this.buildData(patch).then((msg) => this.panel.webview.postMessage(msg));
+  }
+
+  private async buildData(patch?: Partial<TerminalSettings>): Promise<HostToSettings> {
+    const defaults = readDefaults();
+    const sessions = readSessions();
+    const current = this.select < 0 ? defaults : resolveSettings(defaults, sessions[this.select] ?? { host: '' });
+    const merged = { ...current, ...(patch ?? {}) };
+    const extra = [defaults.fontFile, ...sessions.map((s) => s.fontFile ?? '')].filter(Boolean);
+    const fonts = (await listSystemFonts(extra)).map((f) => ({ family: f.family, monospace: f.monospace }));
+    let watermarkImageData: string | undefined;
+    if (merged.watermarkImage) {
+      try {
+        const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(merged.watermarkImage));
+        const ext = path.extname(merged.watermarkImage).toLowerCase().replace('.', '');
+        const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'svg' ? 'image/svg+xml' : `image/${ext || 'png'}`;
+        watermarkImageData = `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+      } catch {
+        watermarkImageData = undefined;
+      }
+    }
+    const fontFace = merged.fontFile && merged.fontFamily
+      ? { family: merged.fontFamily, url: this.panel.webview.asWebviewUri(vscode.Uri.file(merged.fontFile)).toString() }
+      : undefined;
+    return { type: 'data', defaults, sessions, select: this.select, patch, fonts, watermarkImageData, fontFace };
   }
 
   private async onMessage(msg: SettingsToHost): Promise<void> {
@@ -109,6 +134,30 @@ export class SettingsPanel {
         await importKmpInteractive(msg.target);
         this.select = msg.target;
         this.push();
+        break;
+      case 'browseFile': {
+        const pem = msg.key === 'tlsClientKey';
+        const picked = await vscode.window.showOpenDialog({
+          title: pem ? 'Client private key (PEM)' : 'Client certificate (PKCS#12 or PEM)',
+          canSelectMany: false,
+          filters: pem ? { 'PEM key': ['pem', 'key'], 'All files': ['*'] } : { Certificates: ['pfx', 'p12', 'pem', 'crt', 'cer'], 'All files': ['*'] },
+        });
+        if (picked?.[0]) this.push({ [msg.key]: picked[0].fsPath } as Partial<TerminalSettings>);
+        break;
+      }
+      case 'browseFont': {
+        const picked = await vscode.window.showOpenDialog({ title: 'Font file', canSelectMany: false, filters: { 'TrueType / OpenType': ['ttf', 'otf'] } });
+        if (!picked?.[0]) break;
+        try {
+          const imported = await importFontFile(this.context, picked[0]);
+          this.push({ fontFile: imported.file, fontFamily: imported.family });
+        } catch (err) {
+          void vscode.window.showErrorMessage(`TN5250: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        break;
+      }
+      case 'setCertPassphrase':
+        await setCertPassphraseInteractive(this.context, msg.target);
         break;
       case 'browseWatermark': {
         const picked = await vscode.window.showOpenDialog({ title: 'Watermark image', canSelectMany: false, filters: { Images: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'] } });

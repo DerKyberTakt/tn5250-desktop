@@ -8,7 +8,8 @@ import * as path from 'node:path';
 import { buildDemoScreen } from '../engine/demoScreen';
 import { SessionController } from './sessionController';
 import { readDefaults, resolvedSessions } from './settingsStore';
-import { passwordKey } from './secrets';
+import { certPassphraseKey, passwordKey } from './secrets';
+import * as fsp from 'node:fs/promises';
 import { buildWebviewHtml } from './webviewHtml';
 
 interface PanelState {
@@ -76,7 +77,7 @@ export class TerminalPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview')],
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'), vscode.Uri.joinPath(context.globalStorageUri, 'fonts')],
       },
     );
     return new TerminalPanel(context, output, panel, profile, letter, deviceTemplate);
@@ -110,7 +111,7 @@ export class TerminalPanel {
     this.keyOverlay = vscode.workspace.getConfiguration('tn5250').get<boolean>('debug.keyOverlay', false);
     panel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview')],
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'), vscode.Uri.joinPath(context.globalStorageUri, 'fonts')],
     };
     panel.webview.html = buildWebviewHtml(panel.webview, context.extensionUri);
 
@@ -129,6 +130,17 @@ export class TerminalPanel {
           TerminalPanel.onActiveChanged?.();
         },
         alarm: () => this.post({ type: 'alarm' }),
+        clientAuth: async () => {
+          if (profile.tlsClientAuth === 'none' || !profile.tlsClientCert) return undefined;
+          const passphrase = (await context.secrets.get(certPassphraseKey(profile.name, profile.host))) ?? (await context.secrets.get(certPassphraseKey('', profile.host)));
+          try {
+            if (profile.tlsClientAuth === 'pfx') return { pfx: await fsp.readFile(profile.tlsClientCert), passphrase };
+            return { cert: await fsp.readFile(profile.tlsClientCert), key: profile.tlsClientKey ? await fsp.readFile(profile.tlsClientKey) : undefined, passphrase };
+          } catch (err) {
+            this.output.appendLine(`client certificate not readable: ${err instanceof Error ? err.message : String(err)}`);
+            return undefined;
+          }
+        },
         nextDeviceName: () => (this.deviceTemplate && /[*=]/.test(this.deviceTemplate) ? TerminalPanel.expandDevice(this.deviceTemplate) : undefined),
         password: async () => (await context.secrets.get(passwordKey(profile.name, profile.host))) ?? (await context.secrets.get(passwordKey('', profile.host))),
         log: (message) => this.output.appendLine(`[${label}] ${message}`),
@@ -224,7 +236,10 @@ export class TerminalPanel {
     const settings = this.liveSettings();
     this.refreshTitle();
     void this.loadWatermark(settings).then((watermarkImageData) => {
-      this.post({ type: 'config', config: { settings, keyOverlay: this.keyOverlay, watermarkImageData } });
+      const fontFace = settings.fontFile && settings.fontFamily
+        ? { family: settings.fontFamily, url: this.panel.webview.asWebviewUri(vscode.Uri.file(settings.fontFile)).toString() }
+        : undefined;
+      this.post({ type: 'config', config: { settings, keyOverlay: this.keyOverlay, watermarkImageData, fontFace } });
     });
   }
 

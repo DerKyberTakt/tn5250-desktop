@@ -38,11 +38,13 @@ type FieldSpec = { showIf?: Key; hideIf?: Key } & (
   | { kind: 'bool'; key: Key; label: string; note?: string }
   | { kind: 'select'; key: Key; label: string; options: Array<[string, string]> }
   | { kind: 'color'; key: Key; label: string }
-  | { kind: 'file'; key: Key; label: string }
+  | { kind: 'file'; key: Key; label: string; message: 'browseWatermark' | 'browseFile' }
+  | { kind: 'font'; key: Key; label: string }
+  | { kind: 'watermarkPreview' }
   | { kind: 'titleParts'; label: string }
   | { kind: 'heading'; label: string }
   | { kind: 'static'; label: string; text: string }
-  | { kind: 'button'; label: string; text: string; message: 'setPassword' | 'exportColors' | 'importColors' | 'resetColors' }
+  | { kind: 'button'; label: string; text: string; message: 'setPassword' | 'setCertPassphrase' | 'exportColors' | 'importColors' | 'resetColors' }
   | { kind: 'preview' }
 );
 
@@ -67,6 +69,12 @@ const HELP: Partial<Record<Key, string>> = {
   autoSignon: 'Fill the Sign On screen automatically: the user ID below, the password from the secret store, then Enter. Works at every system password level because it types into the screen.',
   signonUser: 'User profile typed into the Sign On screen. Example: USER1.',
   verifyCertificate: 'Check that the host certificate is valid and matches the host name. Turn off for self-signed certificates on internal systems.',
+  tlsClientAuth: 'Present a client certificate when the host requires one (ACS "Client Authentication"). EXPERIMENTAL: implemented per the TLS and IBM i telnet specifications but not yet verified against a host that enforces client certificates; report problems with the Output channel log.',
+  tlsClientCert: 'PKCS#12 (.pfx/.p12) bundle, or the PEM certificate when using separate files.',
+  tlsClientKey: 'PEM private key, only for the PEM mode. The passphrase, if any, is set with the button below and kept in the secret store.',
+  fontFile: 'Font file imported into the extension storage.',
+  watermarkOffsetX: 'Moves the watermark left (negative) or right (positive) from its position. Drag it in the preview.',
+  watermarkOffsetY: 'Moves the watermark up (negative) or down (positive) from its position. Drag it in the preview.',
   cursorStyle: 'Block fills the whole cell; Underline draws a line under it.',
   pointer: 'Mouse pointer shape over the screen.',
   cursorBlink: 'Blink the cursor. Off keeps it steady.',
@@ -80,7 +88,7 @@ const HELP: Partial<Record<Key, string>> = {
   autoFit: 'On: the font scales so the whole screen fits the tab (zoom with Ctrl+wheel, Ctrl+0 resets). Off: the fixed font size below is used.',
   fontSize: 'Font size in pixels when Font Scaling is off.',
   textRendering: 'Smooth = antialiased text. Crisp = cells snapped to whole pixels for sharper edges at small sizes.',
-  fontFamily: 'Any monospace font installed on this computer. Blank uses the VS Code editor font. Examples: Cascadia Mono, Consolas, Courier New, IBM Plex Mono.',
+  fontFamily: 'Pick an installed font (monospaced fonts are listed first; untick the filter to see every font) or Browse to import a .ttf/.otf file, which is copied into the extension storage and loaded only for the terminal. Blank uses the VS Code editor font.',
   fontStyle: 'Plain or bold text.',
   watermarkType: 'Show text or a picture faintly over the screen, for example to mark an environment.',
   watermarkText: 'Text of the watermark. Example: PRODUCTION.',
@@ -202,7 +210,11 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     group: 'Connection',
     fields: [
       YESNO('verifyCertificate', 'Server Authentication'),
-      { kind: 'static', label: 'Client Authentication', text: 'Not supported yet.' },
+      { kind: 'heading', label: 'Client Authentication' },
+      { kind: 'select', key: 'tlsClientAuth', label: 'Send a Certificate', options: [['none', 'No'], ['pfx', 'Yes, from a PKCS#12 file (.pfx / .p12)'], ['pem', 'Yes, from PEM certificate and key files']] },
+      { kind: 'file', key: 'tlsClientCert', label: 'Certificate file', message: 'browseFile', showIf: 'tlsClientAuth' },
+      { kind: 'file', key: 'tlsClientKey', label: 'Private key file (PEM)', message: 'browseFile', showIf: 'tlsClientAuth' },
+      { kind: 'button', label: 'Passphrase', text: 'Set Passphrase…', message: 'setCertPassphrase', showIf: 'tlsClientAuth' },
     ],
   },
   {
@@ -233,7 +245,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       YESNO('autoFit', 'Font Scaling'),
       { kind: 'number', key: 'fontSize', label: 'Fixed Font Size', min: 6, max: 72, hideIf: 'autoFit' },
       { kind: 'select', key: 'textRendering', label: 'Antialiasing', options: [['smooth', 'Yes (smooth)'], ['crisp', 'No (crisp, pixel-aligned)']] },
-      { kind: 'text', key: 'fontFamily', label: 'Font Name', placeholder: 'blank = editor font; e.g. Cascadia Mono, Consolas, Lucida Sans Typewriter' },
+      { kind: 'font', key: 'fontFamily', label: 'Font Name' },
       { kind: 'select', key: 'fontStyle', label: 'Font Style', options: [['plain', 'Plain'], ['bold', 'Bold']] },
       { kind: 'preview' },
     ],
@@ -245,10 +257,12 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     fields: [
       { kind: 'select', key: 'watermarkType', label: 'Watermark type', options: [['text', 'Text'], ['image', 'Image']] },
       { kind: 'text', key: 'watermarkText', label: 'Display text', placeholder: 'e.g. PRODUCTION' },
-      { kind: 'file', key: 'watermarkImage', label: 'Image location' },
+      { kind: 'file', key: 'watermarkImage', label: 'Image location', message: 'browseWatermark' },
       { kind: 'select', key: 'watermarkPosition', label: 'Position', options: [['center', 'Center'], ['topLeft', 'Top left'], ['topRight', 'Top right'], ['bottomLeft', 'Bottom left'], ['bottomRight', 'Bottom right']] },
-      { kind: 'number', key: 'watermarkPadding', label: 'Padding (px)', min: 0, max: 200 },
-      { kind: 'number', key: 'watermarkOpacity', label: 'Opacity (0 - 1)', min: 0, max: 1, step: 0.05 },
+      { kind: 'range', key: 'watermarkOffsetX', label: 'Horizontal offset (px)', min: -600, max: 600, step: 1 },
+      { kind: 'range', key: 'watermarkOffsetY', label: 'Vertical offset (px)', min: -400, max: 400, step: 1 },
+      { kind: 'range', key: 'watermarkOpacity', label: 'Opacity', min: 0, max: 1, step: 0.05 },
+      { kind: 'watermarkPreview' },
     ],
   },
   {
@@ -297,7 +311,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'number', key: 'enhancedCornerRadius', label: 'Corner radius', min: 0, max: 16 },
       YESNO('enhancedTextGlow', 'Text glow'),
       { kind: 'range', key: 'enhancedGlowStrength', label: 'Glow strength', min: 0, max: 20, step: 1, showIf: 'enhancedTextGlow' },
-      { kind: 'text', key: 'enhancedGlowColor', label: 'Glow colour', placeholder: 'blank = text colour', showIf: 'enhancedTextGlow' },
+      { kind: 'color', key: 'enhancedGlowColor', label: 'Glow colour', showIf: 'enhancedTextGlow' },
       YESNO('enhancedScanlines', 'Scanlines'),
       { kind: 'number', key: 'enhancedPadding', label: 'Padding around the screen', min: 0, max: 120 },
       { kind: 'preview' },
@@ -401,6 +415,16 @@ function setValue(key: Key, raw: string | boolean | number): void {
   }
 }
 
+let fontStyleEl: HTMLStyleElement | undefined;
+function applyFontFace(): void {
+  fontStyleEl?.remove();
+  fontStyleEl = undefined;
+  if (!fontFace) return;
+  fontStyleEl = document.createElement('style');
+  fontStyleEl.textContent = `@font-face { font-family: ${JSON.stringify(fontFace.family)}; src: url(${JSON.stringify(fontFace.url)}); }`;
+  document.head.append(fontStyleEl);
+}
+
 function infoBubble(text: string): HTMLElement {
   const i = el('span', 'info', '\u24D8');
   i.tabIndex = 0;
@@ -418,7 +442,7 @@ function searchFields(query: string): Array<{ page: (typeof PAGES)[number]; fiel
   const out: Array<{ page: (typeof PAGES)[number]; field: FieldSpec }> = [];
   for (const p of PAGES) {
     for (const f of p.fields) {
-      if (f.kind === 'heading' || f.kind === 'preview' || f.kind === 'static') continue;
+      if (f.kind === 'heading' || f.kind === 'preview' || f.kind === 'watermarkPreview' || f.kind === 'static') continue;
       const hay = [f.label, 'key' in f ? String(f.key) : '', 'key' in f ? (HELP[f.key] ?? '') : '', p.title, p.group].join(' ').toLowerCase();
       if (hay.includes(q)) out.push({ page: p, field: f });
     }
@@ -427,6 +451,10 @@ function searchFields(query: string): Array<{ page: (typeof PAGES)[number]; fiel
 }
 
 let searchQuery = '';
+let fonts: Array<{ family: string; monospace: boolean }> = [];
+let watermarkImageData: string | undefined;
+let fontFace: { family: string; url: string } | undefined;
+let monospaceOnly = true;
 
 function renderNav(): HTMLElement {
   const nav = el('div', 'nav');
@@ -463,6 +491,7 @@ function renderNav(): HTMLElement {
     }
     const b = el('button', 'page' + (p.id === page ? ' active' : ''), p.title);
     b.onclick = () => {
+      searchQuery = '';
       page = p.id;
       render();
     };
@@ -493,6 +522,14 @@ function colorInput(key: Key): HTMLElement {
     }
   };
   wrap.append(c, t);
+  if (key === 'enhancedGlowColor' || key === 'colorColumnSeparator') {
+    const clear = el('button', 'secondary', 'Use text colour');
+    clear.onclick = () => {
+      t.value = '';
+      setValue(key, '');
+    };
+    wrap.append(clear);
+  }
   return wrap;
 }
 
@@ -540,17 +577,20 @@ function updatePreview(): void {
     ruleLine: v.ruleLine,
     ruleLineStyle: v.ruleLineStyle,
     highlightActiveField: v.uiMode === 'classic',
-    watermarkType: 'text',
-    watermarkText: v.watermarkType === 'text' ? v.watermarkText : '',
+    watermarkType: v.watermarkType,
+    watermarkText: v.watermarkText,
     watermarkOpacity: v.watermarkOpacity,
     watermarkPosition: v.watermarkPosition,
-    watermarkPadding: 4,
+    watermarkPadding: Math.round(v.watermarkPadding / 2),
+    watermarkOffsetX: Math.round(v.watermarkOffsetX / 2),
+    watermarkOffsetY: Math.round(v.watermarkOffsetY / 2),
     underlineUrls: v.hotspotsUrl,
     keyButtons: v.hotspots3d || v.uiMode === 'enhanced',
     demoMode: v.demoMode,
     demoLabel: v.demoLabel,
     demoColor: v.demoColor,
   });
+  r.setWatermarkImage(watermarkImageData ?? '');
   const demo = buildDemoScreen(24, 80);
   // A few fake input fields so the preview shows boxes and the active field.
   demo.fields = [
@@ -566,6 +606,33 @@ function renderField(f: FieldSpec): HTMLElement | undefined {
   if (f.showIf && !values[f.showIf]) return undefined;
   if (f.hideIf && values[f.hideIf]) return undefined;
   if (f.kind === 'heading') return el('h4', 'heading', f.label);
+  if (f.kind === 'watermarkPreview') {
+    const box = el('div', 'preview');
+    const c = el('canvas');
+    c.id = 'preview';
+    c.title = 'Drag the watermark to adjust its offset';
+    box.append(c);
+    let drag: { x: number; y: number; ox: number; oy: number } | undefined;
+    c.onmousedown = (e) => {
+      drag = { x: e.clientX, y: e.clientY, ox: values.watermarkOffsetX, oy: values.watermarkOffsetY };
+    };
+    window.addEventListener('mousemove', (e) => {
+      if (!drag) return;
+      // The preview is 560 px wide for an 80-column screen; scale to full-size pixels.
+      const scale = 2;
+      values.watermarkOffsetX = Math.round(drag.ox + (e.clientX - drag.x) * scale);
+      values.watermarkOffsetY = Math.round(drag.oy + (e.clientY - drag.y) * scale);
+      dirty = true;
+      updatePreview();
+    });
+    window.addEventListener('mouseup', () => {
+      if (!drag) return;
+      drag = undefined;
+      render();
+    });
+    queueMicrotask(updatePreview);
+    return box;
+  }
   if (f.kind === 'preview') {
     const box = el('div', 'preview');
     const c = el('canvas');
@@ -669,8 +736,41 @@ function renderField(f: FieldSpec): HTMLElement | undefined {
     i.value = String(values[key] ?? '');
     i.oninput = () => setValue(key, i.value);
     const b = el('button', 'secondary', 'Browse…');
-    b.onclick = () => post({ type: 'browseWatermark' });
+    b.onclick = () => (f.message === 'browseFile' ? post({ type: 'browseFile', key: key as 'tlsClientCert' | 'tlsClientKey' }) : post({ type: 'browseWatermark' }));
     wrap.append(i, b);
+    row.append(wrap);
+    return row;
+  }
+  if (f.kind === 'font') {
+    const wrap = el('div', 'fontrow');
+    const s = el('select');
+    const current = String(values.fontFamily ?? '');
+    const add = (v: string, label: string): void => {
+      const o = el('option', undefined, label);
+      o.value = v;
+      o.selected = v === current;
+      s.append(o);
+    };
+    add('', 'Editor font (default)');
+    if (current && !fonts.some((x) => x.family === current)) add(current, `${current} (not installed)`);
+    for (const x of fonts) if (!monospaceOnly || x.monospace) add(x.family, x.monospace ? x.family : `${x.family} (proportional)`);
+    s.onchange = () => {
+      values.fontFile = '';
+      setValue('fontFamily', s.value);
+    };
+    const filter = el('label', 'check');
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = monospaceOnly;
+    cb.onchange = () => {
+      monospaceOnly = cb.checked;
+      render();
+    };
+    filter.append(cb, document.createTextNode('Monospaced fonts only'));
+    const browse = el('button', 'secondary', 'Browse font file…');
+    browse.onclick = () => post({ type: 'browseFont' });
+    wrap.append(s, filter, browse);
+    if (values.fontFile) wrap.append(el('span', 'note', `Imported: ${values.fontFile}`));
     row.append(wrap);
     return row;
   }
@@ -840,6 +940,10 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
   if (ev.data.type !== 'data') return;
   defaults = ev.data.defaults;
   sessions = ev.data.sessions;
+  if (ev.data.fonts) fonts = ev.data.fonts;
+  watermarkImageData = ev.data.watermarkImageData;
+  fontFace = ev.data.fontFace;
+  applyFontFace();
   if (ev.data.patch) {
     // Keep the user's unsaved edits and apply the browse/import result.
     Object.assign(values, ev.data.patch);

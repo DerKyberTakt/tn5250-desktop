@@ -9,6 +9,11 @@ export interface ConnectOptions {
   trustAnyCertificate?: boolean;
   timeoutMs?: number;
   keepAlive?: boolean;
+  /** Client authentication material (TLS only). */
+  pfx?: Buffer;
+  cert?: Buffer;
+  key?: Buffer;
+  passphrase?: string;
 }
 
 export interface ConnectionEvents {
@@ -40,6 +45,10 @@ export class HostConnection {
             port: options.port,
             servername: options.host,
             rejectUnauthorized: !options.trustAnyCertificate,
+            pfx: options.pfx,
+            cert: options.cert,
+            key: options.key,
+            passphrase: options.passphrase,
           })
         : net.connect({ host: options.host, port: options.port });
       this.socket = socket;
