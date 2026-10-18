@@ -23,11 +23,6 @@ export interface Theme {
     textGlow: boolean;
     glowStrength: number;
     glowColor: string;
-    textHighlight: boolean;
-    highlightStart: string;
-    highlightEnd: string;
-    highlightText: string;
-    highlightOpacity: number;
     scanlines: boolean;
     padding: number;
   };
@@ -60,11 +55,6 @@ export const DEFAULT_THEME: Theme = {
     textGlow: true,
     glowStrength: 3,
     glowColor: '',
-    textHighlight: false,
-    highlightStart: '#2b3a67',
-    highlightEnd: '#4a6fa5',
-    highlightText: 'auto',
-    highlightOpacity: 0.55,
     scanlines: false,
     padding: 24,
   },
@@ -348,8 +338,8 @@ export class Renderer {
       }
     }
     if (this.options.keyButtons) this.drawKeyButtons(enhanced);
-    const highlighted = enhanced && this.theme.enhanced.textHighlight ? this.drawTextHighlights() : undefined;
-    const highlightFg = this.highlightTextColor();
+    const selectedMask = enhanced ? this.drawSelectionBox() : undefined;
+    const selectionFg = this.selectionTextColor();
 
     let current = decodeAttribute(ATTR_NORMAL);
     const total = rows * cols;
@@ -387,8 +377,8 @@ export class Renderer {
       }
       const hidden = current.blink && this.options.blinkText === 'blink' && !this.blinkOn;
       if (ch !== NULL && ch !== ' ' && !hidden) {
-        const onBox = highlighted?.[i] === 1;
-        ctx.fillStyle = current.reverse ? this.theme.background : onBox ? highlightFg : fg;
+        const onBox = selectedMask?.[i] === 1;
+        ctx.fillStyle = current.reverse ? this.theme.background : onBox ? selectionFg : fg;
         if (glow && !onBox) {
           ctx.shadowColor = this.theme.enhanced.glowColor || fg;
           ctx.shadowBlur = this.theme.enhanced.glowStrength;
@@ -404,8 +394,8 @@ export class Renderer {
     if (this.options.demoMode) this.drawDemo(w, h);
     this.drawRuleLine(w, h);
 
-    // Selection rectangle.
-    if (this.selection) {
+    // Selection rectangle (Classic mode; Enhanced draws its box under the text).
+    if (this.selection && !enhanced) {
       const r = this.selection;
       ctx.fillStyle = 'rgba(120, 160, 255, 0.35)';
       ctx.fillRect(this.x(r.col1), this.y(r.row1), (r.col2 - r.col1 + 1) * this.cellW, (r.row2 - r.row1 + 1) * this.cellH);
@@ -495,72 +485,50 @@ export class Renderer {
     }
   }
 
-  /** Contrasting text colour for highlight boxes ('auto' = by gradient luminance). */
-  private highlightTextColor(): string {
+  /** Contrasting text colour for the enhanced selection box. */
+  private selectionTextColor(): string {
     const e = this.theme.enhanced;
-    if (e.highlightText && e.highlightText !== 'auto') return e.highlightText;
     const lum = (hex: string): number => {
       const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
       if (!m) return 0;
       const [r, g, b] = [parseInt(m[1] as string, 16), parseInt(m[2] as string, 16), parseInt(m[3] as string, 16)];
       return 0.2126 * r + 0.7152 * g + 0.0722 * b;
     };
-    const avg = (lum(e.highlightStart) + lum(e.highlightEnd)) / 2;
-    return avg > 150 ? '#101010' : '#ffffff';
+    return (lum(e.fieldBorder) + lum(e.activeField)) / 2 > 150 ? '#101010' : '#ffffff';
   }
 
   /**
-   * Enhanced highlight mode: every run of protected text (a label, a title, a
-   * menu line) sits on a gradient-filled outlined box. Returns a mask of the
-   * cells that are on a box so the text is drawn in the contrasting colour.
+   * Enhanced mode: the mouse selection is a gradient-filled, outlined box and
+   * the text on it is drawn in a contrasting colour. Returns the mask of cells
+   * inside the selection.
    */
-  private drawTextHighlights(): Uint8Array | undefined {
+  private drawSelectionBox(): Uint8Array | undefined {
     const s = this.screen;
-    if (!s) return undefined;
+    const r = this.selection;
+    if (!s || !r) return undefined;
     const ctx = this.ctx;
     const e = this.theme.enhanced;
-    const mask = new Uint8Array(s.rows * s.cols);
+    const x = this.x(r.col1) - 2;
+    const y = this.y(r.row1) + 1;
+    const w = (r.col2 - r.col1 + 1) * this.cellW + 4;
+    const h = (r.row2 - r.row1 + 1) * this.cellH - 2;
+    const g = ctx.createLinearGradient(x, y, x + w, y + h);
+    g.addColorStop(0, e.fieldBorder);
+    g.addColorStop(1, e.activeField);
     ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, e.highlightOpacity));
-    for (let row = 0; row < s.rows; row++) {
-      const base = row * s.cols;
-      let col = 0;
-      while (col < s.cols) {
-        // Skip blanks, nulls, attribute positions and cells inside input fields.
-        const cellIsText = (c: number): boolean => {
-          const idx = base + c;
-          const ch = s.text.charAt(idx);
-          return ch !== NULL && ch !== ' ' && this.fieldMask[idx] !== 1 && !isAttribute(s.attrs[idx] ?? 0);
-        };
-        if (!cellIsText(col)) {
-          col += 1;
-          continue;
-        }
-        let end = col;
-        // A run continues across single spaces; two blanks end it.
-        while (end < s.cols) {
-          if (cellIsText(end)) end += 1;
-          else if (end + 1 < s.cols && s.text.charAt(base + end) === ' ' && this.fieldMask[base + end] !== 1 && cellIsText(end + 1)) end += 1;
-          else break;
-        }
-        const x = this.x(col) - 3;
-        const y = this.y(row) + 1;
-        const w = (end - col) * this.cellW + 6;
-        const h = this.cellH - 2;
-        const g = ctx.createLinearGradient(x, y, x + w, y);
-        g.addColorStop(0, e.highlightStart);
-        g.addColorStop(1, e.highlightEnd);
-        this.roundRect(x, y, w, h, e.cornerRadius);
-        ctx.fillStyle = g;
-        ctx.fill();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = e.fieldBorder;
-        ctx.stroke();
-        mask.fill(1, base + col, base + end);
-        col = end;
-      }
-    }
+    ctx.globalAlpha = 0.75;
+    this.roundRect(x, y, w, h, e.cornerRadius);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = e.activeField;
+    ctx.shadowColor = e.activeField;
+    ctx.shadowBlur = 8;
+    ctx.stroke();
     ctx.restore();
+    const mask = new Uint8Array(s.rows * s.cols);
+    for (let row = r.row1; row <= r.row2; row++) mask.fill(1, row * s.cols + r.col1, row * s.cols + r.col2 + 1);
     return mask;
   }
 

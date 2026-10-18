@@ -837,33 +837,6 @@
           "maximum": 20,
           "description": "Enhanced UI: text glow radius in pixels (0 = none)."
         },
-        "tn5250.enhanced.textHighlight": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enhanced UI: draw protected text on gradient-filled outlined boxes with contrasting text."
-        },
-        "tn5250.enhanced.highlightStart": {
-          "type": "string",
-          "default": "#2b3a67",
-          "description": "Enhanced UI: highlight gradient start colour."
-        },
-        "tn5250.enhanced.highlightEnd": {
-          "type": "string",
-          "default": "#4a6fa5",
-          "description": "Enhanced UI: highlight gradient end colour."
-        },
-        "tn5250.enhanced.highlightText": {
-          "type": "string",
-          "default": "auto",
-          "description": "Enhanced UI: text colour on highlighted boxes; auto = black or white for contrast."
-        },
-        "tn5250.enhanced.highlightOpacity": {
-          "type": "number",
-          "default": 0.55,
-          "minimum": 0,
-          "maximum": 1,
-          "description": "Enhanced UI: opacity of the highlight boxes."
-        },
         "tn5250.connection.demoMode": {
           "type": "boolean",
           "default": false,

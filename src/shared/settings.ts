@@ -94,13 +94,6 @@ export interface TerminalSettings {
   enhancedGlowStrength: number;
   /** Empty = the text colour. */
   enhancedGlowColor: string;
-  /** Highlight mode: protected text gets a gradient-filled outlined box with contrasting text. */
-  enhancedTextHighlight: boolean;
-  enhancedHighlightStart: string;
-  enhancedHighlightEnd: string;
-  /** 'auto' picks black or white for contrast; otherwise a colour. */
-  enhancedHighlightText: string;
-  enhancedHighlightOpacity: number;
   enhancedScanlines: boolean;
   enhancedPadding: number;
 
@@ -213,11 +206,6 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   enhancedTextGlow: true,
   enhancedGlowStrength: 3,
   enhancedGlowColor: '',
-  enhancedTextHighlight: false,
-  enhancedHighlightStart: '#2b3a67',
-  enhancedHighlightEnd: '#4a6fa5',
-  enhancedHighlightText: 'auto',
-  enhancedHighlightOpacity: 0.55,
   enhancedScanlines: false,
   enhancedPadding: 24,
 
