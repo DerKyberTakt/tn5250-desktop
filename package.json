@@ -668,9 +668,9 @@
           "description": "TN5250: enhanced text glow. Set it on the TN5250 Settings page."
         },
         "tn5250.enhanced.glowColor": {
-          "default": "",
+          "default": "#00d060",
           "type": "string",
-          "description": "TN5250: enhanced glow color. Set it on the TN5250 Settings page."
+          "description": "Enhanced UI: text glow colour."
         },
         "tn5250.enhanced.scanlines": {
           "default": false,
@@ -885,13 +885,13 @@
         },
         "tn5250.enhanced.selectionStart": {
           "type": "string",
-          "default": "",
-          "description": "Enhanced UI: selection highlight gradient start (blank = field border colour)."
+          "default": "#4a6fa5",
+          "description": "Enhanced UI: selection highlight gradient start."
         },
         "tn5250.enhanced.selectionEnd": {
           "type": "string",
-          "default": "",
-          "description": "Enhanced UI: selection highlight gradient end (blank = active field colour)."
+          "default": "#7aa2ff",
+          "description": "Enhanced UI: selection highlight gradient end."
         },
         "tn5250.enhanced.selectionText": {
           "type": "string",

@@ -123,10 +123,10 @@ const HELP: Partial<Record<Key, string>> = {
   enhancedCornerRadius: 'Rounding of field boxes, text highlights and buttons, in pixels.',
   enhancedTextGlow: 'Soft glow behind text that is not on a highlight box.',
   enhancedGlowStrength: 'Glow radius in pixels. 0 = no glow, 3 = subtle, 10+ = strong.',
-  enhancedGlowColor: 'Glow colour. Blank uses the text colour.',
+  enhancedGlowColor: 'Colour of the text glow.',
   enhancedScanlines: 'Faint horizontal lines over the screen, like a CRT.',
-  enhancedSelectionStart: 'Left colour of the gradient drawn behind a mouse selection or a double-clicked word. Blank uses the field border colour.',
-  enhancedSelectionEnd: 'Right colour of the selection gradient. Blank uses the active field colour.',
+  enhancedSelectionStart: 'Left colour of the gradient drawn behind a mouse selection or a double-clicked word. ',
+  enhancedSelectionEnd: 'Right colour of the selection gradient. ',
   enhancedSelectionText: 'Text colour inside the selection. "auto" picks black or white for contrast; or enter a colour like #ffffff.',
   enhancedSelectionOpacity: 'Opacity of the selection highlight. 0 = invisible, 1 = solid.',
   enhancedPadding: 'Space around the screen in pixels so it floats like a card.',
@@ -530,14 +530,6 @@ function colorInput(key: Key): HTMLElement {
     }
   };
   wrap.append(c, t);
-  if (key === 'enhancedGlowColor' || key === 'colorColumnSeparator' || key === 'enhancedSelectionStart' || key === 'enhancedSelectionEnd') {
-    const clear = el('button', 'secondary', key.startsWith('enhancedSelection') ? 'Use default' : 'Use text colour');
-    clear.onclick = () => {
-      t.value = '';
-      setValue(key, '');
-    };
-    wrap.append(clear);
-  }
   return wrap;
 }
 

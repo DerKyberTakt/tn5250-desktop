@@ -101,7 +101,6 @@ export interface TerminalSettings {
   enhancedTextGlow: boolean;
   /** Glow radius in pixels (0 = off). */
   enhancedGlowStrength: number;
-  /** Empty = the text colour. */
   enhancedGlowColor: string;
   /** Selection highlight gradient; blank = field border to active field colour. */
   enhancedSelectionStart: string;
@@ -225,9 +224,9 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   enhancedCornerRadius: 4,
   enhancedTextGlow: true,
   enhancedGlowStrength: 3,
-  enhancedGlowColor: '',
-  enhancedSelectionStart: '',
-  enhancedSelectionEnd: '',
+  enhancedGlowColor: '#00d060',
+  enhancedSelectionStart: '#4a6fa5',
+  enhancedSelectionEnd: '#7aa2ff',
   enhancedSelectionText: 'auto',
   enhancedSelectionOpacity: 0.75,
   enhancedScanlines: false,
