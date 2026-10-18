@@ -213,7 +213,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   enhancedTextGlow: true,
   enhancedGlowStrength: 3,
   enhancedGlowColor: '',
-  enhancedTextHighlight: true,
+  enhancedTextHighlight: false,
   enhancedHighlightStart: '#2b3a67',
   enhancedHighlightEnd: '#4a6fa5',
   enhancedHighlightText: 'auto',

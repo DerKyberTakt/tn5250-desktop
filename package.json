@@ -839,7 +839,7 @@
         },
         "tn5250.enhanced.textHighlight": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Enhanced UI: draw protected text on gradient-filled outlined boxes with contrasting text."
         },
         "tn5250.enhanced.highlightStart": {

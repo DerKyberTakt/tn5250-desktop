@@ -60,7 +60,7 @@ export const DEFAULT_THEME: Theme = {
     textGlow: true,
     glowStrength: 3,
     glowColor: '',
-    textHighlight: true,
+    textHighlight: false,
     highlightStart: '#2b3a67',
     highlightEnd: '#4a6fa5',
     highlightText: 'auto',
