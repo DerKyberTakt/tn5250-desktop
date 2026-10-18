@@ -596,7 +596,8 @@ function updatePreview(): void {
     { start: 24 * 80 - 4 * 80 + 40, length: 10, bypass: false },
   ];
   demo.cursor = { row: 20, col: 20 };
-  r.resize(560, 240);
+  // 80 columns at ~7 px per cell fills the 560 px preview; keep rows readable.
+  r.resize(560, 24 * 8.4);
   r.setScreen(demo);
 }
 

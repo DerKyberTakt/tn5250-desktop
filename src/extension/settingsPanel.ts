@@ -47,7 +47,7 @@ export class SettingsPanel {
     const n = nonce();
     panel.webview.html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${panel.webview.cspSource}; script-src 'nonce-${n}'; font-src ${panel.webview.cspSource};">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${panel.webview.cspSource}; script-src 'nonce-${n}'; font-src ${panel.webview.cspSource}; img-src ${panel.webview.cspSource} data:;">
 <link rel="stylesheet" href="${style.toString()}"><title>TN5250 Settings</title></head>
 <body><div id="app"></div><script nonce="${n}" src="${script.toString()}"></script></body></html>`;
 
