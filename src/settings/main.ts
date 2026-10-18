@@ -141,7 +141,6 @@ const HELP: Partial<Record<Key, string>> = {
   hotspotsNumber: 'A click on a menu option number such as 15. enters that option and presses Enter.',
   hotspots3d: 'Draw function key labels as buttons so hotspots are easy to see. Always on in Enhanced mode.',
   enterAtCursorClick: 'A click moves the cursor and also presses Enter.',
-  doubleClick: 'What a double-click on the screen does.',
   titleSeparator: 'Text placed between the parts of the tab title. Example: " - ".',
   titleMaxLength: 'Longer titles are shortened with an ellipsis. 0 = no limit.',
   switchToNewTab: 'Focus a new tab as soon as it opens. Off: it opens in the background.',
@@ -355,7 +354,6 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       YESNO('hotspots3d', 'Show as 3-D buttons'),
       { kind: 'heading', label: 'Point-and-select' },
       YESNO('enterAtCursorClick', 'ENTER at cursor position (a click also presses Enter)'),
-      { kind: 'select', key: 'doubleClick', label: 'Double-click', options: [['none', 'Does nothing'], ['enter', 'Sends Enter']] },
     ],
   },
   {

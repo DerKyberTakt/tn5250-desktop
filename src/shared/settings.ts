@@ -134,7 +134,6 @@ export interface TerminalSettings {
 
   // Preferences
   mouseWheelPaging: boolean;
-  doubleClick: 'none' | 'enter';
   alarm: boolean;
   keyClick: boolean;
 
@@ -248,7 +247,6 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   warnOnCloseMultiple: false,
 
   mouseWheelPaging: true,
-  doubleClick: 'none',
   alarm: true,
   keyClick: false,
 

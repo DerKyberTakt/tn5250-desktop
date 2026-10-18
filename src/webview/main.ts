@@ -1,7 +1,7 @@
 import type { ConnectionStatus, HostToWebview, OiaState, TerminalConfig, WebviewToHost } from '../shared/protocol';
 import { DEFAULT_OIA } from '../shared/protocol';
 import { isTextKey, keyName, resolveAction, type Keymap } from '../shared/keymap';
-import { expandTabs, hotspotAt, urlAt } from '../shared/screenText';
+import { expandTabs, fieldRanges, hotspotAt, urlAt, wordAt } from '../shared/screenText';
 import { SETTINGS_DEFAULTS, effectiveKeymap } from '../shared/settings';
 import { describeKey, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
 import { Renderer } from './renderer';
@@ -180,6 +180,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
   const msg = ev.data;
   switch (msg.type) {
     case 'screen':
+      lastScreen = { rows: msg.screen.rows, cols: msg.screen.cols, fields: msg.screen.fields };
       renderer.setScreen(msg.screen);
       renderOia();
       break;
@@ -317,10 +318,22 @@ function handleHotspot(cell: { row: number; col: number }): boolean {
   return true;
 }
 
+let lastScreen: { rows: number; cols: number; fields: Array<{ start: number; length: number; bypass: boolean }> } | undefined;
+
+/** Double-click selects the word under the pointer, or the whole input field when inside one. */
 canvas.addEventListener('dblclick', (e) => {
-  if (config.settings.doubleClick !== 'enter') return;
   e.preventDefault();
-  post({ type: 'action', action: 'enter' });
+  const cell = cellFromMouse(e);
+  if (!cell || !lastScreen) return;
+  const field = fieldRanges(lastScreen).find((r) => r.row === cell.row && !r.bypass && cell.col >= r.col && cell.col < r.col + r.length);
+  if (field) {
+    renderer.selectRange(cell.row, field.col, field.col + field.length - 1);
+    return;
+  }
+  const line = renderer.rowText(cell.row);
+  const w = wordAt(line, cell.col);
+  if (!w.text) return;
+  renderer.selectRange(cell.row, w.start, w.start + w.text.length - 1);
 });
 
 let dragging = false;

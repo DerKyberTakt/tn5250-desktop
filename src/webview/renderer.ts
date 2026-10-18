@@ -657,6 +657,13 @@ export class Renderer {
     this.draw();
   }
 
+  /** Selects cells col1..col2 (inclusive) on a row, e.g. a double-clicked word. */
+  selectRange(row: number, col1: number, col2: number): void {
+    this.anchor = undefined;
+    this.selection = { row1: row, col1, row2: row, col2 };
+    this.draw();
+  }
+
   endSelection(): void {
     this.anchor = undefined;
   }

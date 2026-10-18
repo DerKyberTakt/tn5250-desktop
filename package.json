@@ -805,15 +805,6 @@
           "type": "boolean",
           "description": "TN5250: mouse wheel paging. Set it on the TN5250 Settings page."
         },
-        "tn5250.behavior.doubleClick": {
-          "default": "none",
-          "type": "string",
-          "enum": [
-            "none",
-            "enter"
-          ],
-          "description": "TN5250: double click. Set it on the TN5250 Settings page."
-        },
         "tn5250.behavior.alarm": {
           "default": true,
           "type": "boolean",
