@@ -31,7 +31,7 @@ Get the latest release from
 
 Builds are not code-signed yet, so Windows SmartScreen may say "Windows protected your
 PC" the first time: choose **More info > Run anyway**. Settings are kept in
-`%APPDATA%	n5250-terminal` and survive updates and uninstalls.
+`%APPDATA%\tn5250-terminal` and survive updates and uninstalls.
 
 ## Building
 
