@@ -211,7 +211,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   colorOiaError: '#ff5050',
   colorOiaBackground: '#101010',
   colorActiveField: '#1e2a3a',
-  colorRuleLine: '#505050',
+  colorRuleLine: '#9a9a9a',
   colorColumnSeparator: '',
 
   uiMode: 'classic',

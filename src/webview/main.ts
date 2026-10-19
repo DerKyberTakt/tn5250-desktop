@@ -160,7 +160,10 @@ function applyConfig(): void {
   root.setProperty('--demo-color', st.demoColor);
   renderer.setWatermarkImage(config.watermarkImageData ?? '');
   applyFontFace(config.fontFace);
-  canvas.style.cursor = st.pointer === 'crosshair' ? 'crosshair' : 'default';
+  const crosshair = st.pointer === 'crosshair';
+  canvas.style.cursor = crosshair ? 'crosshair' : 'default';
+  viewport.style.cursor = crosshair ? 'crosshair' : 'default';
+  document.body.classList.toggle('pointer-crosshair', crosshair);
   root.setProperty('--oia-status', st.colorOiaStatus);
   root.setProperty('--oia-info', st.colorOiaInfo);
   root.setProperty('--oia-attention', st.colorOiaAttention);

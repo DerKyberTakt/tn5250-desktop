@@ -609,7 +609,7 @@
           "description": "TN5250: color active field. Set it on the TN5250 Settings page."
         },
         "tn5250.colors.ruleLine": {
-          "default": "#505050",
+          "default": "#9a9a9a",
           "type": "string",
           "description": "TN5250: color rule line. Set it on the TN5250 Settings page."
         },

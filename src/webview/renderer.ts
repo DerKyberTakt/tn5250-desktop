@@ -45,7 +45,7 @@ export const DEFAULT_THEME: Theme = {
   },
   cursor: '#f0f0f0',
   activeField: '#1e2a3a',
-  ruleLine: '#505050',
+  ruleLine: '#9a9a9a',
   columnSeparator: '',
   blinkMapped: '#ff9040',
   enhanced: {
@@ -404,7 +404,6 @@ export class Renderer {
     if (this.options.underlineUrls) this.drawUrlUnderlines();
     this.drawWatermark(w, h);
     if (this.options.demoMode) this.drawDemo(w, h);
-    this.drawRuleLine(w, h);
 
     // Selection rectangle (Classic mode; Enhanced draws its box under the text).
     if (this.selection && !enhanced) {
@@ -431,6 +430,9 @@ export class Renderer {
         }
       }
     }
+
+    // The rule line goes on top so it is always visible.
+    this.drawRuleLine(w, h);
   }
 
   private drawBackground(w: number, h: number, enhanced: boolean): void {
@@ -584,10 +586,13 @@ export class Renderer {
     if (!s || !this.options.ruleLine) return;
     const cell = this.options.ruleLineFollowsCursor ? s.cursor : (this.ruleCell ?? s.cursor);
     const ctx = this.ctx;
+    ctx.save();
+    ctx.globalAlpha = 0.9;
     ctx.fillStyle = this.theme.ruleLine;
     const style = this.options.ruleLineStyle;
-    if (style !== 'vertical') ctx.fillRect(0, this.y(cell.row) + this.cellH - 1, w, 1);
-    if (style !== 'horizontal') ctx.fillRect(this.x(cell.col), 0, 1, h);
+    if (style !== 'vertical') ctx.fillRect(0, Math.round(this.y(cell.row) + this.cellH - 1), w, 1);
+    if (style !== 'horizontal') ctx.fillRect(Math.round(this.x(cell.col)), 0, 1, h);
+    ctx.restore();
   }
 
   /** Demo sessions: a tilted label across the screen and a coloured frame. */

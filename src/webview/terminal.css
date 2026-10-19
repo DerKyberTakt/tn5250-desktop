@@ -131,3 +131,9 @@ body.enhanced #viewport {
   padding: 0 8px;
   border-radius: 3px;
 }
+
+body.pointer-crosshair #terminal,
+body.pointer-crosshair #viewport,
+body.pointer-crosshair #screen {
+  cursor: crosshair !important;
+}
