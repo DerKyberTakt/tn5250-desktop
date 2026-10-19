@@ -267,6 +267,19 @@ function extendKeyboardSelection(key: string): void {
   renderer.extendSelection(next.row, next.col);
 }
 
+// Key-ups of keys the terminal takes are cancelled too: an unhandled F10 key-up
+// puts the window (Windows, or VS Code) into menu mode, and the next key press is
+// spent leaving it — F10 had to be pressed twice.
+window.addEventListener(
+  'keyup',
+  (e) => {
+    if (isPassThrough(toKeyEventInfo(e))) return;
+    e.preventDefault();
+    e.stopPropagation();
+  },
+  true,
+);
+
 window.addEventListener(
   'keydown',
   (e) => {
