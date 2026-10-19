@@ -10,6 +10,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      HAS_PAT: ${{ secrets.VSCE_PAT != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,7 +26,7 @@ jobs:
         with:
           files: tn5250-terminal.vsix
       - name: Publish to the Marketplace (skipped when VSCE_PAT is not set)
-        if: ${{ secrets.VSCE_PAT != '' }}
+        if: ${{ env.HAS_PAT == 'true' }}
         run: npx @vscode/vsce publish --no-dependencies --packagePath tn5250-terminal.vsix
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
