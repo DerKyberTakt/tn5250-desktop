@@ -59,6 +59,3 @@ fitted size and Ctrl+0 resets; the viewport scrolls when zoomed past the tab.
 - The webview runs with a strict Content Security Policy and only loads the
   extension's own bundled script and stylesheet.
 
-## Development notes
-
-- `npm run check` = typecheck (both tsconfigs), lint, tests.
