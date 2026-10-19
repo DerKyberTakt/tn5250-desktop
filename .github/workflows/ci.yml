@@ -7,18 +7,19 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Windows: the Wails host builds there without a C toolchain.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - run: npm ci
       - run: npm run check
-      - run: node esbuild.mjs --production
-      - run: npx @vscode/vsce package --no-dependencies -o tn5250-terminal.vsix
-      - uses: actions/upload-artifact@v4
-        with:
-          name: tn5250-terminal.vsix
-          path: tn5250-terminal.vsix
+      - run: npm run build -- --production
+      - run: go vet . ./internal/... ./cmd/...
+      - run: go test . ./internal/...
