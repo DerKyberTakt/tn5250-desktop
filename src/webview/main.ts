@@ -230,10 +230,43 @@ function beep(freq: number, seconds: number): void {
   }
 }
 
+/** Shift+Arrow selection, anchored at the cursor when it starts. */
+let keyAnchor: { row: number; col: number } | undefined;
+let keyEnd: { row: number; col: number } | undefined;
+function extendKeyboardSelection(key: string): void {
+  const size = renderer.size;
+  const cursor = renderer.cursor;
+  if (!size || !cursor) return;
+  if (!keyAnchor) {
+    keyAnchor = { ...cursor };
+    keyEnd = { ...cursor };
+    renderer.startSelection(cursor.row, cursor.col);
+  }
+  const end = keyEnd ?? cursor;
+  const next = { row: end.row, col: end.col };
+  if (key === 'ArrowUp') next.row = Math.max(0, end.row - 1);
+  if (key === 'ArrowDown') next.row = Math.min(size.rows - 1, end.row + 1);
+  if (key === 'ArrowLeft') next.col = Math.max(0, end.col - 1);
+  if (key === 'ArrowRight') next.col = Math.min(size.cols - 1, end.col + 1);
+  keyEnd = next;
+  renderer.extendSelection(next.row, next.col);
+}
+
 window.addEventListener(
   'keydown',
   (e) => {
     const info = toKeyEventInfo(e);
+    if (info.shift && !info.ctrl && !info.alt && !info.meta && /^Arrow(Up|Down|Left|Right)$/.test(info.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      extendKeyboardSelection(info.key);
+      logKey(`${keyName(info)}  -> select`);
+      return;
+    }
+    if (info.key !== 'Shift') {
+      keyAnchor = undefined;
+      keyEnd = undefined;
+    }
     if (isPassThrough(info)) {
       logKey(`${describeKey(info)}  [${info.code}]  -> VS Code`);
       return;
@@ -350,6 +383,8 @@ canvas.addEventListener('mousedown', (e) => {
   const cell = cellFromMouse(e);
   if (!cell) return;
   dragging = true;
+  keyAnchor = undefined;
+  keyEnd = undefined;
   renderer.startSelection(cell.row, cell.col);
 });
 window.addEventListener('mousemove', (e) => {

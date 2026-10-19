@@ -1404,6 +1404,26 @@
         "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
       },
       {
+        "key": "shift+up",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+down",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+left",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
+        "key": "shift+right",
+        "command": "tn5250.shadowKey",
+        "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
+      },
+      {
         "key": "ctrl+left",
         "command": "tn5250.shadowKey",
         "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
@@ -1482,20 +1502,6 @@
         "key": "ctrl+numpad_subtract",
         "command": "tn5250.shadowKey",
         "when": "activeWebviewPanelId == 'tn5250.terminal' && !inputFocus"
-      },
-      {
-        "key": "ctrl+alt+5",
-        "command": "tn5250.connectPrevious"
-      },
-      {
-        "key": "ctrl+alt+p",
-        "command": "tn5250.printScreen",
-        "when": "activeWebviewPanelId == 'tn5250.terminal'"
-      },
-      {
-        "key": "ctrl+alt+n",
-        "command": "tn5250.newTab",
-        "when": "activeWebviewPanelId == 'tn5250.terminal'"
       }
     ],
     "viewsContainers": {

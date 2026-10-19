@@ -124,7 +124,6 @@ export const ACS_KEYMAP: Keymap = {
   'Shift+Insert': 'dup',
   'Shift+Home': 'fieldMark',
   'Alt+End': 'eraseInput',
-  'Shift+ArrowDown': 'newline',
   Pause: 'clear',
   'Ctrl+Pause': 'print',
   PrintScreen: 'printScreen',
