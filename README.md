@@ -18,6 +18,21 @@ It shares its TN5250 engine and terminal UI with the
 - No telemetry. Connections go only to the hosts you enter. Passwords are kept in the
   operating system credential store.
 
+## Download
+
+Get the latest release from
+[Releases](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest):
+
+- `tn5250-terminal-setup-x64.exe`: installs for the current user only, no administrator
+  rights needed (`%LOCALAPPDATA%\Programs\TN5250 Terminal`, Start menu and desktop
+  shortcuts, uninstall from Settings > Apps). Silent install: `/S`.
+- `tn5250-terminal-portable-x64.zip`: one exe to run from any folder.
+- `SHA256SUMS`: checksums of both (`Get-FileHash <file>` in PowerShell).
+
+Builds are not code-signed yet, so Windows SmartScreen may say "Windows protected your
+PC" the first time: choose **More info > Run anyway**. Settings are kept in
+`%APPDATA%	n5250-terminal` and survive updates and uninstalls.
+
 ## Building
 
 Requirements: Node.js 20+, Go 1.27+, and the Wails CLI

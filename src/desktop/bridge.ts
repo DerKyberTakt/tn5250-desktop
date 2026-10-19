@@ -62,6 +62,7 @@ interface GoApp {
   NetClose(id: string): Promise<void>;
   SystemInfo(): Promise<SystemInfo>;
   LaunchArgs(): Promise<string[]>;
+  Version(): Promise<string>;
   SettingsLoad(): Promise<string>;
   SettingsSave(text: string): Promise<void>;
   SettingsFilePath(): Promise<string>;

@@ -694,7 +694,11 @@ class Shell implements TabHost, IfsHost {
   }
 
   private async about(): Promise<void> {
+    const version = await goApp()
+      .Version()
+      .catch(() => '');
     await messageDialog(`About ${APP_NAME}`, [
+      ...(version ? [`Version ${version}`] : []),
       'A 5250 terminal emulator for IBM i. Free and open source (MIT).',
       PROJECT_URL,
       'No telemetry. Connections go only to the hosts you enter.',
