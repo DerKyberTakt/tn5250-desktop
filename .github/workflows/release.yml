@@ -4,6 +4,9 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -20,6 +23,8 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: tn5250-terminal.vsix
-      - run: npx @vscode/vsce publish --no-dependencies --packagePath tn5250-terminal.vsix
+      - name: Publish to the Marketplace (skipped when VSCE_PAT is not set)
+        if: ${{ env.VSCE_PAT != '' }}
+        run: npx @vscode/vsce publish --no-dependencies --packagePath tn5250-terminal.vsix
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
