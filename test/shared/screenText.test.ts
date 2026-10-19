@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expandTabs, fieldRanges, hotspotAt, keyLabelsIn, urlAt, urlsIn, wordAt } from '../../src/shared/screenText';
+import { expandTabs, fieldRanges, hotspotAt, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, wordAt } from '../../src/shared/screenText';
 import { SETTINGS_DEFAULTS, buildTitle, diffSettings, resolveSettings } from '../../src/shared/settings';
 
 describe('fieldRanges', () => {
@@ -10,6 +10,46 @@ describe('fieldRanges', () => {
       { row: 1, col: 0, length: 3, fieldIndex: 0, bypass: false },
       { row: 2, col: 0, length: 3, fieldIndex: 1, bypass: true },
     ]);
+  });
+});
+
+describe('markedFieldRanges', () => {
+  const attrs = (cells: Record<number, number>): number[] => {
+    const a = new Array<number>(40).fill(0);
+    for (const [i, v] of Object.entries(cells)) a[Number(i)] = v;
+    return a;
+  };
+
+  it('ends the box where a plain attribute inside the field ends the underline', () => {
+    // Underlined field 1..30, plain attribute at cell 5 (data length 4).
+    const r = markedFieldRanges({ rows: 2, cols: 20, fields: [{ start: 1, length: 30, bypass: false }], attrs: attrs({ 0: 0x24, 5: 0x20 }) });
+    expect(r).toEqual([{ row: 0, col: 1, length: 4, fieldIndex: 0, bypass: false }]);
+  });
+
+  it('keeps the whole field when nothing inside changes the attribute', () => {
+    const r = markedFieldRanges({ rows: 2, cols: 20, fields: [{ start: 1, length: 6, bypass: false }], attrs: attrs({ 0: 0x24, 7: 0x20 }) });
+    expect(r).toEqual([{ row: 0, col: 1, length: 6, fieldIndex: 0, bypass: false }]);
+  });
+
+  it('keeps unmarked fields whole (nondisplay password, plain)', () => {
+    const r = markedFieldRanges({
+      rows: 2,
+      cols: 20,
+      fields: [
+        { start: 1, length: 10, bypass: false },
+        { start: 22, length: 5, bypass: false },
+      ],
+      attrs: attrs({ 0: 0x27, 21: 0x20 }),
+    });
+    expect(r.map((x) => [x.col, x.length])).toEqual([
+      [1, 10],
+      [2, 5],
+    ]);
+  });
+
+  it('follows a reverse-image field and continues across a colour change', () => {
+    const r = markedFieldRanges({ rows: 1, cols: 40, fields: [{ start: 1, length: 12, bypass: false }], attrs: attrs({ 0: 0x21, 6: 0x2c, 10: 0x20 }) });
+    expect(r.map((x) => [x.col, x.length])).toEqual([[1, 9]]);
   });
 });
 

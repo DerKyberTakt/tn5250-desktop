@@ -1,3 +1,4 @@
+import { ATTR_NORMAL, decodeAttribute, isAttribute } from '../engine/attributes';
 import type { KeyAction } from './keymap';
 import type { ScreenSnapshot } from './protocol';
 
@@ -28,6 +29,49 @@ export function fieldRanges(s: Pick<ScreenSnapshot, 'rows' | 'cols' | 'fields'>)
     }
   });
   return out;
+}
+
+/**
+ * The parts of each field run the host actually marks as input: cells whose
+ * attribute in effect is underlined or reverse. Programs such as WRKDBF define
+ * a long input field and then write a plain attribute after the data length,
+ * so ACS shows only the data length as the field; boxes should do the same.
+ * A field with no marked cell at all (nondisplay password, plain field) is
+ * kept whole, so it still gets a box.
+ */
+export function markedFieldRanges(s: Pick<ScreenSnapshot, 'rows' | 'cols' | 'fields' | 'attrs'>): FieldRange[] {
+  const all = fieldRanges(s);
+  const runs: FieldRange[] = [];
+  for (const r of all) {
+    const start = r.row * s.cols + r.col;
+    let attr = ATTR_NORMAL;
+    for (let i = start - 1; i >= 0; i--) {
+      if (isAttribute(s.attrs[i] ?? 0)) {
+        attr = s.attrs[i]!;
+        break;
+      }
+    }
+    let marked = isMarked(attr);
+    let runStart = -1;
+    for (let c = 0; c <= r.length; c++) {
+      if (c < r.length && isAttribute(s.attrs[start + c] ?? 0)) marked = isMarked(s.attrs[start + c]!);
+      const on = c < r.length && marked;
+      if (on && runStart < 0) runStart = c;
+      if (!on && runStart >= 0) {
+        runs.push({ ...r, col: r.col + runStart, length: c - runStart });
+        runStart = -1;
+      }
+    }
+  }
+  const markedFields = new Set(runs.map((r) => r.fieldIndex));
+  return [...runs, ...all.filter((r) => !markedFields.has(r.fieldIndex))].sort(
+    (x, y) => x.fieldIndex - y.fieldIndex || x.row - y.row || x.col - y.col,
+  );
+}
+
+function isMarked(attr: number): boolean {
+  const a = decodeAttribute(attr);
+  return !a.nondisplay && (a.underline || a.reverse);
 }
 
 export function rowText(s: Pick<ScreenSnapshot, 'cols' | 'text'>, row: number): string {

@@ -72,6 +72,7 @@ function renderOia(): void {
   left.append(pill(statusText(), status === 'connected' ? 'status' : 'attention'));
   if (oia.deviceName) left.append(pill(oia.deviceName, 'info'));
   if (oia.inputInhibited === 'system') left.append(pill('X SYSTEM', 'attention'));
+  if (oia.queuedKeys) left.append(pill(`Type-ahead ${oia.queuedKeys}`, 'info'));
   if (oia.inputInhibited === 'error') left.append(pill('X II  (Reset = Left Ctrl, or click / arrow keys)', 'error'));
   if (oia.insert) left.append(pill('INS', 'info'));
   if (oia.messageWaiting) left.append(pill('MW', 'info'));

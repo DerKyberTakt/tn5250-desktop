@@ -143,6 +143,7 @@ export interface TerminalSettings {
 
   // Preferences
   mouseWheelPaging: boolean;
+  typeAhead: boolean;
   alarm: boolean;
   keyClick: boolean;
 
@@ -262,6 +263,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   warnOnCloseMultiple: false,
 
   mouseWheelPaging: true,
+  typeAhead: true,
   alarm: true,
   keyClick: false,
 

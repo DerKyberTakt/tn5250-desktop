@@ -1,6 +1,6 @@
 import { ATTR_NORMAL, decodeAttribute, isAttribute, type Color } from '../engine/attributes';
 import type { ScreenSnapshot } from '../shared/protocol';
-import { fieldRanges, keyLabelsIn, rowText, urlsIn, type FieldRange } from '../shared/screenText';
+import { fieldRanges, keyLabelsIn, markedFieldRanges, rowText, urlsIn, type FieldRange } from '../shared/screenText';
 import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
 import { highlightScreen, Tok } from '../shared/sourceHighlight';
 
@@ -133,6 +133,8 @@ export class Renderer {
   /** 1 where the cell belongs to a field (decorations apply even to null cells). */
   private fieldMask = new Uint8Array(0);
   private ranges: FieldRange[] = [];
+  /** Field runs as the host marks them (underline/reverse); enhanced boxes follow these. */
+  private boxRanges: FieldRange[] = [];
   /** Per-cell SEU token kinds (undefined when the screen is not SEU). */
   private syntax: Uint8Array | undefined;
   private options: RendererOptions = {
@@ -208,6 +210,7 @@ export class Renderer {
     for (const f of screen.fields) mask.fill(1, f.start, Math.min(mask.length, f.start + f.length));
     this.fieldMask = mask;
     this.ranges = fieldRanges(screen);
+    this.boxRanges = markedFieldRanges(screen);
     this.syntax = highlightScreen(screen);
     if (resized) this.layout();
     this.draw();
@@ -523,7 +526,7 @@ export class Renderer {
     const ctx = this.ctx;
     const e = this.theme.enhanced;
     const fields = this.screen?.fields ?? [];
-    for (const r of this.ranges) {
+    for (const r of this.boxRanges) {
       if (r.bypass) continue;
       const active = r.fieldIndex === activeIndex;
       if ((fields[r.fieldIndex]?.length ?? 0) > BOX_MAX_FIELD_LENGTH) {

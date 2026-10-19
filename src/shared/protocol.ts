@@ -43,6 +43,8 @@ export interface OiaState {
   deviceName: string;
   /** Short status text shown at the right of the OIA (e.g. an error code). */
   message: string;
+  /** Keys typed ahead while the keyboard is locked, waiting to be replayed. */
+  queuedKeys?: number;
 }
 
 export interface TerminalConfig {

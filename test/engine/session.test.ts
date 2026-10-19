@@ -26,6 +26,45 @@ describe('Session5250', () => {
     expect(oia.messageWaiting).toBe(false);
   });
 
+  it('buffers keys while the keyboard is locked and replays them on unlock', () => {
+    const sent: string[] = [];
+    const session = new Session5250({ screenSize: '27x132', codePage: 37 }, { send: (b) => sent.push(bytesToHex(b)) });
+    for (const ev of loadCapture('pub400-signon-3477fc').events) {
+      if (ev.dir === 'in') session.feed(hexToBytes(ev.hex));
+    }
+    const first = session.screen.fields.find((f) => !f.bypass)!;
+    session.screen.cursor = first.start;
+    session.press('enter');
+    expect(session.state.inputInhibited).toBe('system');
+    const sentAfterEnter = sent.length;
+    session.press('home');
+    session.type('AB');
+    session.press('enter');
+    session.type('C');
+    expect(session.queuedKeys).toBe(4);
+    expect(session.oia(true).queuedKeys).toBe(4);
+    expect(sent.length).toBe(sentAfterEnter);
+
+    // Write to Display, CC2 0x08 = unlock keyboard: replays up to the next Enter.
+    session.feed(hexToBytes('000e12a00000040000030411000' + '8' + 'ffef'));
+    expect(sent.length).toBe(sentAfterEnter + 1);
+    expect(session.state.inputInhibited).toBe('system');
+    expect(session.queuedKeys).toBe(1);
+    const text = session.snapshot().text;
+    expect(text.slice(first.start, first.start + 2)).toBe('AB');
+
+    // Reset throws the rest away.
+    session.press('reset');
+    expect(session.queuedKeys).toBe(0);
+  });
+
+  it('drops keys while locked when type-ahead is off', () => {
+    const session = new Session5250({ typeAhead: false }, { send: () => undefined });
+    expect(session.state.inputInhibited).toBe('system');
+    session.type('X');
+    expect(session.queuedKeys).toBe(0);
+  });
+
   it('answers Cancel Invite and tracks the message light opcodes', () => {
     const sent: string[] = [];
     const session = new Session5250({}, { send: (b) => sent.push(bytesToHex(b)) });

@@ -67,6 +67,7 @@ export class SessionController {
         screenSize: this.profile.screenSize,
         codePage: this.profile.codePage,
         deviceName: this.profile.deviceName,
+        typeAhead: this.profile.typeAhead,
       },
       {
         send: (bytes) => {

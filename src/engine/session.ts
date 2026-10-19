@@ -19,7 +19,17 @@ export interface SessionOptions {
   screenSize?: '24x80' | '27x132';
   codePage?: number;
   deviceName?: string;
+  /** Keep keys pressed while the keyboard is locked (X SYSTEM) and replay them when the host unlocks it. */
+  typeAhead?: boolean;
 }
+
+/** Most keys kept while the keyboard is locked; ACS keeps a similar small buffer. */
+export const TYPE_AHEAD_LIMIT = 256;
+
+type QueuedKey = { kind: 'press'; action: KeyAction } | { kind: 'type'; text: string };
+
+/** Keys that act immediately even while the keyboard is locked. */
+const IMMEDIATE_ACTIONS = new Set<KeyAction>(['reset', 'attn', 'sysreq', 'printScreen']);
 
 export interface SessionEvents {
   /** Bytes to write to the socket. */
@@ -46,6 +56,8 @@ export class Session5250 {
   readonly keyboard: Keyboard;
   private readonly telnet: TelnetSession;
   deviceName = '';
+  typeAhead: boolean;
+  private queue: QueuedKey[] = [];
 
   constructor(
     options: SessionOptions,
@@ -54,6 +66,7 @@ export class Session5250 {
     this.codePage = CodePage.get(options.codePage ?? 37);
     this.terminalType = options.screenSize === '27x132' ? 'IBM-3477-FC' : 'IBM-3179-2';
     this.deviceName = options.deviceName ?? '';
+    this.typeAhead = options.typeAhead ?? true;
     this.processor = new DataStreamProcessor(
       this.screen,
       this.state,
@@ -87,6 +100,8 @@ export class Session5250 {
 
   /** Presses a named key. */
   press(action: KeyAction): void {
+    if (action === 'reset') this.queue = [];
+    if (!IMMEDIATE_ACTIONS.has(action) && this.enqueue({ kind: 'press', action })) return;
     this.keyboard.press(action);
     this.events.update?.();
   }
@@ -102,8 +117,36 @@ export class Session5250 {
 
   /** Types text into the current field. */
   type(text: string): void {
+    if (this.enqueue({ kind: 'type', text })) return;
     this.keyboard.type(text);
     this.events.update?.();
+  }
+
+  /** Number of keys waiting for the host to unlock the keyboard. */
+  get queuedKeys(): number {
+    return this.queue.length;
+  }
+
+  /** Keeps a key while the host has the keyboard locked; false if it should run now. */
+  private enqueue(key: QueuedKey): boolean {
+    if (!this.typeAhead || this.state.inputInhibited !== 'system') return false;
+    if (this.queue.length < TYPE_AHEAD_LIMIT) this.queue.push(key);
+    this.events.update?.();
+    return true;
+  }
+
+  /**
+   * Replays type-ahead once the host unlocks the keyboard. Stops when a key
+   * locks it again (an AID key) and leaves the rest for the next unlock; an
+   * operator error or host error message discards the rest, as ACS does.
+   */
+  private drainQueue(): void {
+    while (this.queue.length > 0 && this.state.inputInhibited === 'none') {
+      const key = this.queue.shift()!;
+      if (key.kind === 'press') this.keyboard.press(key.action);
+      else this.keyboard.type(key.text);
+    }
+    if (this.state.inputInhibited === 'error') this.queue = [];
   }
 
   snapshot(): ScreenSnapshot {
@@ -118,6 +161,7 @@ export class Session5250 {
       messageWaiting: this.state.messageWaiting,
       deviceName: this.deviceName,
       message: this.state.errorMessage,
+      queuedKeys: this.queue.length,
     };
   }
 
@@ -152,6 +196,7 @@ export class Session5250 {
         this.sendRecord(response.opcode, 0, response.data);
       }
     }
+    this.drainQueue();
     this.events.update?.();
   }
 }

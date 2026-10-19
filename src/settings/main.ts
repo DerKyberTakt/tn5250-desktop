@@ -153,6 +153,8 @@ const HELP: Partial<Record<Key, string>> = {
   warnOnCloseMultiple: 'Ask for confirmation when TN5250: Disconnect All would disconnect more than one tab.',
   alarm: 'Play a short tone when the host sounds the alarm.',
   keyClick: 'Play a quiet click for every key press.',
+  typeAhead:
+    'Keys pressed while the keyboard is locked (X SYSTEM) are kept and replayed when the host unlocks it, so you can type the next screen before it appears. An error message or Reset discards them.',
   mouseWheelPaging: 'The mouse wheel presses Page Up and Page Down (Roll). Ctrl+wheel always zooms.',
 };
 
@@ -404,7 +406,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     id: 'behavior',
     title: 'Behavior',
     group: 'Preferences',
-    fields: [YESNO('mouseWheelPaging', 'Mouse Wheel = Page Up / Down')],
+    fields: [YESNO('mouseWheelPaging', 'Mouse Wheel = Page Up / Down'), YESNO('typeAhead', 'Type-ahead (buffer keys while locked)')],
   },
 ];
 
