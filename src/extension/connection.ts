@@ -22,8 +22,18 @@ export interface ConnectionEvents {
   error(err: Error): void;
 }
 
+/** What a session needs from a connection; the Node socket below or a native one in a desktop shell. */
+export interface Transport {
+  connect(options: ConnectOptions): Promise<void>;
+  write(bytes: Uint8Array): void;
+  close(): void;
+  readonly open: boolean;
+}
+
+export type TransportFactory = (events: ConnectionEvents) => Transport;
+
 /** A raw TCP or TLS connection to the telnet port of an IBM i. */
-export class HostConnection {
+export class HostConnection implements Transport {
   private socket: net.Socket | undefined;
 
   constructor(private readonly events: ConnectionEvents) {}

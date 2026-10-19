@@ -2,7 +2,7 @@ import { Session5250 } from '../engine/session';
 import type { KeyAction } from '../shared/keymap';
 import type { ConnectionStatus, OiaState, ScreenSnapshot } from '../shared/protocol';
 import type { TerminalSettings } from '../shared/settings';
-import { HostConnection } from './connection';
+import type { Transport, TransportFactory } from './connection';
 
 export interface SessionControllerEvents {
   screen(snapshot: ScreenSnapshot, oia: OiaState): void;
@@ -38,7 +38,7 @@ function hex(bytes: Uint8Array): string {
 /** Owns one host connection and its 5250 session; feeds screens to a panel. */
 export class SessionController {
   private session: Session5250;
-  private connection: HostConnection | undefined;
+  private connection: Transport | undefined;
   private status: ConnectionStatus = 'idle';
   private trace: TraceEvent[] = [];
   private traceStart = 0;
@@ -54,6 +54,7 @@ export class SessionController {
   constructor(
     readonly profile: TerminalSettings,
     private readonly events: SessionControllerEvents,
+    private readonly createTransport: TransportFactory,
   ) {
     this.session = this.createSession();
   }
@@ -99,7 +100,7 @@ export class SessionController {
     this.trace = [];
     this.traceStart = Date.now();
     this.setStatus('connecting', `${this.profile.host}:${this.profile.port}`);
-    const connection = new HostConnection({
+    const connection = this.createTransport({
       data: (bytes) => {
         this.record('in', bytes);
         this.session.feed(bytes);

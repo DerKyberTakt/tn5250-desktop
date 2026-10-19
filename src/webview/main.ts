@@ -1,6 +1,6 @@
 import type { ConnectionStatus, HostToWebview, OiaState, TerminalConfig, WebviewToHost } from '../shared/protocol';
 import { DEFAULT_OIA } from '../shared/protocol';
-import { isTextKey, keyName, resolveAction, type Keymap } from '../shared/keymap';
+import { classifyKey, keyName, type Keymap } from '../shared/keymap';
 import { expandTabs, fieldRanges, hotspotAt, urlAt, wordAt } from '../shared/screenText';
 import { SETTINGS_DEFAULTS, effectiveKeymap } from '../shared/settings';
 import { describeKey, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
@@ -149,6 +149,8 @@ function applyConfig(): void {
     watermarkOpacity: st.watermarkOpacity,
     watermarkPosition: st.watermarkPosition,
     watermarkPadding: st.watermarkPadding,
+    watermarkX: st.watermarkX,
+    watermarkY: st.watermarkY,
     watermarkOffsetX: st.watermarkOffsetX,
     watermarkOffsetY: st.watermarkOffsetY,
     underlineUrls: st.hotspotsUrl,
@@ -206,6 +208,9 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
       break;
     case 'alarm':
       beep(880, 0.15);
+      break;
+    case 'paste':
+      pasteText(msg.text);
       break;
   }
 });
@@ -289,20 +294,23 @@ window.addEventListener(
       logKey(`${keyName(info)}  -> copy`);
       return;
     }
+    // Paste: the keydown is cancelled above, so the browser never fires its own paste event;
+    // the host reads the clipboard and answers with a 'paste' message.
+    if ((info.ctrl && !info.shift && !info.alt && info.key.toLowerCase() === 'v') || (info.shift && !info.ctrl && !info.alt && info.key === 'Insert')) {
+      post({ type: 'paste' });
+      logKey(`${keyName(info)}  -> paste`);
+      return;
+    }
     if (config.settings.keyClick) beep(1200, 0.02);
-    if (isTextKey(info)) {
+    const result = classifyKey(info, keymap);
+    if (result.kind === 'text') {
       logKey(`${describeKey(info)}  -> text`);
-      post({ type: 'text', text: info.key });
-      return;
-    }
-    const action = resolveAction(info, keymap);
-    if (action === 'printScreen') {
+      post({ type: 'text', text: result.text });
+    } else if (result.kind === 'action' && result.action === 'printScreen') {
       post({ type: 'printScreen' });
-      return;
-    }
-    if (action) {
-      logKey(`${keyName(info)}  -> ${action}`);
-      post({ type: 'action', action });
+    } else if (result.kind === 'action') {
+      logKey(`${keyName(info)}  -> ${result.action}`);
+      post({ type: 'action', action: result.action });
     } else {
       logKey(`${keyName(info)}  -> (unmapped)`);
     }
@@ -407,10 +415,9 @@ window.addEventListener('mouseup', (e) => {
   if (config.settings.enterAtCursorClick) post({ type: 'action', action: 'enter' });
 });
 
-document.addEventListener('paste', (e) => {
-  const text = e.clipboardData?.getData('text/plain');
+/** Types clipboard text into the screen, line by line, honouring the paste settings. */
+function pasteText(text: string): void {
   if (!text) return;
-  e.preventDefault();
   const st = config.settings;
   const start = renderer.cursor;
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
@@ -423,6 +430,14 @@ document.addEventListener('paste', (e) => {
   });
   if (st.pasteStopAtProtected) post({ type: 'action', action: 'reset' });
   if (!st.pasteMoveCursorToEnd && start) post({ type: 'click', row: start.row, col: start.col });
+}
+
+// Paste from a context menu or the host's Edit > Paste.
+document.addEventListener('paste', (e) => {
+  const text = e.clipboardData?.getData('text/plain');
+  if (!text) return;
+  e.preventDefault();
+  pasteText(text);
 });
 
 terminal.focus();

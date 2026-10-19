@@ -1,0 +1,61 @@
+/* The VS Code theme variables the shared terminal and settings styles read, for the desktop app. */
+:root {
+  color-scheme: light dark;
+  --vscode-font-family: "Segoe UI", system-ui, "Noto Sans", "DejaVu Sans", sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-editor-font-family: "Cascadia Mono", Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  --vscode-foreground: #1f1f1f;
+  --vscode-editor-background: #f3f3f3;
+  --vscode-panel-border: #c8c8c8;
+  --vscode-input-background: #ffffff;
+  --vscode-input-foreground: #1f1f1f;
+  --vscode-input-border: #b5b5b5;
+  --vscode-dropdown-background: #ffffff;
+  --vscode-dropdown-foreground: #1f1f1f;
+  --vscode-button-background: #1f5fa8;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-secondaryBackground: #e1e1e1;
+  --vscode-button-secondaryForeground: #1f1f1f;
+  --vscode-textLink-foreground: #1f5fa8;
+  --vscode-list-hoverBackground: #e5eef8;
+  --vscode-list-activeSelectionBackground: #cce0f5;
+  --vscode-list-activeSelectionForeground: #000000;
+  --vscode-badge-background: #1f5fa8;
+  --vscode-badge-foreground: #ffffff;
+  --vscode-editorHoverWidget-background: #ffffe1;
+  --vscode-editorHoverWidget-foreground: #1f1f1f;
+  --vscode-editorHoverWidget-border: #a0a0a0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --vscode-foreground: #d4d4d4;
+    --vscode-editor-background: #1e1e1e;
+    --vscode-panel-border: #3c3c3c;
+    --vscode-input-background: #2a2a2a;
+    --vscode-input-foreground: #e0e0e0;
+    --vscode-input-border: #4a4a4a;
+    --vscode-dropdown-background: #2a2a2a;
+    --vscode-dropdown-foreground: #e0e0e0;
+    --vscode-button-background: #2f6fb8;
+    --vscode-button-foreground: #ffffff;
+    --vscode-button-secondaryBackground: #3a3a3a;
+    --vscode-button-secondaryForeground: #e0e0e0;
+    --vscode-textLink-foreground: #6aa7e8;
+    --vscode-list-hoverBackground: #2a2d2e;
+    --vscode-list-activeSelectionBackground: #094771;
+    --vscode-list-activeSelectionForeground: #ffffff;
+    --vscode-badge-background: #2f6fb8;
+    --vscode-badge-foreground: #ffffff;
+    --vscode-editorHoverWidget-background: #252526;
+    --vscode-editorHoverWidget-foreground: #d4d4d4;
+    --vscode-editorHoverWidget-border: #454545;
+  }
+}
+
+body {
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}

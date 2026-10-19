@@ -70,7 +70,9 @@ export type HostToWebview =
   | { type: 'oia'; oia: OiaState }
   | { type: 'config'; config: TerminalConfig }
   | { type: 'status'; status: ConnectionStatus; detail: string }
-  | { type: 'alarm' };
+  | { type: 'alarm' }
+  /** Clipboard text read by the host, in answer to a 'paste' request. */
+  | { type: 'paste'; text: string };
 
 export type WebviewToHost =
   | { type: 'ready' }
@@ -79,6 +81,8 @@ export type WebviewToHost =
   | { type: 'text'; text: string }
   | { type: 'click'; row: number; col: number }
   | { type: 'copy'; text: string }
+  /** Ctrl+V / Shift+Insert: asks the host for the clipboard text (webviews cannot read it). */
+  | { type: 'paste' }
   | { type: 'printScreen' }
   | { type: 'openUrl'; url: string }
   | { type: 'log'; message: string };

@@ -63,9 +63,9 @@ describe('TelnetSession', () => {
   });
 
   it('parses NEW-ENVIRON IS payloads', () => {
-    const bytes = Array.from(Buffer.from('\u0003DEVNAME\u0001QPADEV0001\u0000USER\u0001KYLE', 'latin1'));
+    const bytes = Array.from(Buffer.from('\u0003DEVNAME\u0001QPADEV0001\u0000USER\u0001ALEX', 'latin1'));
     const vars = parseEnvironment(bytes);
     expect(vars.get('DEVNAME')).toBe('QPADEV0001');
-    expect(vars.get('USER')).toBe('KYLE');
+    expect(vars.get('USER')).toBe('ALEX');
   });
 });

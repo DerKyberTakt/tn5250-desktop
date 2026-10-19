@@ -31,7 +31,7 @@ function post(msg: SettingsToHost): void {
 }
 
 type Key = keyof TerminalSettings;
-type FieldSpec = { showIf?: Key; hideIf?: Key } & (
+type FieldSpec = { showIf?: Key; hideIf?: Key; showWhen?: [Key, string[]] } & (
   | { kind: 'text'; key: Key; label: string; placeholder?: string }
   | { kind: 'number'; key: Key; label: string; min?: number; max?: number; step?: number }
   | { kind: 'range'; key: Key; label: string; min: number; max: number; step: number }
@@ -93,8 +93,10 @@ const HELP: Partial<Record<Key, string>> = {
   watermarkType: 'Show text or a picture faintly over the screen, for example to mark an environment.',
   watermarkText: 'Text of the watermark. Example: PRODUCTION.',
   watermarkImage: 'Picture file (PNG, JPG, GIF, SVG, WebP) drawn as the watermark. Browse to pick it.',
-  watermarkPosition: 'Where the watermark sits on the screen.',
-  watermarkPadding: 'Distance in pixels from the screen edge for the corner positions.',
+  watermarkPosition: 'Where the watermark sits. Custom places it anywhere with the position sliders; Tile repeats it over the whole screen.',
+  watermarkX: 'Custom position: 0 = left edge, 50 = centre, 100 = right edge. Stays in place when the window is resized.',
+  watermarkY: 'Custom position: 0 = top, 50 = middle, 100 = bottom. Stays in place when the window is resized.',
+  watermarkPadding: 'Corner positions: distance in pixels from the screen edge. Tile: gap between the marks.',
   watermarkOpacity: '0 = invisible, 1 = solid. 0.1 to 0.2 is a typical watermark.',
   colorGreen: 'Colour for the 5250 green attribute (normal text and most input fields).',
   colorWhite: 'Colour for the white (high intensity) attribute.',
@@ -261,7 +263,11 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'select', key: 'watermarkType', label: 'Watermark type', options: [['text', 'Text'], ['image', 'Image']] },
       { kind: 'text', key: 'watermarkText', label: 'Display text', placeholder: 'e.g. PRODUCTION' },
       { kind: 'file', key: 'watermarkImage', label: 'Image location', message: 'browseWatermark' },
-      { kind: 'select', key: 'watermarkPosition', label: 'Position', options: [['center', 'Center'], ['topLeft', 'Top left'], ['topRight', 'Top right'], ['bottomLeft', 'Bottom left'], ['bottomRight', 'Bottom right']] },
+      { kind: 'select', key: 'watermarkPosition', label: 'Position', options: [['center', 'Center'], ['topLeft', 'Top left'], ['topRight', 'Top right'], ['bottomLeft', 'Bottom left'], ['bottomRight', 'Bottom right'], ['custom', 'Custom (free position)'], ['tile', 'Tile (repeat over the screen)']] },
+      { kind: 'range', key: 'watermarkX', label: 'Horizontal position (%)', min: 0, max: 100, step: 0.5, showWhen: ['watermarkPosition', ['custom']] },
+      { kind: 'range', key: 'watermarkY', label: 'Vertical position (%)', min: 0, max: 100, step: 0.5, showWhen: ['watermarkPosition', ['custom']] },
+      { kind: 'range', key: 'watermarkPadding', label: 'Edge distance (px)', min: 0, max: 200, step: 1, showWhen: ['watermarkPosition', ['topLeft', 'topRight', 'bottomLeft', 'bottomRight']] },
+      { kind: 'range', key: 'watermarkPadding', label: 'Gap between marks (px)', min: 0, max: 200, step: 1, showWhen: ['watermarkPosition', ['tile']] },
       { kind: 'range', key: 'watermarkOffsetX', label: 'Horizontal offset (px)', min: -600, max: 600, step: 1 },
       { kind: 'range', key: 'watermarkOffsetY', label: 'Vertical offset (px)', min: -400, max: 400, step: 1 },
       { kind: 'range', key: 'watermarkOpacity', label: 'Opacity', min: 0, max: 1, step: 0.05 },
@@ -416,7 +422,7 @@ function setValue(key: Key, raw: string | boolean | number): void {
   else if (typeof current === 'boolean') v = raw === true || raw === 'true';
   (values as unknown as Record<string, unknown>)[key] = v;
   dirty = true;
-  if (typeof current === 'boolean' || key === 'watermarkType' || key === 'uiMode' || key === 'blinkText') render();
+  if (typeof current === 'boolean' || key === 'watermarkType' || key === 'watermarkPosition' || key === 'uiMode' || key === 'blinkText') render();
   else {
     renderButtons();
     updatePreview();
@@ -586,6 +592,8 @@ function updatePreview(): void {
     watermarkOpacity: v.watermarkOpacity,
     watermarkPosition: v.watermarkPosition,
     watermarkPadding: Math.round(v.watermarkPadding / 2),
+    watermarkX: v.watermarkX,
+    watermarkY: v.watermarkY,
     watermarkOffsetX: Math.round(v.watermarkOffsetX / 2),
     watermarkOffsetY: Math.round(v.watermarkOffsetY / 2),
     underlineUrls: v.hotspotsUrl,
@@ -609,6 +617,7 @@ function updatePreview(): void {
 
 function renderField(f: FieldSpec): HTMLElement | undefined {
   if (f.showIf && !values[f.showIf]) return undefined;
+  if (f.showWhen && !f.showWhen[1].includes(String(values[f.showWhen[0]]))) return undefined;
   if (f.hideIf && values[f.hideIf]) return undefined;
   if (f.kind === 'heading') return el('h4', 'heading', f.label);
   if (f.kind === 'watermarkPreview') {

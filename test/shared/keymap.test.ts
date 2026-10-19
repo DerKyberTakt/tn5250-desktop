@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACS_KEYMAP, isTextKey, keyName, resolveAction } from '../../src/shared/keymap';
+import { ACS_KEYMAP, classifyKey, isTextKey, keyName, resolveAction } from '../../src/shared/keymap';
 import type { KeyEventInfo } from '../../src/shared/protocol';
 
 const k = (key: string, code = key, mods: Partial<KeyEventInfo> = {}): KeyEventInfo => ({
@@ -50,5 +50,19 @@ describe('ACS keymap', () => {
     expect(isTextKey(k('5', 'Numpad5'))).toBe(true);
     expect(isTextKey(k('a', 'KeyA', { ctrl: true }))).toBe(false);
     expect(isTextKey(k('Enter'))).toBe(false);
+  });
+
+  it('lets the keymap win over typing (10-key)', () => {
+    // Keypad + and - produce "+" / "-" but are Field+ / Field- (NumLock on or off).
+    expect(classifyKey(k('+', 'NumpadAdd'), ACS_KEYMAP)).toEqual({ kind: 'action', action: 'fieldPlus' });
+    expect(classifyKey(k('-', 'NumpadSubtract'), ACS_KEYMAP)).toEqual({ kind: 'action', action: 'fieldMinus' });
+    expect(classifyKey(k('Enter', 'NumpadEnter'), ACS_KEYMAP)).toEqual({ kind: 'action', action: 'fieldExit' });
+    expect(classifyKey(k('Enter', 'Enter'), ACS_KEYMAP)).toEqual({ kind: 'action', action: 'enter' });
+    // Keypad digits and the main-row + / - are still typed.
+    expect(classifyKey(k('5', 'Numpad5'), ACS_KEYMAP)).toEqual({ kind: 'text', text: '5' });
+    expect(classifyKey(k('.', 'NumpadDecimal'), ACS_KEYMAP)).toEqual({ kind: 'text', text: '.' });
+    expect(classifyKey(k('+', 'Equal', { shift: true }), ACS_KEYMAP)).toEqual({ kind: 'text', text: '+' });
+    expect(classifyKey(k('-', 'Minus'), ACS_KEYMAP)).toEqual({ kind: 'text', text: '-' });
+    expect(classifyKey(k('x', 'KeyX', { ctrl: true }), ACS_KEYMAP)).toEqual({ kind: 'none' });
   });
 });

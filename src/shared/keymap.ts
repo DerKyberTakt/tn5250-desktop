@@ -96,6 +96,21 @@ export function resolveAction(k: KeyEventInfo, keymap: Keymap): KeyAction | unde
   return keymap[keyName(k)];
 }
 
+export type KeyResult = { kind: 'action'; action: KeyAction } | { kind: 'text'; text: string } | { kind: 'none' };
+
+/**
+ * What a key press does. The keymap wins over typing: keypad "+" and "-" produce
+ * the characters "+" and "-" but are mapped by their physical code (NumpadAdd =
+ * Field+, NumpadSubtract = Field-), as are characters remapped from a .kmp file.
+ * Unmapped printable keys (letters, digits, keypad digits) are typed.
+ */
+export function classifyKey(k: KeyEventInfo, keymap: Keymap): KeyResult {
+  const action = resolveAction(k, keymap);
+  if (action) return { kind: 'action', action };
+  if (isTextKey(k)) return { kind: 'text', text: k.key };
+  return { kind: 'none' };
+}
+
 /** Keyboard layout modeled on IBM i Access Client Solutions defaults. */
 export const ACS_KEYMAP: Keymap = {
   Enter: 'enter',

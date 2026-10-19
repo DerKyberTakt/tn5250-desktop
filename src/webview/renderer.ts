@@ -91,6 +91,8 @@ export interface RendererOptions {
   watermarkOpacity: number;
   watermarkPosition: WatermarkPosition;
   watermarkPadding: number;
+  watermarkX: number;
+  watermarkY: number;
   watermarkOffsetX: number;
   watermarkOffsetY: number;
   underlineUrls: boolean;
@@ -133,6 +135,8 @@ export class Renderer {
     watermarkOpacity: 0.15,
     watermarkPosition: 'center',
     watermarkPadding: 10,
+    watermarkX: 50,
+    watermarkY: 50,
     watermarkOffsetX: 0,
     watermarkOffsetY: 0,
     underlineUrls: true,
@@ -618,33 +622,59 @@ export class Renderer {
     const ctx = this.ctx;
     const o = this.options;
     const pad = o.watermarkPadding;
+    const p = o.watermarkPosition;
+    const tile = p === 'tile';
     const place = (mw: number, mh: number): [number, number] => {
       let x = (w - mw) / 2;
       let y = (h - mh) / 2;
-      const p = o.watermarkPosition;
+      if (p === 'custom') {
+        const pct = (v: number): number => Math.max(0, Math.min(100, v)) / 100;
+        x = (w - mw) * pct(o.watermarkX);
+        y = (h - mh) * pct(o.watermarkY);
+      }
       if (p.startsWith('top')) y = pad;
       if (p.startsWith('bottom')) y = h - mh - pad;
       if (p.endsWith('Left')) x = pad;
       if (p.endsWith('Right')) x = w - mw - pad;
       return [x + o.watermarkOffsetX, y + o.watermarkOffsetY];
     };
+    /** Draws one mark, or (tile) repeats it over the whole screen in a brick pattern shifted by the offsets. */
+    const stamp = (mw: number, mh: number, draw: (x: number, y: number) => void): void => {
+      if (!tile) {
+        const [x, y] = place(mw, mh);
+        draw(x, y);
+        return;
+      }
+      const gap = Math.max(8, pad * 2);
+      const stepX = mw + gap;
+      const stepY = mh + gap;
+      const mod = (a: number, b: number): number => ((a % b) + b) % b;
+      const x0 = mod(o.watermarkOffsetX, stepX) - stepX;
+      const y0 = mod(o.watermarkOffsetY, stepY) - stepY;
+      for (let row = 0, y = y0; y < h; row++, y += stepY) {
+        const shift = row % 2 ? stepX / 2 : 0;
+        for (let x = x0 - shift; x < w; x += stepX) draw(x, y);
+      }
+    };
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, o.watermarkOpacity));
     if (o.watermarkType === 'image' && this.watermarkImage) {
       const img = this.watermarkImage;
-      const scale = Math.min(1, (w * 0.5) / img.width, (h * 0.5) / img.height);
+      // A tiled image is drawn smaller so several fit on the screen.
+      const share = tile ? 0.25 : 0.5;
+      const scale = Math.min(1, (w * share) / img.width, (h * share) / img.height);
       const mw = img.width * scale;
       const mh = img.height * scale;
-      const [x, y] = place(mw, mh);
-      ctx.drawImage(img, x, y, mw, mh);
+      stamp(mw, mh, (x, y) => ctx.drawImage(img, x, y, mw, mh));
     } else if (o.watermarkType === 'text' && o.watermarkText.trim()) {
+      const text = o.watermarkText.trim();
       ctx.fillStyle = this.theme.colors.white;
-      ctx.font = `bold ${Math.max(16, Math.floor(this.cellH * 4))}px ${this.fontFamily()}`;
+      const size = tile ? 2 : 4;
+      ctx.font = `bold ${Math.max(tile ? 12 : 16, Math.floor(this.cellH * size))}px ${this.fontFamily()}`;
       ctx.textBaseline = 'top';
-      const mh = this.cellH * 4;
-      const mw = ctx.measureText(o.watermarkText.trim()).width;
-      const [x, y] = place(mw, mh);
-      ctx.fillText(o.watermarkText.trim(), x, y);
+      const mh = this.cellH * size;
+      const mw = ctx.measureText(text).width;
+      stamp(mw, mh, (x, y) => ctx.fillText(text, x, y));
     }
     ctx.restore();
   }

@@ -193,12 +193,12 @@ describe('DataStreamProcessor commands', () => {
 
   it('Save Screen returns a restorable stream that rebuilds fields', () => {
     const a = setup();
-    a.proc.process(hexToBytes('04110008' + '110305' + e('Name:') + '1d4000200008' + e('Kyle') + '20' + '130307'));
+    a.proc.process(hexToBytes('04110008' + '110305' + e('Name:') + '1d4000200008' + e('Alex') + '20' + '130307'));
     const saved = a.proc.process(hexToBytes('0402'));
     expect(saved[0]?.opcode).toBe(0x04);
     const b = setup();
     b.proc.process(saved[0]?.data as Uint8Array);
-    expect(b.screen.rowText(2, cp).trim()).toBe('Name: Kyle');
+    expect(b.screen.rowText(2, cp).trim()).toBe('Name: Alex');
     expect(b.screen.fields).toHaveLength(1);
     expect(b.screen.fields[0]?.length).toBe(8);
     expect(b.screen.cursor).toBe(a.screen.cursor);
@@ -219,7 +219,7 @@ describe('DataStreamProcessor commands', () => {
 
   it('Restore Screen drops fields of the screen shown in between', () => {
     const t = setup();
-    t.proc.process(hexToBytes('04110008' + '110305' + e('Name:') + '1d4000200008' + e('Kyle') + '20' + '130307'));
+    t.proc.process(hexToBytes('04110008' + '110305' + e('Name:') + '1d4000200008' + e('Alex') + '20' + '130307'));
     const saved = t.proc.process(hexToBytes('0402'))[0]?.data as Uint8Array;
     // A message screen with a long field replaces the menu...
     t.proc.process(hexToBytes('0440' + '04110008' + '110101' + '1d5000240099' + e('Message line')));
@@ -228,6 +228,6 @@ describe('DataStreamProcessor commands', () => {
     t.proc.process(saved);
     expect(t.screen.fields.map((f) => f.length)).toEqual([8]);
     expect(t.screen.rowText(0, cp).trim()).toBe('');
-    expect(t.screen.rowText(2, cp).trim()).toBe('Name: Kyle');
+    expect(t.screen.rowText(2, cp).trim()).toBe('Name: Alex');
   });
 });

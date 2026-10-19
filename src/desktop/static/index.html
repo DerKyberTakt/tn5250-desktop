@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; frame-src 'self'">
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="shell.css">
+<title>TN5250 Terminal</title>
+</head>
+<body>
+<nav id="menubar" role="menubar" aria-label="Main menu"></nav>
+<div id="tabbar" role="tablist" aria-label="Sessions"></div>
+<div id="main">
+  <aside id="sidebar" aria-label="Connections">
+    <form id="quick">
+      <label for="quick-host">Quick connect</label>
+      <div class="row">
+        <input id="quick-host" placeholder="host or host:port" autocomplete="off" spellcheck="false">
+        <button type="submit" title="Connect">Go</button>
+      </div>
+      <label class="check"><input id="quick-tls" type="checkbox"> TLS (port 992)</label>
+    </form>
+    <div class="side-head">
+      <span>Saved sessions</span>
+      <button id="side-new" type="button" title="New session">+</button>
+    </div>
+    <ul id="sessions"></ul>
+    <button id="side-previous" type="button" class="wide">Connect to Previous</button>
+  </aside>
+  <section id="frames">
+    <div id="empty">
+      <h1>TN5250 Terminal</h1>
+      <p>Connect to an IBM i: type a host in <b>Quick connect</b>, double-click a saved session, or add one with <b>+</b>.</p>
+    </div>
+  </section>
+</div>
+<pre id="log" hidden></pre>
+<footer id="statusbar"><span id="status-text">Ready</span><span id="status-right"></span></footer>
+<pre id="print-area" aria-hidden="true"></pre>
+<script src="shell.js"></script>
+</body>
+</html>

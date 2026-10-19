@@ -46,8 +46,8 @@ describe('Keyboard on the PUB400 sign-on screen', () => {
     const h = harness('27x132');
     h.session.feed(inboundBytes(loadCapture('pub400-signon-3477fc')));
     expect(h.state.inputInhibited).toBe('none');
-    h.session.type('kyle');
-    expect(h.screen.rowText(4, cp)).toContain('KYLE');
+    h.session.type('alex');
+    expect(h.screen.rowText(4, cp)).toContain('ALEX');
     h.session.press('tab');
     expect(h.screen.cursor).toBe(h.screen.addr(5, 24));
     h.session.type('secret');
@@ -55,7 +55,7 @@ describe('Keyboard on the PUB400 sign-on screen', () => {
     expect(h.sent).toHaveLength(1);
     const rec = h.sent[0]!;
     expect(rec.opcode).toBe(OP_PUT_GET);
-    expect(rec.data).toBe('061f' + 'f1' + '110519' + e('KYLE') + '110619' + e('secret'));
+    expect(rec.data).toBe('061f' + 'f1' + '110519' + e('ALEX') + '110619' + e('secret'));
     expect(h.state.inputInhibited).toBe('system');
     h.session.type('ignored while locked');
     expect(h.sent).toHaveLength(1);

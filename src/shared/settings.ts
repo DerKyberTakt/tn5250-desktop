@@ -4,7 +4,7 @@ import { ACS_KEYMAP } from './keymap';
 export type ScreenSize = '24x80' | '27x132';
 export type CursorStyle = 'block' | 'underline';
 export type ColumnSeparators = 'dot' | 'line' | 'none';
-export type WatermarkPosition = 'center' | 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
+export type WatermarkPosition = 'center' | 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | 'custom' | 'tile';
 export type TitlePart = 'sessionId' | 'name' | 'host' | 'dimensions' | 'deviceName';
 
 /** Everything that describes one terminal session. Sessions inherit from the defaults. */
@@ -64,7 +64,11 @@ export interface TerminalSettings {
   watermarkImage: string;
   watermarkOpacity: number;
   watermarkPosition: WatermarkPosition;
+  /** Distance from the edge for the corner positions; gap between marks when tiled. */
   watermarkPadding: number;
+  /** Position 'custom': where the mark sits, in percent of the free space (0 = left/top, 100 = right/bottom). */
+  watermarkX: number;
+  watermarkY: number;
   /** Fine adjustment from the chosen position, in pixels (drag in the preview). */
   watermarkOffsetX: number;
   watermarkOffsetY: number;
@@ -193,6 +197,8 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   watermarkOpacity: 0.15,
   watermarkPosition: 'center',
   watermarkPadding: 10,
+  watermarkX: 50,
+  watermarkY: 50,
   watermarkOffsetX: 0,
   watermarkOffsetY: 0,
 

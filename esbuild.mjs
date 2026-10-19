@@ -1,42 +1,38 @@
-// Builds the extension host bundle (Node) and the webview bundle (browser).
+// Builds the desktop page bundles into dist/desktop, which the Go binary embeds (main.go).
 import * as esbuild from 'esbuild';
+import { cpSync, mkdirSync } from 'node:fs';
 
-const production = process.argv.includes('--production');
+const production = process.argv.includes('--production') || process.env.PRODUCTION === '1';
 const watch = process.argv.includes('--watch');
+const outdir = 'dist/desktop';
 
-const common = {
+mkdirSync(outdir, { recursive: true });
+cpSync('src/desktop/static', outdir, { recursive: true });
+
+const pages = await esbuild.context({
   bundle: true,
   sourcemap: production ? false : 'inline',
   minify: production,
   target: 'es2022',
   logLevel: 'info',
-};
-
-const extension = await esbuild.context({
-  ...common,
-  entryPoints: ['src/extension/extension.ts'],
-  outfile: 'dist/extension.js',
-  format: 'cjs',
-  platform: 'node',
-  external: ['vscode'],
-});
-
-const webview = await esbuild.context({
-  ...common,
   entryPoints: {
+    // The terminal and settings pages are the VS Code webview bundles, unchanged.
     main: 'src/webview/main.ts',
     terminal: 'src/webview/terminal.css',
     settings: 'src/settings/main.ts',
     'settings-style': 'src/settings/settings.css',
+    // Desktop only: the shell page and the frame shim.
+    shell: 'src/desktop/shell.ts',
+    shim: 'src/desktop/frameShim.ts',
   },
-  outdir: 'dist/webview',
+  outdir,
   format: 'iife',
   platform: 'browser',
 });
 
 if (watch) {
-  await Promise.all([extension.watch(), webview.watch()]);
+  await pages.watch();
 } else {
-  await Promise.all([extension.rebuild(), webview.rebuild()]);
-  await Promise.all([extension.dispose(), webview.dispose()]);
+  await pages.rebuild();
+  await pages.dispose();
 }

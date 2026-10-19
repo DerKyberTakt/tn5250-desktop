@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "TN5250 Terminal",
+  "outputfilename": "tn5250-terminal",
+  "frontend:dir": ".",
+  "frontend:install": "npm ci --no-audit --no-fund",
+  "frontend:build": "npm run build -- --production",
+  "wailsjsdir": "./build/wailsjs",
+  "author": {
+    "name": "DerKyberTakt"
+  },
+  "info": {
+    "companyName": "DerKyberTakt",
+    "productName": "TN5250 Terminal",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright (c) 2026 Kyle Ward. MIT License.",
+    "comments": "5250 terminal emulator for IBM i"
+  }
+}
