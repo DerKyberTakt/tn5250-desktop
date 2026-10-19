@@ -74,13 +74,14 @@ func (s *Sockets) Connect(id string, o ConnectOptions) error {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	keepAlive := -1 * time.Second
-	if o.KeepAlive {
-		keepAlive = 60 * time.Second
-	}
 	host := strings.TrimSpace(o.Host)
 	addr := net.JoinHostPort(host, strconv.Itoa(o.Port))
-	dialer := &net.Dialer{Timeout: timeout, KeepAlive: keepAlive}
+	dialer := &net.Dialer{Timeout: timeout, KeepAlive: -1}
+	if o.KeepAlive {
+		// Probe after 15 s idle, every 5 s, give up after 4 misses: a dropped
+		// network (VPN, Wi-Fi) closes the session in about 35 s instead of minutes.
+		dialer.KeepAliveConfig = net.KeepAliveConfig{Enable: true, Idle: 15 * time.Second, Interval: 5 * time.Second, Count: 4}
+	}
 
 	var conn net.Conn
 	var err error

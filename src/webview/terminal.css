@@ -19,6 +19,7 @@ body {
 }
 
 #viewport {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -136,4 +137,137 @@ body.pointer-crosshair #terminal,
 body.pointer-crosshair #viewport,
 body.pointer-crosshair #screen {
   cursor: crosshair !important;
+}
+
+/* Connection overlay: connecting / connection lost, over the dimmed last screen. */
+#connection-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(1.5px) grayscale(40%);
+  font-family: var(--vscode-editor-font-family, Consolas, monospace);
+}
+
+#connection-overlay[hidden] {
+  display: none;
+}
+
+#connection-overlay .card {
+  min-width: 300px;
+  max-width: min(560px, 90%);
+  padding: 18px 22px 14px;
+  text-align: center;
+  color: var(--oia-status, #8fb8ff);
+  background: rgb(12 16 22 / 94%);
+  border: 1px solid var(--oia-status, #8fb8ff);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 60%);
+}
+
+#connection-overlay .card.lost {
+  border-color: var(--oia-attention, #ff8080);
+}
+
+#connection-overlay .card.lost h2 {
+  color: var(--oia-attention, #ff8080);
+}
+
+#connection-overlay h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+#connection-overlay p {
+  margin: 4px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+#connection-overlay .detail {
+  color: #e0e0e0;
+}
+
+#connection-overlay .muted,
+#connection-overlay .hint {
+  opacity: 0.65;
+}
+
+#connection-overlay .hint {
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+#connection-overlay .countdown {
+  color: var(--oia-info, #f0e040);
+}
+
+#connection-overlay .buttons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#connection-overlay button {
+  min-width: 96px;
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: #e0e0e0;
+  background: transparent;
+  border: 1px solid #5a6270;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#connection-overlay button.primary {
+  color: #0b0f14;
+  background: var(--oia-status, #8fb8ff);
+  border-color: transparent;
+}
+
+#connection-overlay button:hover {
+  filter: brightness(1.15);
+}
+
+#connection-overlay .spinner {
+  width: 22px;
+  height: 22px;
+  margin: 0 auto 10px;
+  border: 3px solid rgb(143 184 255 / 25%);
+  border-top-color: var(--oia-status, #8fb8ff);
+  border-radius: 50%;
+  animation: tn-spin 0.9s linear infinite;
+}
+
+#connection-overlay.nudge .card {
+  animation: tn-nudge 0.3s;
+}
+
+@keyframes tn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes tn-nudge {
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #connection-overlay .spinner,
+  #connection-overlay.nudge .card {
+    animation: none;
+  }
 }

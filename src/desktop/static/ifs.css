@@ -1,0 +1,246 @@
+/* IFS browser tab (Tools > Integrated File System). */
+.terminal-frame.ifs {
+  display: none;
+  flex-direction: column;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  outline: none;
+}
+
+.terminal-frame.ifs.active {
+  display: flex;
+}
+
+.ifs-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.ifs-bar {
+  display: flex;
+  flex: 1 1 360px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ifs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ifs button,
+.ifs-menu button {
+  padding: 3px 10px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.ifs button:disabled {
+  opacity: 0.45;
+}
+
+.ifs-path {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  font-family: var(--vscode-editor-font-family);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  user-select: text;
+}
+
+.ifs-fav {
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+}
+
+.ifs-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.ifs.busy .ifs-scroll {
+  cursor: progress;
+  opacity: 0.75;
+}
+
+.ifs-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ifs-list th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 8px;
+  text-align: left;
+  font-weight: 600;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.ifs-list td {
+  padding: 3px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 480px;
+}
+
+.ifs-list .col-size {
+  text-align: right;
+  width: 90px;
+}
+
+.ifs-list .col-modified {
+  width: 180px;
+}
+
+.ifs-list .col-type {
+  width: 110px;
+}
+
+.ifs-list tbody tr:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.ifs-list tbody tr.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.ifs-list .icon {
+  display: inline-block;
+  width: 14px;
+  height: 11px;
+  margin-right: 7px;
+  vertical-align: -1px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.7;
+}
+
+.ifs-list .icon.folder {
+  background: #d9a93a;
+  border-color: #b8891f;
+  opacity: 1;
+}
+
+.ifs-message {
+  padding: 24px;
+  text-align: center;
+  opacity: 0.8;
+}
+
+.ifs-message[hidden] {
+  display: none;
+}
+
+.ifs-message button {
+  margin-top: 8px;
+}
+
+.ifs-foot {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 10px;
+  font-size: 12px;
+  background: var(--status-bg);
+  border-top: 1px solid var(--chrome-border);
+  white-space: nowrap;
+}
+
+.ifs-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ifs-progress {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ifs-progress[hidden] {
+  display: none;
+}
+
+.ifs-progress-bar {
+  width: 160px;
+  height: 8px;
+  background: var(--chrome-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ifs-progress-bar .fill {
+  width: 0;
+  height: 100%;
+  background: var(--tab-accent);
+}
+
+.ifs-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px 0;
+  background: var(--menu-bg);
+  border: 1px solid var(--chrome-border);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 22%);
+}
+
+.ifs-menu button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  padding: 5px 16px;
+}
+
+.ifs-menu button:hover:not(:disabled) {
+  background: var(--menu-hover);
+}
+
+.ifs-menu button:disabled {
+  opacity: 0.45;
+}
+
+dialog.ifs-viewer {
+  width: min(900px, 90vw);
+  max-width: none;
+}
+
+dialog.ifs-viewer pre {
+  max-height: 65vh;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--chrome-border);
+  white-space: pre;
+  user-select: text;
+}

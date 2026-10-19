@@ -2,6 +2,25 @@ import { ATTR_NORMAL, decodeAttribute, isAttribute, type Color } from '../engine
 import type { ScreenSnapshot } from '../shared/protocol';
 import { fieldRanges, keyLabelsIn, rowText, urlsIn, type FieldRange } from '../shared/screenText';
 import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
+import { highlightScreen, Tok } from '../shared/sourceHighlight';
+
+/** Enhanced mode draws no box around input fields longer than this (characters). */
+const BOX_MAX_FIELD_LENGTH = 60;
+
+/** SEU syntax colours, taken from the 5250 palette so they follow the colour settings. */
+const SYNTAX_COLORS: Record<number, Color> = {
+  [Tok.Comment]: 'blue',
+  [Tok.Keyword]: 'turquoise',
+  [Tok.Builtin]: 'pink',
+  [Tok.String]: 'yellow',
+  [Tok.Number]: 'white',
+  [Tok.Special]: 'pink',
+  [Tok.Variable]: 'white',
+  [Tok.Indicator]: 'red',
+  [Tok.Name]: 'white',
+  [Tok.Marker]: 'blue',
+  [Tok.Spec]: 'white',
+};
 
 export interface Theme {
   background: string;
@@ -114,6 +133,8 @@ export class Renderer {
   /** 1 where the cell belongs to a field (decorations apply even to null cells). */
   private fieldMask = new Uint8Array(0);
   private ranges: FieldRange[] = [];
+  /** Per-cell SEU token kinds (undefined when the screen is not SEU). */
+  private syntax: Uint8Array | undefined;
   private options: RendererOptions = {
     uiMode: 'classic',
     fontFamily: '',
@@ -187,6 +208,7 @@ export class Renderer {
     for (const f of screen.fields) mask.fill(1, f.start, Math.min(mask.length, f.start + f.length));
     this.fieldMask = mask;
     this.ranges = fieldRanges(screen);
+    this.syntax = highlightScreen(screen);
     if (resized) this.layout();
     this.draw();
   }
@@ -287,13 +309,24 @@ export class Renderer {
     }
     px = Math.max(MIN_FONT_PX, Math.floor(px * this.options.zoom));
 
-    this.fontPx = px;
-    this.cellW = this.measureCharWidth(px);
-    if (this.options.textRendering === 'crisp') this.cellW = Math.max(1, Math.floor(this.cellW));
-    this.cellH = Math.round(px * LINE_HEIGHT);
+    const measure = (size: number): { cellW: number; cellH: number; cssW: number; cssH: number } => {
+      let cellW = this.measureCharWidth(size);
+      if (this.options.textRendering === 'crisp') cellW = Math.max(1, Math.floor(cellW));
+      const cellH = Math.round(size * LINE_HEIGHT);
+      return { cellW, cellH, cssW: Math.ceil(cols * cellW) + this.pad * 2, cssH: rows * cellH + this.pad * 2 };
+    };
+    let m = measure(px);
+    // Auto-fit must really fit: rounding the line height can overshoot by a pixel or two, which
+    // brings up a scrollbar, narrows the viewport, shrinks the screen, drops the scrollbar and so
+    // on, so the screen keeps resizing itself. Step the font down until it fits.
+    if (this.options.autoFit && this.options.zoom <= 1) {
+      while (px > MIN_FONT_PX && (m.cssW > this.viewportW || m.cssH > this.viewportH)) m = measure(--px);
+    }
 
-    const cssW = Math.ceil(cols * this.cellW) + this.pad * 2;
-    const cssH = rows * this.cellH + this.pad * 2;
+    this.fontPx = px;
+    this.cellW = m.cellW;
+    this.cellH = m.cellH;
+    const { cssW, cssH } = m;
     const dpr = window.devicePixelRatio || 1;
     this.canvas.style.width = `${cssW}px`;
     this.canvas.style.height = `${cssH}px`;
@@ -377,6 +410,9 @@ export class Renderer {
       const y = this.y(row);
       let fg = this.theme.colors[current.color];
       if (current.blink && this.options.blinkText === 'mapped') fg = this.theme.blinkMapped;
+      // SEU: colour plain (green) source text by syntax; the host's own colours stay.
+      const kind = this.syntax?.[i];
+      if (kind && current.color === 'green' && !current.reverse) fg = this.theme.colors[SYNTAX_COLORS[kind] ?? 'green'];
 
       if (current.reverse) {
         ctx.fillStyle = fg;
@@ -478,17 +514,28 @@ export class Renderer {
     ctx.closePath();
   }
 
-  /** Enhanced mode: every input field is a rounded box; the active one glows. */
+  /**
+   * Enhanced mode: input fields are rounded boxes; the active one glows. Fields
+   * longer than BOX_MAX_FIELD_LENGTH (command lines, QSH, long comments) are
+   * underlined instead, and SEU source lines stay plain.
+   */
   private drawFieldBoxes(activeIndex: number): void {
     const ctx = this.ctx;
     const e = this.theme.enhanced;
+    const fields = this.screen?.fields ?? [];
     for (const r of this.ranges) {
       if (r.bypass) continue;
+      const active = r.fieldIndex === activeIndex;
+      if ((fields[r.fieldIndex]?.length ?? 0) > BOX_MAX_FIELD_LENGTH) {
+        // Long fields (command lines, QSH, comments) get an underline instead of a box.
+        // SEU source lines stay plain: a line under every source row is just noise.
+        if (!this.syntax) this.drawFieldLine(r, active);
+        continue;
+      }
       const x = this.x(r.col) - 2;
       const y = this.y(r.row) + 1;
       const w = r.length * this.cellW + 4;
       const h = this.cellH - 2;
-      const active = r.fieldIndex === activeIndex;
       this.roundRect(x, y, w, h, e.cornerRadius);
       ctx.fillStyle = e.fieldFill;
       ctx.fill();
@@ -501,6 +548,24 @@ export class Renderer {
       ctx.stroke();
       ctx.shadowBlur = 0;
     }
+  }
+
+  /** Enhanced mode: the underline drawn under long input fields; brighter (with glow) when active. */
+  private drawFieldLine(r: FieldRange, active: boolean): void {
+    const ctx = this.ctx;
+    const e = this.theme.enhanced;
+    const x = this.x(r.col);
+    const y = this.y(r.row) + this.cellH - 2;
+    const w = r.length * this.cellW;
+    ctx.save();
+    ctx.globalAlpha = active ? 1 : 0.6;
+    ctx.fillStyle = active ? e.activeField : e.fieldBorder;
+    if (active) {
+      ctx.shadowColor = e.activeField;
+      ctx.shadowBlur = 6;
+    }
+    ctx.fillRect(x, y, w, active ? 1.5 : 1);
+    ctx.restore();
   }
 
   /** Contrasting text colour for the enhanced selection box. */

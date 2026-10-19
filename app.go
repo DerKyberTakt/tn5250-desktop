@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/options"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -26,6 +27,8 @@ const (
 type App struct {
 	ctx     context.Context
 	sockets *Sockets
+	ifsOnce sync.Once
+	ifsSt   *ifsState
 }
 
 func NewApp() *App {
@@ -44,6 +47,14 @@ func (a *App) startup(ctx context.Context) {
 
 func (a *App) shutdown(_ context.Context) {
 	a.sockets.CloseAll()
+	st := a.ifs()
+	st.mu.Lock()
+	sessions := st.sessions
+	st.sessions = map[string]*ifsSession{}
+	st.mu.Unlock()
+	for _, s := range sessions {
+		_ = s.client.Close()
+	}
 }
 
 func (a *App) secondInstance(_ options.SecondInstanceData) {

@@ -4,15 +4,20 @@ import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
 import { errorText, goApp, wailsRuntime, type SystemInfo } from './bridge';
 import { confirmDialog, formDialog, messageDialog } from './dialogs';
+import { ICONS, type IconName } from './icons';
+import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
-import { Store } from './store';
+import { passwordKey, Store } from './store';
 import { TerminalTab, type TabHost } from './terminalTab';
 
 const APP_NAME = 'TN5250 Terminal';
 const PROJECT_URL = 'https://github.com/DerKyberTakt/tn5250-desktop';
 const LOG_LIMIT = 1000;
 
-type Entry = { kind: 'terminal'; tab: TerminalTab; button: HTMLElement } | { kind: 'settings'; tab: SettingsTab; button: HTMLElement };
+type Entry =
+  | { kind: 'terminal'; tab: TerminalTab; button: HTMLElement }
+  | { kind: 'settings'; tab: SettingsTab; button: HTMLElement }
+  | { kind: 'ifs'; tab: IfsTab; button: HTMLElement };
 
 function byId<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -39,7 +44,7 @@ export function parseHostInput(input: string, defaultPort: number): { host: stri
   return { host, port };
 }
 
-class Shell implements TabHost {
+class Shell implements TabHost, IfsHost {
   readonly store = new Store();
   system: SystemInfo = { computerName: '', userName: '', platform: '' };
 
@@ -53,6 +58,7 @@ class Shell implements TabHost {
   private readonly frames = byId<HTMLElement>('frames');
   private readonly empty = byId<HTMLDivElement>('empty');
   private readonly sidebar = byId<HTMLElement>('sidebar');
+  private toolbarItems: Array<{ button: HTMLButtonElement; enabled?: () => boolean; pressed?: () => boolean }> = [];
   private readonly sessionList = byId<HTMLUListElement>('sessions');
   private readonly logEl = byId<HTMLPreElement>('log');
   private readonly statusText = byId<HTMLSpanElement>('status-text');
@@ -72,20 +78,30 @@ class Shell implements TabHost {
     this.store.onChange(() => {
       for (const e of this.entries) {
         if (e.kind === 'terminal') e.tab.pushConfig();
-        else e.tab.push();
+        else if (e.kind === 'settings') e.tab.push();
       }
       this.renderSessions();
     });
     this.buildMenus();
+    this.buildToolbar();
     this.bindSidebar();
     this.renderSessions();
     window.addEventListener('message', (ev) => this.onFrameMessage(ev));
+    try {
+      // Files dropped on the window go to the IFS browser tab that is showing.
+      wailsRuntime().OnFileDrop((_x, _y, paths) => {
+        if (this.active?.kind === 'ifs') void this.active.tab.upload(paths);
+        else this.notify('Open Tools > Integrated File System to upload files by dropping them');
+      }, false);
+    } catch {
+      // not running inside the app
+    }
     document.addEventListener('keydown', (ev) => this.onShellKey(ev));
     this.refresh();
     await this.openFromCommandLine();
   }
 
-  /** `tn5250-terminal [--tls] host[:port]` opens an ad-hoc session (port 992 implies TLS). */
+  /** `tn5250-terminal [--tls] host[:port]` opens an ad-hoc session (port 992 implies TLS); `--demo` opens the demo screen. */
   private async openFromCommandLine(): Promise<void> {
     let args: string[];
     try {
@@ -93,6 +109,7 @@ class Shell implements TabHost {
     } catch {
       return;
     }
+    if (args.includes('--demo')) this.openDemo();
     const tls = args.includes('--tls');
     const hostArg = args.find((a) => !a.startsWith('-'));
     if (!hostArg) return;
@@ -113,7 +130,7 @@ class Shell implements TabHost {
     }
   }
 
-  changed(tab: TerminalTab): void {
+  changed(tab: TerminalTab | IfsTab): void {
     const entry = this.entries.find((e) => e.tab === tab);
     if (entry) this.renderTabButton(entry);
     if (this.active?.tab === tab) this.refresh();
@@ -136,8 +153,59 @@ class Shell implements TabHost {
 
   openSession(profile: TerminalSettings): void {
     const tab = new TerminalTab(this, profile);
+    this.sidebar.hidden = true;
     this.addEntry({ kind: 'terminal', tab, button: el('div') }, profile.switchToNewTab || !this.active);
-    if (profile.name) void this.store.setLastSession(profile.name).catch(() => undefined);
+    // Only saved sessions count for "Connect to Previous"; quick connects and command-line hosts do not.
+    const saved = this.store.resolvedSessions().some((s) => s.name === profile.name && s.host === profile.host);
+    if (saved && profile.name) void this.store.setLastSession(profile.name).catch(() => undefined);
+  }
+
+  /** Tools > Integrated File System: signs on to the file server of the active (or selected) session's host. */
+  private async openIfs(): Promise<void> {
+    const t = this.activeTerminal();
+    const sessions = this.store.readSessions();
+    const picked = this.selectedSession >= 0 ? sessions[this.selectedSession] : undefined;
+    const defaults = this.store.readDefaults();
+    const base = t?.profile ?? (picked ? resolveSettings(defaults, picked) : this.store.resolvedSessions()[0]) ?? defaults;
+    let host = base.host;
+    let user = base.signonUser.trim();
+    let password = '';
+    if (host && user) {
+      try {
+        password = (await goApp().SecretGet(passwordKey(base.name, host))) || (await goApp().SecretGet(passwordKey('', host)));
+      } catch {
+        password = '';
+      }
+    }
+    if (!host || !user || !password) {
+      const values = await formDialog(
+        'Integrated File System',
+        [
+          { label: 'Host', value: host, placeholder: 'myibmi.example.com' },
+          { label: 'User profile', value: user },
+          { label: 'Password', password: true },
+        ],
+        'Connect',
+        'Signs on to the IBM i file server, as ACS does. The password stays in memory for this window only.',
+      );
+      if (!values) return;
+      [host = '', user = '', password = ''] = values.map((v) => v.trim());
+      if (!host || !user || !password) {
+        this.notify('Host, user profile and password are all needed');
+        return;
+      }
+    }
+    const sameHost = host === base.host;
+    const tab = new IfsTab(this, {
+      host,
+      tls: sameHost ? base.tls : false,
+      trustAnyCertificate: sameHost ? !base.verifyCertificate : false,
+      user,
+      password,
+      timeoutMs: base.connectTimeoutSeconds * 1000,
+    });
+    this.addEntry({ kind: 'ifs', tab, button: el('div') }, true);
+    void tab.start();
   }
 
   private openDemo(): void {
@@ -220,6 +288,7 @@ class Shell implements TabHost {
       const next = this.entries[Math.min(i, this.entries.length - 1)];
       if (next) this.activate(next);
     }
+    if (!this.entries.length) this.sidebar.hidden = false;
     this.refresh();
   }
 
@@ -233,6 +302,8 @@ class Shell implements TabHost {
 
   private refresh(): void {
     this.empty.hidden = this.entries.length > 0;
+    // One tab needs no tab bar (the window title names it); it appears with the second tab.
+    this.tabbar.hidden = this.entries.length < 2;
     const t = this.activeTerminal();
     const title = this.active ? `${this.active.tab.title} - ${APP_NAME}` : APP_NAME;
     document.title = title;
@@ -244,6 +315,7 @@ class Shell implements TabHost {
     if (!this.statusTimer) {
       this.statusText.textContent = t ? (t.isDemo ? 'Demo screen' : `${t.status}${t.statusDetail ? ': ' + t.statusDetail : ''}`) : 'Ready';
     }
+    this.updateToolbar();
     const n = this.terminals().filter((x) => x.connected).length;
     this.statusRight.textContent = n ? `${n} connected` : '';
   }
@@ -348,17 +420,79 @@ class Shell implements TabHost {
   private onFrameMessage(ev: MessageEvent): void {
     const data = ev.data as { tn5250Frame?: boolean; message?: unknown } | undefined;
     if (!data?.tn5250Frame || typeof data.message !== 'object' || data.message === null) return;
-    const entry = this.entries.find((e) => e.tab.frame.contentWindow === ev.source);
+    const entry = this.entries.find((e) => e.kind !== 'ifs' && e.tab.frame.contentWindow === ev.source);
     if (!entry) return;
     const message = data.message as { type?: unknown };
     if (typeof message.type !== 'string') return;
     if (entry.kind === 'terminal') entry.tab.handle(message as WebviewToHost);
-    else void entry.tab.handle(message as SettingsToHost);
+    else if (entry.kind === 'settings') void entry.tab.handle(message as SettingsToHost);
   }
 
   /** Shortcuts that work while focus is in the shell (menus, sidebar), not inside a terminal. */
   private onShellKey(ev: KeyboardEvent): void {
     if (ev.key === 'Escape') this.closeMenus();
+  }
+
+  // --- toolbar ---
+
+  /** Shows or hides the connections panel (quick connect and saved sessions). */
+  private toggleConnections(show = this.sidebar.hidden): void {
+    this.sidebar.hidden = !show;
+    if (show) byId<HTMLInputElement>('quick-host').focus();
+    this.updateToolbar();
+  }
+
+  private buildToolbar(): void {
+    type Tool = { icon: IconName; title: string; run: () => void; enabled?: () => boolean; pressed?: () => boolean } | '|';
+    const t = (): TerminalTab | undefined => this.activeTerminal();
+    const live = (): boolean => !!t() && !t()?.isDemo;
+    const on = (): boolean => !!t()?.connected;
+    const tools: Tool[] = [
+      { icon: 'connections', title: 'Connections: show or hide quick connect and saved sessions', run: () => this.toggleConnections(), pressed: () => !this.sidebar.hidden },
+      { icon: 'newSession', title: 'New connection…', run: () => void this.newConnection() },
+      '|',
+      { icon: 'copy', title: 'Copy (selection, or the whole screen)', run: () => t()?.copy(), enabled: () => !!t() },
+      { icon: 'paste', title: 'Paste', run: () => t()?.paste(), enabled: on },
+      { icon: 'print', title: 'Print screen', run: () => t() && this.printScreen(t() as TerminalTab), enabled: live },
+      '|',
+      { icon: 'connect', title: 'Connect / reconnect', run: () => t()?.connect(), enabled: () => live() && !on() },
+      { icon: 'disconnect', title: 'Disconnect', run: () => t()?.disconnect(), enabled: on },
+      '|',
+      { icon: 'attn', title: 'Attention', run: () => t()?.press('attn'), enabled: on },
+      { icon: 'sysreq', title: 'System request', run: () => t()?.press('sysreq'), enabled: on },
+      { icon: 'reset', title: 'Reset', run: () => t()?.press('reset'), enabled: on },
+      '|',
+      { icon: 'ifs', title: 'Integrated File System', run: () => void this.openIfs() },
+      { icon: 'settings', title: 'Settings', run: () => this.openSettings(-1) },
+      { icon: 'help', title: `About ${APP_NAME}`, run: () => void this.about() },
+    ];
+    const bar = byId<HTMLDivElement>('toolbar');
+    for (const tool of tools) {
+      if (tool === '|') {
+        bar.append(el('span', 'sep'));
+        continue;
+      }
+      const b = el('button', 'tool');
+      b.type = 'button';
+      b.title = tool.title;
+      b.setAttribute('aria-label', tool.title);
+      b.innerHTML = ICONS[tool.icon];
+      // Keep keyboard focus in the terminal: a toolbar click must not steal it.
+      b.addEventListener('mousedown', (ev) => ev.preventDefault());
+      b.addEventListener('click', () => {
+        tool.run();
+        if (tool.icon !== 'connections') this.active?.tab.focus();
+      });
+      bar.append(b);
+      this.toolbarItems.push({ button: b, enabled: tool.enabled, pressed: tool.pressed });
+    }
+  }
+
+  private updateToolbar(): void {
+    for (const item of this.toolbarItems) {
+      item.button.disabled = item.enabled ? !item.enabled() : false;
+      if (item.pressed) item.button.setAttribute('aria-pressed', String(item.pressed()));
+    }
   }
 
   // --- menus ---
@@ -395,7 +529,7 @@ class Shell implements TabHost {
       {
         label: 'View',
         items: [
-          { label: 'Connections Panel', run: () => (this.sidebar.hidden = !this.sidebar.hidden), checked: () => !this.sidebar.hidden },
+          { label: 'Connections Panel', run: () => this.toggleConnections(), checked: () => !this.sidebar.hidden },
           { label: 'Session Log', run: () => this.toggleLog(), checked: () => !this.logEl.hidden },
           { label: 'Key Overlay', run: () => t()?.toggleKeyOverlay(), enabled: () => !!t() },
           '-',
@@ -421,6 +555,10 @@ class Shell implements TabHost {
           { label: 'Clear', run: press('clear'), enabled: () => !!t()?.connected },
           { label: 'Print (host)', run: press('print'), enabled: () => !!t()?.connected },
         ],
+      },
+      {
+        label: 'Tools',
+        items: [{ label: 'Integrated File System…', run: () => void this.openIfs() }],
       },
       {
         label: 'Window',

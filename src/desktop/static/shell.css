@@ -142,6 +142,10 @@ input {
 }
 
 /* --- session tabs --- */
+#tabbar[hidden] {
+  display: none;
+}
+
 #tabbar {
   display: flex;
   align-items: flex-end;
@@ -488,4 +492,51 @@ dialog.modal button.primary {
     font-size: 10pt;
     color: #000;
   }
+}
+
+/* --- quick-action toolbar (ACS style) --- */
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 6px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+#toolbar .tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  color: var(--chrome-fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: default;
+}
+
+#toolbar .tool:hover:not(:disabled) {
+  background: var(--chrome-hover);
+  border-color: var(--chrome-border);
+}
+
+#toolbar .tool[aria-pressed="true"] {
+  background: var(--chrome-hover);
+  border-color: var(--tab-accent);
+}
+
+#toolbar .tool:disabled {
+  opacity: 0.35;
+}
+
+#toolbar .sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 5px;
+  background: var(--chrome-border);
 }

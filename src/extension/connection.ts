@@ -63,7 +63,8 @@ export class HostConnection implements Transport {
         : net.connect({ host: options.host, port: options.port });
       this.socket = socket;
       socket.setNoDelay(true);
-      socket.setKeepAlive(options.keepAlive ?? true, 60000);
+      // Probe an idle connection after 15 s so a dropped network (VPN, Wi-Fi) is noticed quickly.
+      socket.setKeepAlive(options.keepAlive ?? true, 15000);
       socket.setTimeout(timeoutMs, () => {
         if (!settled) {
           socket.destroy(new Error(`connection to ${options.host}:${options.port} timed out`));

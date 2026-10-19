@@ -85,10 +85,10 @@ export class TerminalTab {
             this.post({ type: 'screen', screen });
             this.post({ type: 'oia', oia });
           },
-          status: (status, detail) => {
+          status: (status, detail, info) => {
             this.status = status;
             this.statusDetail = detail;
-            this.post({ type: 'status', status, detail });
+            this.post({ type: 'status', status, detail, info });
             host.log(`[${label}] ${status}: ${detail}`);
             host.changed(this);
           },
@@ -131,6 +131,19 @@ export class TerminalTab {
 
   exportTrace(): Record<string, unknown> | undefined {
     return this.controller?.exportTrace();
+  }
+
+  /** Copies the selection (or the whole screen) to the clipboard. */
+  copy(): void {
+    this.post({ type: 'copySelection' });
+  }
+
+  /** Pastes the clipboard text at the cursor, honouring the paste settings. */
+  paste(): void {
+    void goApp()
+      .ClipboardGet()
+      .then((text) => this.post({ type: 'paste', text }))
+      .catch((err: unknown) => this.host.log(`clipboard: ${errorText(err)}`));
   }
 
   focus(): void {
@@ -226,11 +239,14 @@ export class TerminalTab {
       case 'copy':
         void goApp().ClipboardSet(msg.text);
         break;
+      case 'reconnect':
+        this.controller?.reconnectNow();
+        break;
+      case 'cancelReconnect':
+        this.controller?.disconnect();
+        break;
       case 'paste':
-        void goApp()
-          .ClipboardGet()
-          .then((text) => this.post({ type: 'paste', text }))
-          .catch((err: unknown) => this.host.log(`clipboard: ${errorText(err)}`));
+        this.paste();
         break;
       case 'printScreen':
         this.host.printScreen(this);

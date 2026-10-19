@@ -38,6 +38,8 @@ func main() {
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
 		Bind:       []interface{}{app},
+		// Files dropped on the IFS browser are uploaded; the page decides what a drop means.
+		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId:               "io.github.derkybertakt.tn5250-desktop",
 			OnSecondInstanceLaunch: app.secondInstance,

@@ -25,6 +25,37 @@ export interface SystemInfo {
   platform: string;
 }
 
+export interface IfsEntry {
+  name: string;
+  dir: boolean;
+  symlink: boolean;
+  size: number;
+  modified: string;
+  created: string;
+  /** 1 file, 2 directory, 3 symbolic link, 4 native object (QSYS.LIB), 5 FIFO ... */
+  type: number;
+  readOnly: boolean;
+  hidden: boolean;
+}
+
+export interface IfsConnectRequest {
+  host: string;
+  tls: boolean;
+  trustAnyCertificate: boolean;
+  user: string;
+  password: string;
+  timeoutMs: number;
+}
+
+export interface IfsProgress {
+  transfer: string;
+  file: string;
+  done: number;
+  total: number;
+  files: number;
+  filesNow: number;
+}
+
 interface GoApp {
   NetConnect(id: string, options: ConnectOptionsDto): Promise<void>;
   NetSend(id: string, base64: string): Promise<void>;
@@ -44,10 +75,21 @@ interface GoApp {
   ClipboardSet(text: string): Promise<void>;
   ClipboardGet(): Promise<string>;
   OpenURL(url: string): Promise<void>;
+  IfsConnect(request: IfsConnectRequest): Promise<string>;
+  IfsClose(id: string): Promise<void>;
+  IfsList(id: string, dir: string): Promise<IfsEntry[]>;
+  IfsMkdir(id: string, path: string): Promise<void>;
+  IfsRename(id: string, from: string, to: string): Promise<void>;
+  IfsDelete(id: string, path: string, dir: boolean, recursive: boolean): Promise<void>;
+  IfsDownload(id: string, remotes: string[], transfer: string): Promise<number>;
+  IfsUpload(id: string, remoteDir: string, paths: string[], replace: boolean, transfer: string): Promise<number>;
+  IfsCancel(transfer: string): Promise<void>;
+  IfsReadText(id: string, path: string): Promise<string>;
 }
 
 interface WailsRuntime {
   EventsOn(name: string, callback: (...args: unknown[]) => void): () => void;
+  OnFileDrop(callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean): void;
   WindowSetTitle(title: string): void;
   Quit(): void;
 }

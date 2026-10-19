@@ -1,12 +1,13 @@
 import { Session5250 } from '../engine/session';
 import type { KeyAction } from '../shared/keymap';
-import type { ConnectionStatus, OiaState, ScreenSnapshot } from '../shared/protocol';
+import { friendlyNetError } from '../shared/netErrors';
+import type { ConnectionInfo, ConnectionStatus, OiaState, ScreenSnapshot } from '../shared/protocol';
 import type { TerminalSettings } from '../shared/settings';
 import type { Transport, TransportFactory } from './connection';
 
 export interface SessionControllerEvents {
   screen(snapshot: ScreenSnapshot, oia: OiaState): void;
-  status(status: ConnectionStatus, detail: string): void;
+  status(status: ConnectionStatus, detail: string, info: ConnectionInfo): void;
   alarm(): void;
   log(message: string): void;
   /** Password for bypass sign-on, if one is stored. */
@@ -50,6 +51,7 @@ export class SessionController {
   private screensReceived = 0;
   private connectedAt = 0;
   private deviceRetries = 0;
+  private lastDetail = '';
 
   constructor(
     readonly profile: TerminalSettings,
@@ -99,7 +101,7 @@ export class SessionController {
     this.signonDone = false;
     this.trace = [];
     this.traceStart = Date.now();
-    this.setStatus('connecting', `${this.profile.host}:${this.profile.port}`);
+    this.setStatus('connecting', `${this.profile.host}:${this.profile.port}`, { attempt: this.reconnectAttempt + 1 });
     const connection = this.createTransport({
       data: (bytes) => {
         this.record('in', bytes);
@@ -142,9 +144,15 @@ export class SessionController {
         ...(auth ?? {}),
       });
     } catch (err) {
+      if (this.connection !== connection) return; // cancelled or superseded meanwhile
       this.connection = undefined;
-      this.setStatus('disconnected', err instanceof Error ? err.message : String(err));
+      this.setStatus('disconnected', friendlyNetError(err instanceof Error ? err.message : String(err), this.profile.host, this.profile.port));
       this.scheduleReconnect();
+      return;
+    }
+    if (!this.wantConnected || this.connection !== connection) {
+      // Cancelled while the connection was being set up.
+      connection.close();
       return;
     }
     this.reconnectAttempt = 0;
@@ -155,14 +163,22 @@ export class SessionController {
     this.touch();
   }
 
+  /** Disconnects (or cancels a connect / pending reconnect) at the user's request. */
   disconnect(): void {
     this.wantConnected = false;
     this.clearTimers();
     const c = this.connection;
     this.connection = undefined;
     c?.close();
-    if (this.status !== 'disconnected') this.setStatus('disconnected', 'disconnected');
+    this.setStatus('disconnected', 'disconnected', { attempt: 0, manual: true });
     this.publish();
+  }
+
+  /** Connects now, skipping the wait for a scheduled reconnect. */
+  reconnectNow(): void {
+    if (this.status === 'connecting' || this.status === 'connected') return;
+    this.clearTimers();
+    void this.connect();
   }
 
   dispose(): void {
@@ -239,6 +255,7 @@ export class SessionController {
     const delay = RECONNECT_DELAYS_MS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)] as number;
     this.reconnectAttempt += 1;
     this.events.log(`reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempt})`);
+    this.setStatus('disconnected', this.lastDetail, { attempt: this.reconnectAttempt, retryAt: Date.now() + delay });
     this.reconnectTimer = setTimeout(() => void this.connect(), delay);
   }
 
@@ -266,8 +283,9 @@ export class SessionController {
     if (this.trace.length > TRACE_LIMIT) this.trace.splice(0, this.trace.length - TRACE_LIMIT);
   }
 
-  private setStatus(status: ConnectionStatus, detail: string): void {
+  private setStatus(status: ConnectionStatus, detail: string, info: ConnectionInfo = { attempt: this.reconnectAttempt }): void {
     this.status = status;
-    this.events.status(status, detail);
+    this.lastDetail = detail;
+    this.events.status(status, detail, info);
   }
 }

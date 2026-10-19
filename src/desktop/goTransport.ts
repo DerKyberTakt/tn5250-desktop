@@ -44,6 +44,11 @@ export class GoTransport implements Transport {
         timeoutMs: options.timeoutMs ?? 15000,
         keepAlive: options.keepAlive ?? true,
       });
+      if (this.closed) {
+        // Closed (cancelled) while the host was still dialling: drop the late socket.
+        void goApp().NetClose(this.id);
+        throw new Error('cancelled');
+      }
       this.isOpen = true;
     } catch (err) {
       transports.delete(this.id);

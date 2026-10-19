@@ -4,6 +4,7 @@ import { classifyKey, keyName, type Keymap } from '../shared/keymap';
 import { expandTabs, fieldRanges, hotspotAt, urlAt, wordAt } from '../shared/screenText';
 import { SETTINGS_DEFAULTS, effectiveKeymap } from '../shared/settings';
 import { describeKey, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
+import { ConnectionOverlay } from './connectionOverlay';
 import { Renderer } from './renderer';
 
 const vscode = acquireVsCodeApi();
@@ -21,6 +22,10 @@ const oiaEl = byId<HTMLDivElement>('oia');
 const keylog = byId<HTMLPreElement>('keylog');
 
 const renderer = new Renderer(canvas);
+const overlay = new ConnectionOverlay(viewport, {
+  reconnect: () => post({ type: 'reconnect' }),
+  cancel: () => post({ type: 'cancelReconnect' }),
+});
 let config: TerminalConfig = { settings: SETTINGS_DEFAULTS, keyOverlay: false };
 let oia: OiaState = DEFAULT_OIA;
 let status: ConnectionStatus = 'idle';
@@ -204,6 +209,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
     case 'status':
       status = msg.status;
       statusDetail = msg.detail;
+      overlay.update(msg.status, msg.detail, msg.info);
       renderOia();
       break;
     case 'alarm':
@@ -211,6 +217,9 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
       break;
     case 'paste':
       pasteText(msg.text);
+      break;
+    case 'copySelection':
+      copySelection();
       break;
   }
 });
@@ -289,8 +298,7 @@ window.addEventListener(
     }
     if (config.keyOverlay) post({ type: 'key', event: info });
     if ((info.ctrl && !info.shift && !info.alt && info.key.toLowerCase() === 'c') || (info.ctrl && info.key === 'Insert')) {
-      post({ type: 'copy', text: renderer.selectedText(config.settings.copyTrimTrailing) });
-      if (!config.settings.copyKeepSelection) renderer.clearSelection();
+      copySelection();
       logKey(`${keyName(info)}  -> copy`);
       return;
     }
@@ -302,6 +310,12 @@ window.addEventListener(
       return;
     }
     if (config.settings.keyClick) beep(1200, 0.02);
+    // Not connected: the overlay takes Enter (reconnect) and Escape (stop); other keys go nowhere.
+    if (overlay.visible) {
+      overlay.handleKey(info.key);
+      logKey(`${keyName(info)}  -> (not connected)`);
+      return;
+    }
     const result = classifyKey(info, keymap);
     if (result.kind === 'text') {
       logKey(`${describeKey(info)}  -> text`);
@@ -414,6 +428,12 @@ window.addEventListener('mouseup', (e) => {
   post({ type: 'click', row: cell.row, col: cell.col });
   if (config.settings.enterAtCursorClick) post({ type: 'action', action: 'enter' });
 });
+
+/** Copies the selection (or the whole screen) through the host clipboard. */
+function copySelection(): void {
+  post({ type: 'copy', text: renderer.selectedText(config.settings.copyTrimTrailing) });
+  if (!config.settings.copyKeepSelection) renderer.clearSelection();
+}
 
 /** Types clipboard text into the screen, line by line, honouring the paste settings. */
 function pasteText(text: string): void {

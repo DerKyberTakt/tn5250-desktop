@@ -65,14 +65,26 @@ export interface KeyEventInfo {
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected';
 
+/** Extra facts about a status change, for the connection overlay. */
+export interface ConnectionInfo {
+  /** Connection attempt number since the last successful connect (1 = first try). */
+  attempt: number;
+  /** Epoch ms of the next automatic reconnect, when one is scheduled. */
+  retryAt?: number;
+  /** The user disconnected or cancelled (no "connection lost" wording). */
+  manual?: boolean;
+}
+
 export type HostToWebview =
   | { type: 'screen'; screen: ScreenSnapshot }
   | { type: 'oia'; oia: OiaState }
   | { type: 'config'; config: TerminalConfig }
-  | { type: 'status'; status: ConnectionStatus; detail: string }
+  | { type: 'status'; status: ConnectionStatus; detail: string; info?: ConnectionInfo }
   | { type: 'alarm' }
   /** Clipboard text read by the host, in answer to a 'paste' request. */
-  | { type: 'paste'; text: string };
+  | { type: 'paste'; text: string }
+  /** Toolbar / menu Copy: copy the selection (the whole screen when nothing is selected), like Ctrl+C. */
+  | { type: 'copySelection' };
 
 export type WebviewToHost =
   | { type: 'ready' }
@@ -83,6 +95,9 @@ export type WebviewToHost =
   | { type: 'copy'; text: string }
   /** Ctrl+V / Shift+Insert: asks the host for the clipboard text (webviews cannot read it). */
   | { type: 'paste' }
+  /** Connection overlay: connect now / stop retrying (or cancel a connect in progress). */
+  | { type: 'reconnect' }
+  | { type: 'cancelReconnect' }
   | { type: 'printScreen' }
   | { type: 'openUrl'; url: string }
   | { type: 'log'; message: string };
