@@ -69,6 +69,20 @@ export function markedFieldRanges(s: Pick<ScreenSnapshot, 'rows' | 'cols' | 'fie
   );
 }
 
+/**
+ * Cells covered by an Enhanced-mode field decoration (box or long-field line):
+ * every cell of an input field that is not bypass (protected). Everywhere else
+ * the host's own underline attribute is drawn as it is (underlined headings,
+ * protected fields), the same as ACS and Classic mode.
+ */
+export function decoratedFieldCells(s: Pick<ScreenSnapshot, 'rows' | 'cols' | 'fields'>): Uint8Array<ArrayBuffer> {
+  const mask = new Uint8Array(s.rows * s.cols);
+  for (const f of s.fields) {
+    if (!f.bypass) mask.fill(1, f.start, Math.min(mask.length, f.start + f.length));
+  }
+  return mask;
+}
+
 function isMarked(attr: number): boolean {
   const a = decodeAttribute(attr);
   return !a.nondisplay && (a.underline || a.reverse);

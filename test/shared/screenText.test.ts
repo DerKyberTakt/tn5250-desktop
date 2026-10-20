@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expandTabs, fieldRanges, hotspotAt, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, wordAt } from '../../src/shared/screenText';
+import { decoratedFieldCells, expandTabs, fieldRanges, hotspotAt, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, wordAt } from '../../src/shared/screenText';
 import { SETTINGS_DEFAULTS, buildTitle, diffSettings, resolveSettings } from '../../src/shared/settings';
 
 describe('fieldRanges', () => {
@@ -50,6 +50,20 @@ describe('markedFieldRanges', () => {
   it('follows a reverse-image field and continues across a colour change', () => {
     const r = markedFieldRanges({ rows: 1, cols: 40, fields: [{ start: 1, length: 12, bypass: false }], attrs: attrs({ 0: 0x21, 6: 0x2c, 10: 0x20 }) });
     expect(r.map((x) => [x.col, x.length])).toEqual([[1, 9]]);
+  });
+});
+
+describe('decoratedFieldCells', () => {
+  it('covers input fields only, not protected ones', () => {
+    const m = decoratedFieldCells({
+      rows: 1,
+      cols: 20,
+      fields: [
+        { start: 1, length: 3, bypass: false },
+        { start: 6, length: 3, bypass: true },
+      ],
+    });
+    expect(Array.from(m.slice(0, 10))).toEqual([0, 1, 1, 1, 0, 0, 0, 0, 0, 0]);
   });
 });
 

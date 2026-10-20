@@ -1,6 +1,6 @@
 import { ATTR_NORMAL, decodeAttribute, isAttribute, type Color } from '../engine/attributes';
 import type { ScreenSnapshot } from '../shared/protocol';
-import { fieldRanges, keyLabelsIn, markedFieldRanges, rowText, urlsIn, type FieldRange } from '../shared/screenText';
+import { decoratedFieldCells, fieldRanges, keyLabelsIn, markedFieldRanges, rowText, urlsIn, type FieldRange } from '../shared/screenText';
 import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
 import { highlightScreen, Tok } from '../shared/sourceHighlight';
 
@@ -132,6 +132,8 @@ export class Renderer {
   private screen: ScreenSnapshot | undefined;
   /** 1 where the cell belongs to a field (decorations apply even to null cells). */
   private fieldMask = new Uint8Array(0);
+  /** Enhanced mode: cells under a field box or line, where the host underline is not drawn again. */
+  private boxedMask = new Uint8Array(0);
   private ranges: FieldRange[] = [];
   /** Field runs as the host marks them (underline/reverse); enhanced boxes follow these. */
   private boxRanges: FieldRange[] = [];
@@ -209,6 +211,7 @@ export class Renderer {
     const mask = new Uint8Array(screen.rows * screen.cols);
     for (const f of screen.fields) mask.fill(1, f.start, Math.min(mask.length, f.start + f.length));
     this.fieldMask = mask;
+    this.boxedMask = decoratedFieldCells(screen);
     this.ranges = fieldRanges(screen);
     this.boxRanges = markedFieldRanges(screen);
     this.syntax = highlightScreen(screen);
@@ -421,11 +424,13 @@ export class Renderer {
         ctx.fillStyle = fg;
         ctx.fillRect(x, y, this.cellW + 0.5, this.cellH);
       }
-      if (current.underline && !enhanced) {
+      // Enhanced mode replaces the underline of input fields with boxes; everything else
+      // the host underlines (headings, protected fields) keeps its underline.
+      if (current.underline && (!enhanced || this.boxedMask[i] !== 1)) {
         ctx.fillStyle = current.reverse ? this.theme.background : fg;
         ctx.fillRect(x, y + this.cellH - 2, this.cellW + 0.5, 1);
       }
-      if (current.columnSeparators && this.options.columnSeparators !== 'none' && !enhanced) {
+      if (current.columnSeparators && this.options.columnSeparators !== 'none' && (!enhanced || this.boxedMask[i] !== 1)) {
         ctx.fillStyle = this.theme.columnSeparator || fg;
         if (this.options.columnSeparators === 'line') ctx.fillRect(x, y, 1, this.cellH);
         else ctx.fillRect(x, y + this.cellH - 2, 1, 1);
