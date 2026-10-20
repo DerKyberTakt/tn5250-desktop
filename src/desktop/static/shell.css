@@ -534,6 +534,26 @@ dialog.modal button.primary {
   opacity: 0.35;
 }
 
+/* Check for updates: green and softly pulsing when a newer release exists. */
+#toolbar .tool.update-available {
+  color: #2fbf5b;
+  border-color: #2fbf5b;
+  box-shadow: 0 0 6px 1px rgba(47, 191, 91, 0.75);
+  animation: update-pulse 2s ease-in-out infinite;
+}
+
+@keyframes update-pulse {
+  50% {
+    box-shadow: 0 0 11px 3px rgba(47, 191, 91, 0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #toolbar .tool.update-available {
+    animation: none;
+  }
+}
+
 #toolbar .sep {
   width: 1px;
   height: 18px;

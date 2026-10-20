@@ -31,6 +31,8 @@ export const ICONS = {
   settings: svg(
     '<circle cx="12" cy="12" r="3" stroke="currentColor"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor"/>',
   ),
+  /** Check for updates: glows green when a newer release exists. */
+  update: svg('<path d="M12 3.5v11" stroke="currentColor" stroke-width="2"/><path d="m7.5 10 4.5 4.5 4.5-4.5" stroke="currentColor" stroke-width="2"/><path d="M4.5 16v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V16" stroke="currentColor"/>'),
   help: svg('<circle cx="12" cy="12" r="9" stroke="#1f5fa8"/><path d="M9.5 9.5a2.6 2.6 0 1 1 3.6 2.4c-.7.3-1.1.9-1.1 1.6v.5" stroke="#1f5fa8"/><circle cx="12" cy="17" r=".9" fill="#1f5fa8" stroke="none"/>'),
 } as const;
 

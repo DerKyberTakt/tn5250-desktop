@@ -5,6 +5,7 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -20,6 +21,7 @@ var dist embed.FS
 var icon []byte
 
 func main() {
+	afterUpdate(os.Args[1:])
 	assets, err := fs.Sub(dist, "dist/desktop")
 	if err != nil {
 		log.Fatal(err)

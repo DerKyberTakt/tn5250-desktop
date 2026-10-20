@@ -17,6 +17,11 @@ It shares its TN5250 engine and terminal UI with the
   Solutions does, so the host needs only its standard host servers (STRHOSTSVR).
 - No telemetry. Connections go only to the hosts you enter. Passwords are kept in the
   operating system credential store.
+- Updates from GitHub: the ↓ toolbar button glows green when a new release is out, and
+  updates in place after checking the download against the release's `SHA256SUMS`. The
+  only other connection the app makes is that check, to github.com, at startup and once
+  a day (Help > Check for Updates at Startup turns it off). Behind a proxy, set
+  `HTTPS_PROXY`.
 
 ## Download
 

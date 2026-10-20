@@ -13,6 +13,18 @@ export interface ConnectOptionsDto {
   keepAlive: boolean;
 }
 
+/** Result of App.UpdateCheck (app_update.go). */
+export interface UpdateInfo {
+  current: string;
+  /** Latest release tag, e.g. "v0.1.3"; empty when nothing is published. */
+  latest: string;
+  available: boolean;
+  /** Release notes page. */
+  page: string;
+  mode: 'installer' | 'portable' | 'appimage' | 'manual';
+  reason?: string;
+}
+
 export interface FileFilter {
   name: string;
   /** Semicolon-separated globs, e.g. "*.json;*.txt". */
@@ -63,6 +75,8 @@ interface GoApp {
   SystemInfo(): Promise<SystemInfo>;
   LaunchArgs(): Promise<string[]>;
   Version(): Promise<string>;
+  UpdateCheck(): Promise<UpdateInfo>;
+  UpdateInstall(tag: string): Promise<void>;
   SettingsLoad(): Promise<string>;
   SettingsSave(text: string): Promise<void>;
   SettingsFilePath(): Promise<string>;

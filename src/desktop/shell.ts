@@ -2,7 +2,7 @@ import type { KeyAction } from '../shared/keymap';
 import type { WebviewToHost } from '../shared/protocol';
 import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
-import { errorText, goApp, wailsRuntime, type SystemInfo } from './bridge';
+import { errorText, goApp, wailsRuntime, type SystemInfo, type UpdateInfo } from './bridge';
 import { confirmDialog, formDialog, messageDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
@@ -13,6 +13,8 @@ import { TerminalTab, type TabHost } from './terminalTab';
 const APP_NAME = 'TN5250 Terminal';
 const PROJECT_URL = 'https://github.com/DerKyberTakt/tn5250-desktop';
 const LOG_LIMIT = 1000;
+/** While the app stays open, look for a new release once a day. */
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 type Entry =
   | { kind: 'terminal'; tab: TerminalTab; button: HTMLElement }
@@ -59,6 +61,9 @@ class Shell implements TabHost, IfsHost {
   private readonly empty = byId<HTMLDivElement>('empty');
   private readonly sidebar = byId<HTMLElement>('sidebar');
   private toolbarItems: Array<{ button: HTMLButtonElement; enabled?: () => boolean; pressed?: () => boolean }> = [];
+  private updateButton?: HTMLButtonElement;
+  private updateInfo?: UpdateInfo;
+  private updating = false;
   private readonly sessionList = byId<HTMLUListElement>('sessions');
   private readonly logEl = byId<HTMLPreElement>('log');
   private readonly statusText = byId<HTMLSpanElement>('status-text');
@@ -99,6 +104,76 @@ class Shell implements TabHost, IfsHost {
     document.addEventListener('keydown', (ev) => this.onShellKey(ev));
     this.refresh();
     await this.openFromCommandLine();
+    void this.quietUpdateCheck();
+    setInterval(() => void this.quietUpdateCheck(), UPDATE_CHECK_INTERVAL_MS);
+  }
+
+  // --- updates (app_update.go: GitHub Releases, verified against SHA256SUMS) ---
+
+  /** Startup / daily check: only lights up the toolbar button, never interrupts. */
+  private async quietUpdateCheck(): Promise<void> {
+    if (!this.store.checkForUpdates || this.updating) return;
+    try {
+      this.updateInfo = await goApp().UpdateCheck();
+      this.updateToolbar();
+    } catch (err) {
+      this.log(`update check: ${errorText(err)}`);
+    }
+  }
+
+  private async checkForUpdates(): Promise<void> {
+    if (this.updating) return;
+    const title = 'Check for Updates';
+    let info: UpdateInfo;
+    try {
+      this.notify('Checking for updates…');
+      info = await goApp().UpdateCheck();
+    } catch (err) {
+      await messageDialog(title, [`Could not check for updates: ${errorText(err)}`, `${PROJECT_URL}/releases`]);
+      return;
+    }
+    this.updateInfo = info;
+    this.updateToolbar();
+    this.refresh();
+    if (!info.latest) {
+      await messageDialog(title, [`No release has been published yet. You have version ${info.current}.`]);
+      return;
+    }
+    if (!info.available) {
+      await messageDialog(title, [`You have the latest version (${info.current}).`]);
+      return;
+    }
+    const latest = versionOf(info.latest);
+    if (info.mode === 'manual') {
+      const open = await confirmDialog(`Version ${latest} is available`, `You have ${info.current}. ${info.reason ?? ''}`, 'Open release page');
+      if (open) void goApp().OpenURL(info.page);
+      return;
+    }
+    const sessions = this.entries.filter((e) => e.kind === 'terminal' && e.tab.connected).length;
+    const warning = sessions ? ` ${sessions} open session${sessions > 1 ? 's' : ''} will be disconnected.` : '';
+    const ok = await confirmDialog(
+      `Version ${latest} is available`,
+      `You have ${info.current}. ${APP_NAME} downloads the update from GitHub, checks it against the release's SHA256SUMS and restarts.${warning} What's new: ${info.page}`,
+      'Update now',
+    );
+    if (!ok) return;
+    this.updating = true;
+    let off: (() => void) | undefined;
+    try {
+      off = wailsRuntime().EventsOn('update:progress', (done, total) => {
+        const d = Number(done);
+        const t = Number(total);
+        this.notify(t > 0 ? `Downloading ${latest}… ${Math.floor((d * 100) / t)}%` : `Downloading ${latest}… ${(d / 1048576).toFixed(1)} MB`);
+      });
+      this.notify(`Downloading ${latest}…`);
+      await goApp().UpdateInstall(info.latest);
+      this.notify(`Restarting with ${latest}…`);
+    } catch (err) {
+      this.updating = false;
+      await messageDialog('Update failed', [errorText(err), `You can download ${latest} from ${info.page}`]);
+    } finally {
+      off?.();
+    }
   }
 
   /** `tn5250-terminal [--tls] host[:port]` opens an ad-hoc session (port 992 implies TLS); `--demo` opens the demo screen. */
@@ -465,6 +540,7 @@ class Shell implements TabHost, IfsHost {
       { icon: 'ifs', title: 'Integrated File System', run: () => void this.openIfs() },
       { icon: 'settings', title: 'Settings', run: () => this.openSettings(-1) },
       { icon: 'help', title: `About ${APP_NAME}`, run: () => void this.about() },
+      { icon: 'update', title: 'Check for updates', run: () => void this.checkForUpdates() },
     ];
     const bar = byId<HTMLDivElement>('toolbar');
     for (const tool of tools) {
@@ -484,6 +560,7 @@ class Shell implements TabHost, IfsHost {
         if (tool.icon !== 'connections') this.active?.tab.focus();
       });
       bar.append(b);
+      if (tool.icon === 'update') this.updateButton = b;
       this.toolbarItems.push({ button: b, enabled: tool.enabled, pressed: tool.pressed });
     }
   }
@@ -492,6 +569,13 @@ class Shell implements TabHost, IfsHost {
     for (const item of this.toolbarItems) {
       item.button.disabled = item.enabled ? !item.enabled() : false;
       if (item.pressed) item.button.setAttribute('aria-pressed', String(item.pressed()));
+    }
+    const u = this.updateInfo;
+    if (this.updateButton) {
+      const available = !!u?.available;
+      this.updateButton.classList.toggle('update-available', available);
+      this.updateButton.title = available ? `Update available: ${versionOf(u.latest)} (you have ${u.current})` : 'Check for updates';
+      this.updateButton.setAttribute('aria-label', this.updateButton.title);
     }
   }
 
@@ -575,6 +659,13 @@ class Shell implements TabHost, IfsHost {
         items: [
           { label: 'Project Website', run: () => void goApp().OpenURL(PROJECT_URL) },
           { label: 'Settings File Location', run: () => void this.showSettingsPath() },
+          '-',
+          { label: 'Check for Updates…', run: () => void this.checkForUpdates() },
+          {
+            label: 'Check for Updates at Startup',
+            run: () => void this.store.setCheckForUpdates(!this.store.checkForUpdates),
+            checked: () => this.store.checkForUpdates,
+          },
           '-',
           { label: `About ${APP_NAME}`, run: () => void this.about() },
         ],
@@ -701,9 +792,14 @@ class Shell implements TabHost, IfsHost {
       ...(version ? [`Version ${version}`] : []),
       'A 5250 terminal emulator for IBM i. Free and open source (MIT).',
       PROJECT_URL,
-      'No telemetry. Connections go only to the hosts you enter.',
+      'No telemetry. Connections go only to the hosts you enter, and to github.com to check for updates (Help > Check for Updates at Startup turns that off).',
     ]);
   }
+}
+
+/** "v0.1.3" -> "0.1.3". */
+function versionOf(tag: string): string {
+  return tag.replace(/^v/, '');
 }
 
 void new Shell().start();

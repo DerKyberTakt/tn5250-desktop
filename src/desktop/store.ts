@@ -17,6 +17,8 @@ interface SettingsFile {
   defaults: Partial<TerminalSettings>;
   sessions: SessionOverrides[];
   lastSession?: string;
+  /** Check GitHub for a newer release at startup (Help menu); on unless false. */
+  checkForUpdates?: boolean;
 }
 
 type Listener = () => void;
@@ -35,6 +37,7 @@ export class Store {
       defaults: typeof parsed.defaults === 'object' && parsed.defaults ? parsed.defaults : {},
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions.filter((s) => typeof s?.host === 'string') : [],
       lastSession: typeof parsed.lastSession === 'string' ? parsed.lastSession : undefined,
+      checkForUpdates: typeof parsed.checkForUpdates === 'boolean' ? parsed.checkForUpdates : undefined,
     };
   }
 
@@ -96,6 +99,15 @@ export class Store {
 
   get lastSession(): string | undefined {
     return this.file.lastSession;
+  }
+
+  get checkForUpdates(): boolean {
+    return this.file.checkForUpdates !== false;
+  }
+
+  async setCheckForUpdates(on: boolean): Promise<void> {
+    this.file.checkForUpdates = on;
+    await this.persist();
   }
 
   async setLastSession(name: string): Promise<void> {
