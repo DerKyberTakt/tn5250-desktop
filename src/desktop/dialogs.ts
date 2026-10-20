@@ -12,6 +12,8 @@ interface Field {
   value?: string;
   password?: boolean;
   placeholder?: string;
+  /** A checkbox; its value comes back as 'true' or ''. `value: 'true'` starts it ticked. */
+  checkbox?: boolean;
 }
 
 /** Shows a form; resolves with the field values, or undefined when cancelled. */
@@ -23,6 +25,15 @@ export function formDialog(title: string, fields: Field[], okLabel = 'OK', note?
     form.append(el('h2', undefined, title));
     if (note) form.append(el('p', 'note', note));
     const inputs = fields.map((f) => {
+      if (f.checkbox) {
+        const label = el('label', 'check');
+        const box = el('input');
+        box.type = 'checkbox';
+        box.checked = f.value === 'true';
+        label.append(box, document.createTextNode(` ${f.label}`));
+        form.append(label);
+        return box;
+      }
       const label = el('label', undefined, f.label);
       const input = el('input');
       input.type = f.password ? 'password' : 'text';
@@ -47,14 +58,15 @@ export function formDialog(title: string, fields: Field[], okLabel = 'OK', note?
     let result: string[] | undefined;
     cancel.onclick = () => dialog.close();
     form.onsubmit = () => {
-      result = inputs.map((i) => i.value);
+      result = inputs.map((i) => (i.type === 'checkbox' ? (i.checked ? 'true' : '') : i.value));
     };
     dialog.onclose = () => {
       dialog.remove();
       resolve(result);
     };
     dialog.showModal();
-    inputs[0]?.focus();
+    // Start in the first empty text field (the password when host and user are known).
+    (inputs.find((i) => i.type !== 'checkbox' && !i.value) ?? inputs[0])?.focus();
   });
 }
 

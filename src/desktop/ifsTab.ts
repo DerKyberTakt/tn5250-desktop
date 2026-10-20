@@ -64,6 +64,8 @@ export class IfsTab {
   constructor(
     private readonly host: IfsHost,
     private readonly request: IfsConnectRequest,
+    /** Told whether the sign-on worked (error = why not). */
+    private readonly onSignon?: (error?: unknown) => void,
   ) {
     this.title = `IFS - ${request.host}`;
     this.frame = el('div', 'terminal-frame ifs');
@@ -152,10 +154,12 @@ export class IfsTab {
     try {
       this.session = await goApp().IfsConnect(this.request);
       this.host.log(`[IFS ${this.request.host}] signed on as ${this.request.user.toUpperCase()}`);
+      this.onSignon?.();
       await this.go(`/home/${this.request.user.toUpperCase()}`, false, true);
     } catch (err) {
       this.showMessage(`Could not open the IFS on ${this.request.host}: ${errorText(err)}`, true);
       this.statusEl.textContent = 'Not connected';
+      this.onSignon?.(err);
     } finally {
       this.setBusy(false);
     }

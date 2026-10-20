@@ -7,7 +7,7 @@ import { confirmDialog, formDialog, messageDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
-import { passwordKey, Store } from './store';
+import { ifsPasswordKey, passwordKey, Store } from './store';
 import { TerminalTab, type TabHost } from './terminalTab';
 
 const APP_NAME = 'TN5250 Terminal';
@@ -236,18 +236,33 @@ class Shell implements TabHost, IfsHost {
   }
 
   /** Tools > Integrated File System: signs on to the file server of the active (or selected) session's host. */
-  private async openIfs(): Promise<void> {
+  /**
+   * Opens an IFS browser. The password comes from the credential store when one is
+   * saved (Remember password, or the session's bypass sign-on password); otherwise
+   * a sign-on dialog asks. A refused sign-on never retries a stored password: the
+   * remembered one is forgotten and the dialog shows why (the host may disable the
+   * profile after the next failed attempt).
+   */
+  private async openIfs(retry?: { host: string; user: string; reason: string }): Promise<void> {
     const t = this.activeTerminal();
     const sessions = this.store.readSessions();
     const picked = this.selectedSession >= 0 ? sessions[this.selectedSession] : undefined;
     const defaults = this.store.readDefaults();
     const base = t?.profile ?? (picked ? resolveSettings(defaults, picked) : this.store.resolvedSessions()[0]) ?? defaults;
-    let host = base.host;
-    let user = base.signonUser.trim();
+    const last = this.store.ifsLast;
+    let host = retry?.host ?? (base.host || last?.host || '');
+    let user = retry?.user ?? (base.signonUser.trim() || (last?.host === host ? last.user : '') || '');
     let password = '';
-    if (host && user) {
+    let fromStore: 'ifs' | 'session' | undefined;
+    let remember = true;
+    if (!retry && host && user) {
       try {
-        password = (await goApp().SecretGet(passwordKey(base.name, host))) || (await goApp().SecretGet(passwordKey('', host)));
+        password = await goApp().SecretGet(ifsPasswordKey(user, host));
+        if (password) fromStore = 'ifs';
+        else {
+          password = (await goApp().SecretGet(passwordKey(base.name, host))) || (await goApp().SecretGet(passwordKey('', host)));
+          if (password) fromStore = 'session';
+        }
       } catch {
         password = '';
       }
@@ -259,27 +274,53 @@ class Shell implements TabHost, IfsHost {
           { label: 'Host', value: host, placeholder: 'myibmi.example.com' },
           { label: 'User profile', value: user },
           { label: 'Password', password: true },
+          { label: 'Remember password (Windows Credential Manager)', checkbox: true, value: 'true' },
         ],
         'Connect',
-        'Signs on to the IBM i file server, as ACS does. The password stays in memory for this window only.',
+        retry
+          ? `${retry.reason}. Enter the password again.`
+          : 'Signs on to the IBM i file server, as ACS does. A remembered password is kept in the operating system credential store, never in the settings file.',
       );
       if (!values) return;
-      [host = '', user = '', password = ''] = values.map((v) => v.trim());
+      [host = '', user = '', password = ''] = values.slice(0, 3).map((v) => v.trim());
+      remember = values[3] === 'true';
+      fromStore = undefined;
       if (!host || !user || !password) {
         this.notify('Host, user profile and password are all needed');
         return;
       }
     }
     const sameHost = host === base.host;
-    const tab = new IfsTab(this, {
-      host,
-      tls: sameHost ? base.tls : false,
-      trustAnyCertificate: sameHost ? !base.verifyCertificate : false,
-      user,
-      password,
-      timeoutMs: base.connectTimeoutSeconds * 1000,
-    });
-    this.addEntry({ kind: 'ifs', tab, button: el('div') }, true);
+    const key = ifsPasswordKey(user, host);
+    const typed = !fromStore;
+    const tab = new IfsTab(
+      this,
+      {
+        host,
+        tls: sameHost ? base.tls : false,
+        trustAnyCertificate: sameHost ? !base.verifyCertificate : false,
+        user,
+        password,
+        timeoutMs: base.connectTimeoutSeconds * 1000,
+      },
+      (error) => {
+        if (!error) {
+          void this.store.setIfsLast(host, user);
+          if (typed && remember) void goApp().SecretSet(key, password).catch(() => this.notify('Could not save the password'));
+          if (typed && !remember) void goApp().SecretDelete(key).catch(() => undefined);
+          return;
+        }
+        const reason = errorText(error);
+        if (!/sign-on refused/i.test(reason) || !fromStore) return;
+        // A stored password was refused: forget it (IFS only) and ask, without retrying it.
+        if (fromStore === 'ifs') void goApp().SecretDelete(key).catch(() => undefined);
+        void this.close(entry);
+        void this.openIfs({ host, user, reason: fromStore === 'ifs' ? `The remembered password was refused (${reason})` : `The session's saved password was refused (${reason})` });
+      },
+    );
+    // The sign-on callback runs after start(), so it can refer to this entry.
+    const entry: Entry = { kind: 'ifs', tab, button: el('div') };
+    this.addEntry(entry, true);
     void tab.start();
   }
 

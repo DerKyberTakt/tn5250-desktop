@@ -19,6 +19,8 @@ interface SettingsFile {
   lastSession?: string;
   /** Check GitHub for a newer release at startup (Help menu); on unless false. */
   checkForUpdates?: boolean;
+  /** Host and user of the last IFS sign-on, to fill the dialog (the password is in the credential store). */
+  ifsLast?: { host: string; user: string };
 }
 
 type Listener = () => void;
@@ -38,6 +40,10 @@ export class Store {
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions.filter((s) => typeof s?.host === 'string') : [],
       lastSession: typeof parsed.lastSession === 'string' ? parsed.lastSession : undefined,
       checkForUpdates: typeof parsed.checkForUpdates === 'boolean' ? parsed.checkForUpdates : undefined,
+      ifsLast:
+        typeof parsed.ifsLast?.host === 'string' && typeof parsed.ifsLast?.user === 'string'
+          ? { host: parsed.ifsLast.host, user: parsed.ifsLast.user }
+          : undefined,
     };
   }
 
@@ -110,6 +116,16 @@ export class Store {
     await this.persist();
   }
 
+  get ifsLast(): { host: string; user: string } | undefined {
+    return this.file.ifsLast;
+  }
+
+  async setIfsLast(host: string, user: string): Promise<void> {
+    if (this.file.ifsLast?.host === host && this.file.ifsLast.user === user) return;
+    this.file.ifsLast = { host, user };
+    await this.persist();
+  }
+
   async setLastSession(name: string): Promise<void> {
     if (this.file.lastSession === name) return;
     this.file.lastSession = name;
@@ -120,6 +136,11 @@ export class Store {
 /** Secret-store keys, the same names as the extension uses. */
 export function passwordKey(profileName: string, host: string): string {
   return `tn5250.password:${profileName || host}`;
+}
+
+/** Credential-store key of a remembered IFS password (Remember password in the IFS sign-on). */
+export function ifsPasswordKey(user: string, host: string): string {
+  return `tn5250.ifs:${user.toUpperCase()}@${host.toLowerCase()}`;
 }
 
 export function certPassphraseKey(profileName: string, host: string): string {

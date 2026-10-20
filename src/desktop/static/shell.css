@@ -454,6 +454,18 @@ dialog.modal input {
   border-radius: 3px;
 }
 
+dialog.modal label.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+dialog.modal label.check input {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+}
+
 dialog.modal .buttons {
   display: flex;
   justify-content: flex-end;
