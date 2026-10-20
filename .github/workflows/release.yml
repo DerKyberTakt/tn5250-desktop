@@ -47,6 +47,8 @@ jobs:
 
       - run: npm ci
       - run: npm run check
+      # Go embeds dist/desktop, so the page is built before vet and tests.
+      - run: npm run build -- --production
       - run: go vet . ./internal/... ./cmd/...
       - run: go test . ./internal/...
 
@@ -60,7 +62,6 @@ jobs:
 
       - name: Build
         run: |
-          npm run build -- --production
           wails build -trimpath -s -platform windows/amd64 -nsis -installscope user
           Get-ChildItem build/bin
 
