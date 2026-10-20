@@ -1,3 +1,4 @@
+import type { Credential } from './credentials';
 import {
   SETTINGS_DEFAULTS,
   diffSettings,
@@ -21,6 +22,8 @@ interface SettingsFile {
   checkForUpdates?: boolean;
   /** Host and user of the last IFS sign-on, to fill the dialog (the password is in the credential store). */
   ifsLast?: { host: string; user: string };
+  /** Which USER@host passwords are saved in the credential store (names only, no passwords). */
+  credentials?: Credential[];
 }
 
 type Listener = () => void;
@@ -40,6 +43,9 @@ export class Store {
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions.filter((s) => typeof s?.host === 'string') : [],
       lastSession: typeof parsed.lastSession === 'string' ? parsed.lastSession : undefined,
       checkForUpdates: typeof parsed.checkForUpdates === 'boolean' ? parsed.checkForUpdates : undefined,
+      credentials: Array.isArray(parsed.credentials)
+        ? parsed.credentials.filter((c) => typeof c?.user === 'string' && typeof c?.host === 'string').map((c) => ({ user: c.user, host: c.host }))
+        : undefined,
       ifsLast:
         typeof parsed.ifsLast?.host === 'string' && typeof parsed.ifsLast?.user === 'string'
           ? { host: parsed.ifsLast.host, user: parsed.ifsLast.user }
@@ -126,6 +132,25 @@ export class Store {
     await this.persist();
   }
 
+  get credentials(): Credential[] {
+    return (this.file.credentials ?? []).map((c) => ({ ...c }));
+  }
+
+  async addCredential(c: Credential): Promise<void> {
+    const list = this.file.credentials ?? [];
+    if (list.some((x) => x.user === c.user && x.host === c.host)) return;
+    this.file.credentials = [...list, c].sort((a, b) => a.host.localeCompare(b.host) || a.user.localeCompare(b.user));
+    await this.persist();
+  }
+
+  async removeCredential(c: Credential): Promise<void> {
+    const list = this.file.credentials ?? [];
+    const next = list.filter((x) => !(x.user === c.user && x.host === c.host));
+    if (next.length === list.length) return;
+    this.file.credentials = next;
+    await this.persist();
+  }
+
   async setLastSession(name: string): Promise<void> {
     if (this.file.lastSession === name) return;
     this.file.lastSession = name;
@@ -136,11 +161,6 @@ export class Store {
 /** Secret-store keys, the same names as the extension uses. */
 export function passwordKey(profileName: string, host: string): string {
   return `tn5250.password:${profileName || host}`;
-}
-
-/** Credential-store key of a remembered IFS password (Remember password in the IFS sign-on). */
-export function ifsPasswordKey(user: string, host: string): string {
-  return `tn5250.ifs:${user.toUpperCase()}@${host.toLowerCase()}`;
 }
 
 export function certPassphraseKey(profileName: string, host: string): string {

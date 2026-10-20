@@ -66,8 +66,8 @@ const HELP: Partial<Record<Key, string>> = {
   connectTimeoutSeconds: 'How long to wait for the host to answer the connection before giving up.',
   inactivityTimeoutMinutes: 'Disconnect after this many minutes without keyboard or host activity. 0 keeps the session open.',
   keepAlive: 'Send TCP keep-alive probes so firewalls do not drop an idle session.',
-  autoSignon: 'Fill the Sign On screen automatically: the user ID below, the password from the secret store, then Enter. Works at every system password level because it types into the screen.',
-  signonUser: 'User profile typed into the Sign On screen. Example: USER1.',
+  autoSignon: 'Fill the Sign On screen automatically: the user ID and the saved password below, then Enter. Works at every system password level because it types into the screen. Without it, the saved password is still used by the other tools (desktop app: IFS, SQL).',
+  signonUser: 'The IBM i user profile for this session: typed on the Sign On screen by Bypass signon, and the account the saved password belongs to. Example: USER1.',
   verifyCertificate: 'Check that the host certificate is valid and matches the host name. Turn off for self-signed certificates on internal systems.',
   tlsClientAuth: 'Present a client certificate when the host requires one (ACS "Client Authentication"). EXPERIMENTAL: implemented per the TLS and IBM i telnet specifications but not yet verified against a host that enforces client certificates; report problems with the Output channel log.',
   tlsClientCert: 'PKCS#12 (.pfx/.p12) bundle, or the PEM certificate when using separate files.',
@@ -207,8 +207,8 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'static', label: 'Enable ENPTUI', text: 'Not supported yet. Windows and menus are drawn as text by the host.' },
       { kind: 'heading', label: 'IBM i signon information' },
       YESNO('autoSignon', 'Bypass signon'),
-      { kind: 'text', key: 'signonUser', label: 'User ID', showIf: 'autoSignon' },
-      { kind: 'button', label: 'Password', text: 'Set Password…', message: 'setPassword', showIf: 'autoSignon' },
+      { kind: 'text', key: 'signonUser', label: 'User ID' },
+      { kind: 'button', label: 'Password', text: 'Set Password…', message: 'setPassword' },
     ],
   },
   {
@@ -659,7 +659,7 @@ function renderField(f: FieldSpec): HTMLElement | undefined {
   }
   const row = el('div', 'row');
   const label = el('label', undefined, f.label);
-  const helpText = 'key' in f ? HELP[f.key] : f.kind === 'button' && f.message === 'setPassword' ? 'Stored in the VS Code secret store, never in settings or files.' : f.kind === 'titleParts' ? 'Parts of the tab title, in this order. The session ID is a letter A, B, C per open tab, like ACS.' : undefined;
+  const helpText = 'key' in f ? HELP[f.key] : f.kind === 'button' && f.message === 'setPassword' ? 'Kept in the secret store (VS Code secret storage, or the Windows Credential Manager / keyring in the desktop app), never in settings or files.' : f.kind === 'titleParts' ? 'Parts of the tab title, in this order. The session ID is a letter A, B, C per open tab, like ACS.' : undefined;
   if (helpText) label.append(infoBubble(helpText));
   row.append(label);
   if (f.kind === 'static') {

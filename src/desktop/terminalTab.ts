@@ -6,11 +6,13 @@ import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type WebviewToH
 import { buildTitle, type TerminalSettings } from '../shared/settings';
 import { errorText, goApp, type SystemInfo } from './bridge';
 import { GoTransport } from './goTransport';
-import { passwordKey, type Store } from './store';
+import type { Credentials } from './credentials';
+import type { Store } from './store';
 
 /** What a tab needs from the shell around it. */
 export interface TabHost {
   readonly store: Store;
+  readonly credentials: Credentials;
   readonly system: SystemInfo;
   log(line: string): void;
   changed(tab: TerminalTab): void;
@@ -94,10 +96,7 @@ export class TerminalTab {
           },
           alarm: () => this.post({ type: 'alarm' }),
           nextDeviceName: () => (/[*=]/.test(this.deviceTemplate) ? expandDevice(this.deviceTemplate, host.system) : undefined),
-          password: async () => {
-            const app = goApp();
-            return (await app.SecretGet(passwordKey(profile.name, profile.host))) || (await app.SecretGet(passwordKey('', profile.host))) || undefined;
-          },
+          password: async () => (await host.credentials.find(profile.signonUser, profile.host, profile.name)) || undefined,
           log: (message) => host.log(`[${label}] ${message}`),
         },
         (events) => new GoTransport(events),

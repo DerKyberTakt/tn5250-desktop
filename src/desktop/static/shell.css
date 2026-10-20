@@ -454,6 +454,31 @@ dialog.modal input {
   border-radius: 3px;
 }
 
+dialog.modal .list-rows {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 320px;
+  overflow: auto;
+}
+
+dialog.modal .list-rows li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+dialog.modal .list-rows li .text {
+  flex: 1;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+dialog.modal .list-rows li.empty {
+  opacity: 0.7;
+}
+
 dialog.modal label.check {
   display: flex;
   align-items: center;

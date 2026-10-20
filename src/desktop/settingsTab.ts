@@ -2,11 +2,13 @@ import { importKmp } from '../shared/kmpImport';
 import { COLOR_KEYS, resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { HostToSettings, SettingsToHost } from '../shared/settingsProtocol';
 import { errorText, goApp } from './bridge';
-import { confirmDialog, promptDialog } from './dialogs';
-import { certPassphraseKey, passwordKey, type Store } from './store';
+import { confirmDialog, formDialog, promptDialog } from './dialogs';
+import type { Credentials } from './credentials';
+import { certPassphraseKey, type Store } from './store';
 
 export interface SettingsHost {
   readonly store: Store;
+  readonly credentials: Credentials;
   openSession(profile: TerminalSettings): void;
   notify(text: string): void;
 }
@@ -62,11 +64,13 @@ export class SettingsTab {
     return { type: 'data', defaults, sessions, select: this.select, patch, fonts: [], watermarkImageData };
   }
 
-  private targetName(target: number): { name: string; host: string } {
+  private targetName(target: number): { name: string; host: string; user: string } {
     const store = this.host.store;
-    if (target < 0) return { name: '', host: store.readDefaults().host };
+    const defaults = store.readDefaults();
+    if (target < 0) return { name: '', host: defaults.host, user: defaults.signonUser };
     const s = store.readSessions()[target];
-    return { name: s?.name ?? s?.host ?? '', host: s?.host ?? '' };
+    const resolved = s ? resolveSettings(defaults, s) : defaults;
+    return { name: s?.name ?? s?.host ?? '', host: s?.host ?? '', user: resolved.signonUser };
   }
 
   async handle(msg: SettingsToHost): Promise<void> {
@@ -106,16 +110,37 @@ export class SettingsTab {
           if (entry?.host) this.host.openSession(resolveSettings(store.readDefaults(), entry));
           break;
         }
-        case 'setPassword':
+        case 'setPassword': {
+          const { name, host, user } = this.targetName(msg.target);
+          const values = await formDialog(
+            `Saved password${name ? ` for ${name}` : ''}`,
+            [
+              { label: 'Host', value: host },
+              { label: 'User profile', value: user },
+              { label: 'Password', password: true },
+            ],
+            'Save',
+            'One password per user profile and host, kept in the operating system credential store and shared by bypass sign-on, the IFS browser and the other tools. Leave the password empty to remove it.',
+          );
+          if (!values) break;
+          const [h = '', u = '', pw = ''] = values.map((v) => v.trim());
+          if (!h || !u) {
+            this.host.notify('Host and user profile are needed');
+            break;
+          }
+          if (pw) await this.host.credentials.save(u, h, pw);
+          else await this.host.credentials.remove(u, h, name);
+          this.host.notify(pw ? `Password for ${u.toUpperCase()}@${h} saved` : `Password for ${u.toUpperCase()}@${h} removed`);
+          break;
+        }
         case 'setCertPassphrase': {
           const { name, host } = this.targetName(msg.target);
-          const isPassword = msg.type === 'setPassword';
-          const value = await promptDialog(isPassword ? `Sign-on password for ${name || 'Defaults'}` : `Certificate passphrase for ${name || 'Defaults'}`, isPassword ? 'Password' : 'Passphrase', {
+          const value = await promptDialog(`Certificate passphrase for ${name || 'Defaults'}`, 'Passphrase', {
             password: true,
             note: 'Stored in the operating system credential store. Leave empty to remove.',
           });
           if (value === undefined) break;
-          const key = isPassword ? passwordKey(msg.target < 0 ? '' : name, host) : certPassphraseKey(msg.target < 0 ? '' : name, host);
+          const key = certPassphraseKey(msg.target < 0 ? '' : name, host);
           await app.SecretSet(key, value);
           this.host.notify(value ? 'Stored in the credential store' : 'Removed from the credential store');
           break;

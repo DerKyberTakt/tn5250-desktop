@@ -3,11 +3,12 @@ import type { WebviewToHost } from '../shared/protocol';
 import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
 import { errorText, goApp, wailsRuntime, type SystemInfo, type UpdateInfo } from './bridge';
-import { confirmDialog, formDialog, messageDialog } from './dialogs';
+import { Credentials } from './credentials';
+import { confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
-import { ifsPasswordKey, passwordKey, Store } from './store';
+import { Store } from './store';
 import { TerminalTab, type TabHost } from './terminalTab';
 
 const APP_NAME = 'TN5250 Terminal';
@@ -48,6 +49,7 @@ export function parseHostInput(input: string, defaultPort: number): { host: stri
 
 class Shell implements TabHost, IfsHost {
   readonly store = new Store();
+  readonly credentials = new Credentials(this.store);
   system: SystemInfo = { computerName: '', userName: '', platform: '' };
 
   private readonly entries: Entry[] = [];
@@ -253,19 +255,11 @@ class Shell implements TabHost, IfsHost {
     let host = retry?.host ?? (base.host || last?.host || '');
     let user = retry?.user ?? (base.signonUser.trim() || (last?.host === host ? last.user : '') || '');
     let password = '';
-    let fromStore: 'ifs' | 'session' | undefined;
+    let fromStore = false;
     let remember = true;
     if (!retry && host && user) {
-      try {
-        password = await goApp().SecretGet(ifsPasswordKey(user, host));
-        if (password) fromStore = 'ifs';
-        else {
-          password = (await goApp().SecretGet(passwordKey(base.name, host))) || (await goApp().SecretGet(passwordKey('', host)));
-          if (password) fromStore = 'session';
-        }
-      } catch {
-        password = '';
-      }
+      password = await this.credentials.find(user, host, sameName(base, host));
+      fromStore = !!password;
     }
     if (!host || !user || !password) {
       const values = await formDialog(
@@ -284,14 +278,13 @@ class Shell implements TabHost, IfsHost {
       if (!values) return;
       [host = '', user = '', password = ''] = values.slice(0, 3).map((v) => v.trim());
       remember = values[3] === 'true';
-      fromStore = undefined;
+      fromStore = false;
       if (!host || !user || !password) {
         this.notify('Host, user profile and password are all needed');
         return;
       }
     }
     const sameHost = host === base.host;
-    const key = ifsPasswordKey(user, host);
     const typed = !fromStore;
     const tab = new IfsTab(
       this,
@@ -306,21 +299,17 @@ class Shell implements TabHost, IfsHost {
       (error) => {
         if (!error) {
           void this.store.setIfsLast(host, user);
-          if (typed && remember) void goApp().SecretSet(key, password).catch(() => this.notify('Could not save the password'));
-          if (typed && !remember) void goApp().SecretDelete(key).catch(() => undefined);
+          if (typed && remember) void this.credentials.save(user, host, password).catch(() => this.notify('Could not save the password'));
           return;
         }
         const reason = errorText(error);
         if (!/sign-on refused/i.test(reason)) return; // network problems: the tab offers Retry
         // Refused: never retry the same password. Forget a remembered one and ask again.
-        if (fromStore === 'ifs') void goApp().SecretDelete(key).catch(() => undefined);
+        if (fromStore) void this.credentials.remove(user, host, sameName(base, host));
         void this.close(entry);
-        const why =
-          fromStore === 'ifs'
-            ? `The remembered password was refused (${reason})`
-            : fromStore === 'session'
-              ? `The session's saved password was refused (${reason})`
-              : `Sign-on refused (${reason.replace(/^sign-on refused:\s*/i, '')})`;
+        const why = fromStore
+          ? `The saved password was refused and has been removed (${reason})`
+          : `Sign-on refused (${reason.replace(/^sign-on refused:\s*/i, '')})`;
         void this.openIfs({ host, user, reason: why });
       },
     );
@@ -328,6 +317,44 @@ class Shell implements TabHost, IfsHost {
     const entry: Entry = { kind: 'ifs', tab, button: el('div') };
     this.addEntry(entry, true);
     void tab.start();
+  }
+
+  /** Tools > Saved Passwords: the USER@host passwords in the credential store. */
+  private async managePasswords(): Promise<void> {
+    for (;;) {
+      const list = this.credentials.list();
+      const choice = await listDialog(
+        'Saved Passwords',
+        'One password per user profile and host, kept in the operating system credential store (never in the settings file). Used by bypass sign-on, the IFS browser and the other tools.',
+        list.map((c) => `${c.user}@${c.host}`),
+        ['Change…', 'Remove'],
+        ['Add…'],
+        'No passwords saved yet.',
+      );
+      if (!choice) return;
+      const c = choice.row >= 0 ? list[choice.row] : undefined;
+      if (choice.action === 'Remove' && c) {
+        if (await confirmDialog('Remove password', `Remove the saved password for ${c.user}@${c.host}?`, 'Remove')) await this.credentials.remove(c.user, c.host);
+        continue;
+      }
+      const values = await formDialog(
+        c ? `Change password for ${c.user}@${c.host}` : 'Add a password',
+        [
+          { label: 'Host', value: c?.host ?? '' },
+          { label: 'User profile', value: c?.user ?? '' },
+          { label: 'Password', password: true },
+        ],
+        'Save',
+      );
+      if (!values) continue;
+      const [host = '', user = '', password = ''] = values.map((v) => v.trim());
+      if (!host || !user || !password) {
+        this.notify('Host, user profile and password are all needed');
+        continue;
+      }
+      await this.credentials.save(user, host, password);
+      if (c && (c.host !== host.toLowerCase() || c.user !== user.toUpperCase())) await this.credentials.remove(c.user, c.host);
+    }
   }
 
   private openDemo(): void {
@@ -689,7 +716,11 @@ class Shell implements TabHost, IfsHost {
       },
       {
         label: 'Tools',
-        items: [{ label: 'Integrated File System…', run: () => void this.openIfs() }],
+        items: [
+          { label: 'Integrated File System…', run: () => void this.openIfs() },
+          '-',
+          { label: 'Saved Passwords…', run: () => void this.managePasswords() },
+        ],
       },
       {
         label: 'Window',
@@ -842,6 +873,11 @@ class Shell implements TabHost, IfsHost {
       'No telemetry. Connections go only to the hosts you enter, and to github.com to check for updates (Help > Check for Updates at Startup turns that off).',
     ]);
   }
+}
+
+/** The session name older versions keyed a saved password by, when the profile is for host. */
+function sameName(profile: TerminalSettings, host: string): string {
+  return profile.host === host ? profile.name : '';
 }
 
 /** "v0.1.3" -> "0.1.3". */

@@ -118,3 +118,62 @@ export function messageDialog(title: string, lines: string[]): Promise<void> {
     dialog.showModal();
   });
 }
+
+/**
+ * A list with buttons on each row and along the bottom. Resolves with the row index
+ * and the action label ({ row: -1 } for a bottom button), or undefined for Close.
+ */
+export function listDialog(
+  title: string,
+  note: string,
+  rows: string[],
+  rowActions: string[],
+  bottomActions: string[],
+  empty = 'Nothing here yet.',
+): Promise<{ row: number; action: string } | undefined> {
+  return new Promise((resolve) => {
+    const dialog = el('dialog', 'modal list-dialog');
+    const form = el('form');
+    form.method = 'dialog';
+    form.append(el('h2', undefined, title));
+    if (note) form.append(el('p', 'note', note));
+    let result: { row: number; action: string } | undefined;
+    const pick = (row: number, action: string) => (): void => {
+      result = { row, action };
+      dialog.close();
+    };
+    const list = el('ul', 'list-rows');
+    if (!rows.length) list.append(el('li', 'empty', empty));
+    rows.forEach((text, i) => {
+      const li = el('li');
+      li.append(el('span', 'text', text));
+      for (const a of rowActions) {
+        const b = el('button', undefined, a);
+        b.type = 'button';
+        b.onclick = pick(i, a);
+        li.append(b);
+      }
+      list.append(li);
+    });
+    form.append(list);
+    const buttons = el('div', 'buttons');
+    for (const a of bottomActions) {
+      const b = el('button', undefined, a);
+      b.type = 'button';
+      b.onclick = pick(-1, a);
+      buttons.append(b);
+    }
+    const close = el('button', 'primary', 'Close');
+    close.type = 'submit';
+    buttons.append(close);
+    form.append(buttons);
+    dialog.append(form);
+    document.body.append(dialog);
+    dialog.onclose = () => {
+      dialog.remove();
+      resolve(result);
+    };
+    dialog.showModal();
+    close.focus();
+  });
+}
