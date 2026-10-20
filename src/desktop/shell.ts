@@ -311,11 +311,17 @@ class Shell implements TabHost, IfsHost {
           return;
         }
         const reason = errorText(error);
-        if (!/sign-on refused/i.test(reason) || !fromStore) return;
-        // A stored password was refused: forget it (IFS only) and ask, without retrying it.
+        if (!/sign-on refused/i.test(reason)) return; // network problems: the tab offers Retry
+        // Refused: never retry the same password. Forget a remembered one and ask again.
         if (fromStore === 'ifs') void goApp().SecretDelete(key).catch(() => undefined);
         void this.close(entry);
-        void this.openIfs({ host, user, reason: fromStore === 'ifs' ? `The remembered password was refused (${reason})` : `The session's saved password was refused (${reason})` });
+        const why =
+          fromStore === 'ifs'
+            ? `The remembered password was refused (${reason})`
+            : fromStore === 'session'
+              ? `The session's saved password was refused (${reason})`
+              : `Sign-on refused (${reason.replace(/^sign-on refused:\s*/i, '')})`;
+        void this.openIfs({ host, user, reason: why });
       },
     );
     // The sign-on callback runs after start(), so it can refer to this entry.

@@ -1,12 +1,14 @@
 /**
  * Turns socket errors from Node (ECONNREFUSED ...), Go ("connectex: ...",
  * "i/o timeout") and the OS into short, plain messages for the status line and
- * the connection overlay. Unknown messages pass through unchanged.
+ * the connection overlay. Unknown messages pass through unchanged. `port` 0 means
+ * "not known" (host servers found through the port mapper); `listening` is the
+ * "refused" hint: what should be running on the host.
  */
-export function friendlyNetError(message: string, host: string, port: number): string {
+export function friendlyNetError(message: string, host: string, port: number, listening = 'the telnet server is running'): string {
   const m = message.toLowerCase();
-  const where = `${host}:${port}`;
-  if (/econnrefused|actively refused|connection refused/.test(m)) return `${where} refused the connection. Check the host name and port, and that the telnet server is running.`;
+  const where = port ? `${host}:${port}` : host;
+  if (/econnrefused|actively refused|connection refused/.test(m)) return `${where} refused the connection. Check the host name and port, and that ${listening}.`;
   if (/enotfound|no such host|eai_again|getaddrinfo|name or service not known|no address associated/.test(m)) return `Host name not found: ${host}. Check the spelling, the VPN or the DNS.`;
   if (/etimedout|timed out|i\/o timeout|did not properly respond|deadline exceeded/.test(m)) return `No answer from ${where}. The host may be down, or a firewall or VPN is blocking the port.`;
   if (/enetunreach|ehostunreach|network is unreachable|host is unreachable|unreachable network|unreachable host/.test(m)) return `${where} is not reachable from this network. Check the VPN or Wi-Fi.`;

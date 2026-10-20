@@ -1,4 +1,5 @@
 import { errorText, goApp, wailsRuntime, type IfsConnectRequest, type IfsEntry, type IfsProgress } from './bridge';
+import { friendlyNetError } from '../shared/netErrors';
 import { confirmDialog, messageDialog, promptDialog } from './dialogs';
 
 export interface IfsHost {
@@ -150,19 +151,39 @@ export class IfsTab {
   }
 
   async start(): Promise<void> {
+    const { host, user, timeoutMs } = this.request;
     this.setBusy(true);
+    this.statusEl.textContent = 'Connecting…';
+    this.showLoading(`Signing on to ${host} as ${user.toUpperCase()}…`);
+    const slow = setTimeout(
+      () => this.showLoading(`Still signing on to ${host}… The network or VPN is slow; this gives up after ${Math.round(timeoutMs / 1000)} seconds.`),
+      5000,
+    );
     try {
       this.session = await goApp().IfsConnect(this.request);
+      this.messageEl.hidden = true;
       this.host.log(`[IFS ${this.request.host}] signed on as ${this.request.user.toUpperCase()}`);
       this.onSignon?.();
       await this.go(`/home/${this.request.user.toUpperCase()}`, false, true);
     } catch (err) {
-      this.showMessage(`Could not open the IFS on ${this.request.host}: ${errorText(err)}`, true);
+      const raw = errorText(err);
+      // A refused sign-on is not retried with the same password (the host counts failed
+      // attempts and may disable the profile); the shell asks for the password again.
+      const refused = /sign-on refused/i.test(raw);
+      const text = refused ? raw : friendlyNetError(raw, host, 0, 'the host servers are started (STRHOSTSVR)');
+      this.showMessage(`Could not open the IFS on ${host}: ${text}`, !refused);
       this.statusEl.textContent = 'Not connected';
       this.onSignon?.(err);
     } finally {
+      clearTimeout(slow);
       this.setBusy(false);
     }
+  }
+
+  /** The centre message with a moving bar, while signing on. */
+  private showLoading(text: string): void {
+    this.messageEl.replaceChildren(el('div', 'ifs-loader'), el('p', undefined, text));
+    this.messageEl.hidden = false;
   }
 
   dispose(): void {

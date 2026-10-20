@@ -154,6 +154,43 @@
   display: none;
 }
 
+.ifs-loader {
+  position: relative;
+  width: 220px;
+  height: 3px;
+  margin: 0 auto 12px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--chrome-border);
+}
+
+.ifs-loader::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  border-radius: 2px;
+  background: var(--tab-accent);
+  animation: ifs-loader 1.2s ease-in-out infinite;
+}
+
+@keyframes ifs-loader {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ifs-loader::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+}
+
 .ifs-message button {
   margin-top: 8px;
 }

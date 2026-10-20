@@ -9,6 +9,16 @@ describe('friendlyNetError', () => {
     expect(f('pub400.com:23: connectex: No connection could be made because the target machine actively refused it.')).toMatch(/^pub400\.com:23 refused/);
   });
 
+  it('names the server and leaves out an unknown port (host servers)', () => {
+    const m = friendlyNetError(
+      'pub400.com:8473: connectex: No connection could be made because the target machine actively refused it.',
+      'pub400.com',
+      0,
+      'the host servers are started (STRHOSTSVR)',
+    );
+    expect(m).toBe('pub400.com refused the connection. Check the host name and port, and that the host servers are started (STRHOSTSVR).');
+  });
+
   it('explains unknown hosts, timeouts, unreachable networks and resets', () => {
     expect(f('getaddrinfo ENOTFOUND pub400.con')).toMatch(/^Host name not found: pub400\.com/);
     expect(f('lookup x: no such host')).toMatch(/Host name not found/);
