@@ -3,6 +3,7 @@
 // client (for example IBM's Java toolbox) to talk to it, and logs every request.
 // The logs give exact protocol bytes and password-substitute test vectors without
 // touching a real system. Use made-up user profiles and passwords only.
+// With -proxy it forwards to a real host instead and logs both directions (proxy.go).
 package main
 
 import (
@@ -24,6 +25,7 @@ var (
 	signonPort = flag.Int("signon", 18476, "sign-on server port")
 	filePort   = flag.Int("file", 18473, "file server port")
 	outPath    = flag.String("out", "hsrecord.jsonl", "log file (JSON lines)")
+	proxyHost  = flag.String("proxy", "", "proxy mode: forward localhost:18470-18476 to this host's 8470-8476 and log both directions")
 	serverSeed = []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF}
 	fileData   = []byte("Hello from the fake IFS")
 	mu         sync.Mutex
@@ -172,6 +174,9 @@ func main() {
 	out, err = os.Create(*outPath)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *proxyHost != "" {
+		runProxy(*proxyHost)
 	}
 	go serve(*signonPort)
 	serve(*filePort)
