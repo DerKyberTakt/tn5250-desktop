@@ -278,6 +278,25 @@ export const COLOR_KEYS = SETTINGS_KEYS.filter((k) => k.startsWith('color')) as 
 /** A saved session: only the values that differ from the defaults. */
 export type SessionOverrides = Partial<TerminalSettings> & { host: string };
 
+/**
+ * Copy Session: inserts a copy of session `index` (all its customizations) right after
+ * it, named "<name> (copy)", "(copy 2)" ... Returns the new list and the copy's index,
+ * or undefined when there is no such session.
+ */
+export function copySessionAt(list: SessionOverrides[], index: number): { sessions: SessionOverrides[]; index: number } | undefined {
+  const src = list[index];
+  if (!src) return undefined;
+  const base = `${src.name || src.host || 'Session'} (copy`;
+  const names = new Set(list.map((s) => s.name ?? ''));
+  let name = `${base})`;
+  for (let n = 2; names.has(name); n++) name = `${base} ${n})`;
+  const copy: SessionOverrides = JSON.parse(JSON.stringify(src)) as SessionOverrides;
+  copy.name = name;
+  const sessions = [...list];
+  sessions.splice(index + 1, 0, copy);
+  return { sessions, index: index + 1 };
+}
+
 function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }

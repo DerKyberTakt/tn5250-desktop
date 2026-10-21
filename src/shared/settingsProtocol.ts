@@ -1,7 +1,20 @@
 import type { SessionOverrides, TerminalSettings } from './settings';
 
+/** Preview material of one profile, loaded by the host (files the page cannot read itself). */
+export interface SettingsAssets {
+  /** Data URL of the profile's watermark image. */
+  watermarkImageData?: string;
+  /** Webview URL + family of the profile's imported font. */
+  fontFace?: { family: string; url: string };
+}
+
 /** Messages between the extension host and the settings webview. */
-export type HostToSettings = {
+export type HostToSettings =
+  | HostToSettingsData
+  /** Answer to { type: 'select' }: the preview material of the profile now shown. */
+  | ({ type: 'assets'; select: number } & SettingsAssets);
+
+export type HostToSettingsData = {
   type: 'data';
   defaults: TerminalSettings;
   sessions: SessionOverrides[];
@@ -19,8 +32,12 @@ export type HostToSettings = {
 
 export type SettingsToHost =
   | { type: 'ready' }
+  /** The page switched profiles (-1 = defaults); the host answers with its assets. */
+  | { type: 'select'; index: number }
   | { type: 'save'; target: number; values: TerminalSettings }
   | { type: 'addSession' }
+  /** Copy Session: duplicate a session with all its customizations. */
+  | { type: 'copySession'; index: number }
   | { type: 'removeSession'; index: number }
   | { type: 'connect'; index: number }
   | { type: 'importKmp'; target: number }

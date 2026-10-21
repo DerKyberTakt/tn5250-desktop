@@ -1,5 +1,5 @@
 import { importKmp } from '../shared/kmpImport';
-import { COLOR_KEYS, resolveSettings, type TerminalSettings } from '../shared/settings';
+import { COLOR_KEYS, copySessionAt, resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { HostToSettings, SettingsToHost } from '../shared/settingsProtocol';
 import { errorText, goApp } from './bridge';
 import { confirmDialog, formDialog, promptDialog } from './dialogs';
@@ -53,15 +53,17 @@ export class SettingsTab {
     const sessions = store.readSessions();
     const current = this.select < 0 ? defaults : resolveSettings(defaults, sessions[this.select] ?? { host: '' });
     const merged = { ...current, ...(patch ?? {}) };
-    let watermarkImageData: string | undefined;
-    if (merged.watermarkImage) {
-      try {
-        watermarkImageData = await goApp().ImageDataURL(merged.watermarkImage);
-      } catch {
-        watermarkImageData = undefined;
-      }
+    return { type: 'data', defaults, sessions, select: this.select, patch, fonts: [], watermarkImageData: await this.watermarkData(merged) };
+  }
+
+  /** The watermark image of a profile as a data URL, for the preview. */
+  private async watermarkData(settings: TerminalSettings): Promise<string | undefined> {
+    if (!settings.watermarkImage) return undefined;
+    try {
+      return await goApp().ImageDataURL(settings.watermarkImage);
+    } catch {
+      return undefined;
     }
-    return { type: 'data', defaults, sessions, select: this.select, patch, fonts: [], watermarkImageData };
   }
 
   private targetName(target: number): { name: string; host: string; user: string } {
@@ -88,6 +90,23 @@ export class SettingsTab {
           this.push();
           this.host.notify('Settings saved');
           break;
+        case 'select': {
+          // The page switched profiles: send that profile's watermark image for the preview.
+          this.select = msg.index;
+          const defaults = store.readDefaults();
+          const current = msg.index < 0 ? defaults : resolveSettings(defaults, store.readSessions()[msg.index] ?? { host: '' });
+          const reply: HostToSettings = { type: 'assets', select: msg.index, watermarkImageData: await this.watermarkData(current) };
+          this.frame.contentWindow?.postMessage(reply, location.origin && location.origin !== 'null' ? location.origin : '*');
+          break;
+        }
+        case 'copySession': {
+          const copied = copySessionAt(store.readSessions(), msg.index);
+          if (!copied) break;
+          await store.writeSessions(copied.sessions);
+          this.select = copied.index;
+          this.push();
+          break;
+        }
         case 'addSession': {
           const sessions = store.readSessions();
           sessions.push({ host: '', name: 'New session' });

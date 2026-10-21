@@ -488,7 +488,11 @@ function renderNav(): HTMLElement {
   entries.append(el('h3', undefined, 'Profiles'));
   const mk = (label: string, index: number): void => {
     const b = el('button', 'entry' + (index === selected ? ' active' : ''), label);
-    b.onclick = () => select(index);
+    b.onclick = () => {
+      select(index);
+      // The watermark image and imported font of this profile come from the host.
+      post({ type: 'select', index });
+    };
     entries.append(b);
   };
   mk('Defaults', -1);
@@ -496,6 +500,12 @@ function renderNav(): HTMLElement {
   const add = el('button', 'link', '+ Add connection');
   add.onclick = () => post({ type: 'addSession' });
   entries.append(add);
+  if (selected >= 0) {
+    const copy = el('button', 'link', '⎘ Copy connection');
+    copy.title = 'New connection with all the settings of the selected one: change its name and host, keep the rest.';
+    copy.onclick = () => post({ type: 'copySession', index: selected });
+    entries.append(copy);
+  }
   nav.append(entries);
 
   const tree = el('div', 'tree');
@@ -955,6 +965,14 @@ function select(index: number): void {
 }
 
 window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
+  if (ev.data.type === 'assets') {
+    if (ev.data.select !== selected) return; // a later click already moved on
+    watermarkImageData = ev.data.watermarkImageData;
+    fontFace = ev.data.fontFace;
+    applyFontFace();
+    updatePreview();
+    return;
+  }
   if (ev.data.type !== 'data') return;
   defaults = ev.data.defaults;
   sessions = ev.data.sessions;

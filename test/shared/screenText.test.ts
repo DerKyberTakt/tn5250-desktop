@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decoratedFieldCells, expandTabs, fieldRanges, hotspotAt, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, wordAt } from '../../src/shared/screenText';
-import { SETTINGS_DEFAULTS, buildTitle, diffSettings, resolveSettings } from '../../src/shared/settings';
+import { SETTINGS_DEFAULTS, buildTitle, copySessionAt, diffSettings, resolveSettings } from '../../src/shared/settings';
 
 describe('fieldRanges', () => {
   it('splits wrapping fields into per-row runs', () => {
@@ -118,5 +118,22 @@ describe('titles and new settings', () => {
     expect(diff.titleParts).toEqual(['host']);
     expect(diff.uiMode).toBe('enhanced');
     expect(diff.enhancedPadding).toBeUndefined();
+  });
+});
+
+describe('copySessionAt', () => {
+  it('copies every customization right after the source, with a free name', () => {
+    const list = [
+      { host: 'a.example', name: 'Prod', watermarkText: 'PROD', keymap: { F13: 'pf13' as const } },
+      { host: 'b.example', name: 'Prod (copy)' },
+    ];
+    const r = copySessionAt(list, 0);
+    expect(r?.index).toBe(1);
+    expect(r?.sessions.map((s) => s.name)).toEqual(['Prod', 'Prod (copy 2)', 'Prod (copy)']);
+    expect(r?.sessions[1]).toMatchObject({ host: 'a.example', watermarkText: 'PROD', keymap: { F13: 'pf13' } });
+    // A deep copy: editing the copy leaves the original alone.
+    r!.sessions[1]!.keymap!.F13 = null;
+    expect(list[0]?.keymap?.F13).toBe('pf13');
+    expect(copySessionAt(list, 5)).toBeUndefined();
   });
 });
