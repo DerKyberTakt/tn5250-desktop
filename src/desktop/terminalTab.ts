@@ -96,7 +96,9 @@ export class TerminalTab {
           },
           alarm: () => this.post({ type: 'alarm' }),
           nextDeviceName: () => (/[*=]/.test(this.deviceTemplate) ? expandDevice(this.deviceTemplate, host.system) : undefined),
-          password: async () => (await host.credentials.find(profile.signonUser, profile.host, profile.name)) || undefined,
+          // Bypass sign-on follows the settings page, not the values the tab was opened with.
+          signon: () => this.liveSettings(),
+          password: async () => (await host.credentials.find(this.liveSettings().signonUser, profile.host, profile.name)) || undefined,
           log: (message) => host.log(`[${label}] ${message}`),
         },
         (events) => new GoTransport(events),

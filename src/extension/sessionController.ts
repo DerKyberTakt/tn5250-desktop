@@ -12,6 +12,12 @@ export interface SessionControllerEvents {
   log(message: string): void;
   /** Password for bypass sign-on, if one is stored. */
   password?(): Promise<string | undefined>;
+  /**
+   * The current bypass sign-on settings. A tab keeps the connection settings it was
+   * opened with, but Bypass signon and the user ID should follow the settings page
+   * on the next connect, as in ACS. Without it the opening profile is used.
+   */
+  signon?(): Pick<TerminalSettings, 'autoSignon' | 'signonUser'>;
   /** Next workstation name to try when the host rejects the current one (undefined = give up). */
   nextDeviceName?(): string | undefined;
   /** Client certificate material for TLS, if configured. */
@@ -220,19 +226,21 @@ export class SessionController {
 
   /** Bypass sign-on: fill the first input screen after connecting (user, password, Enter). */
   private async maybeSignon(): Promise<void> {
-    if (this.signonDone || !this.connected || !this.profile.autoSignon || !this.profile.signonUser.trim()) return;
+    const { autoSignon, signonUser } = this.events.signon?.() ?? this.profile;
+    const user = signonUser.trim();
+    if (this.signonDone || !this.connected || !autoSignon || !user) return;
     const s = this.session.screen;
     const inputs = s.fields.filter((f) => !f.bypass);
     if (this.session.state.inputInhibited !== 'none' || inputs.length < 2) return;
     this.signonDone = true;
     const password = await this.events.password?.();
     if (!password) {
-      this.events.log('bypass sign-on: no password stored (TN5250: Set Password)');
+      this.events.log(`bypass sign-on: no password saved for ${user.toUpperCase()} (Settings > Connection > Set Password)`);
       return;
     }
     if (!this.connected) return;
     s.cursor = inputs[0]!.start;
-    this.session.type(this.profile.signonUser.trim());
+    this.session.type(user);
     s.cursor = inputs[1]!.start;
     this.session.type(password);
     this.session.press('enter');

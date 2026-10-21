@@ -3,6 +3,7 @@ import type { ConnectionEvents, ConnectOptions, Transport } from '../../src/exte
 import { SessionController } from '../../src/extension/sessionController';
 import type { ConnectionInfo, ConnectionStatus } from '../../src/shared/protocol';
 import { SETTINGS_DEFAULTS, type TerminalSettings } from '../../src/shared/settings';
+import { hexToBytes, loadCapture } from '../helpers/fixture';
 
 /** A transport whose connect() the test settles by hand. */
 class FakeTransport implements Transport {
@@ -139,5 +140,40 @@ describe('SessionController connection states', () => {
     expect(last().info.retryAt).toBeUndefined();
     vi.advanceTimersByTime(60000);
     expect(transports).toHaveLength(1);
+  });
+});
+
+describe('SessionController bypass sign-on', () => {
+  it('follows the live Bypass signon settings, not the ones the tab was opened with', async () => {
+    vi.useRealTimers();
+    const profile: TerminalSettings = { ...SETTINGS_DEFAULTS, host: 'pub400.com', port: 23, autoSignon: false, signonUser: '' };
+    const live = { autoSignon: true, signonUser: 'user1' };
+    const logs: string[] = [];
+    let asked = 0;
+    let transport: FakeTransport | undefined;
+    const controller = new SessionController(
+      profile,
+      {
+        screen: () => undefined,
+        status: () => undefined,
+        alarm: () => undefined,
+        log: (m) => logs.push(m),
+        password: async () => {
+          asked += 1;
+          return undefined;
+        },
+        signon: () => live,
+      },
+      (events) => (transport = new FakeTransport(events)),
+    );
+    const done = controller.connect();
+    transport?.settle.resolve();
+    await done;
+    for (const ev of loadCapture('pub400-signon-3477fc').events) {
+      if (ev.dir === 'in') transport?.events.data(hexToBytes(ev.hex));
+    }
+    await new Promise((r) => setTimeout(r, 0));
+    expect(asked).toBe(1);
+    expect(logs.some((l) => l.includes('no password saved for USER1'))).toBe(true);
   });
 });
