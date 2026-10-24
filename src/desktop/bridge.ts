@@ -13,6 +13,49 @@ export interface ConnectOptionsDto {
   keepAlive: boolean;
 }
 
+/** Run SQL Scripts (app_sql.go). */
+export interface SqlConnectRequest {
+  host: string;
+  tls: boolean;
+  trustAnyCertificate: boolean;
+  user: string;
+  password: string;
+  timeoutMs: number;
+  /** 'sql' (schema.table) or 'sys' (library/file). */
+  naming: string;
+  defaultSchema: string;
+}
+
+export interface SqlColumn {
+  name: string;
+  label?: string;
+  type: string;
+  length: number;
+  scale: number;
+  nullable: boolean;
+  ccsid?: number;
+}
+
+export interface SqlMessage {
+  /** SQLSTATE, or a CPF/CPD message id. */
+  id: string;
+  code: number;
+  severity: number;
+  text: string;
+}
+
+export interface SqlResult {
+  kind: 'rows' | 'count' | 'none' | 'error';
+  columns?: SqlColumn[];
+  /** null = SQL NULL. */
+  rows?: (string | null)[][];
+  more: boolean;
+  cursor?: string;
+  updateCount: number;
+  messages: SqlMessage[];
+  elapsedMs: number;
+}
+
 /** Result of App.UpdateCheck (app_update.go). */
 export interface UpdateInfo {
   current: string;
@@ -77,6 +120,12 @@ interface GoApp {
   Version(): Promise<string>;
   UpdateCheck(): Promise<UpdateInfo>;
   UpdateInstall(tag: string): Promise<void>;
+  SqlConnect(request: SqlConnectRequest): Promise<string>;
+  SqlClose(id: string): Promise<void>;
+  SqlRun(id: string, statement: string, maxRows: number): Promise<SqlResult>;
+  SqlFetch(id: string, cursor: string, maxRows: number): Promise<SqlResult>;
+  SqlCancel(id: string): Promise<void>;
+  CmdRun(id: string, command: string): Promise<SqlResult>;
   SettingsLoad(): Promise<string>;
   SettingsSave(text: string): Promise<void>;
   SettingsFilePath(): Promise<string>;

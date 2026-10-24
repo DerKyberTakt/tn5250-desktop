@@ -52,7 +52,11 @@ describe('picking statements by position', () => {
   it('run from cursor takes the statement under the caret and everything after', () => {
     expect(statementsFrom(s, script.indexOf('WRKACTJOB'), script).map((x) => x.kind)).toEqual(['cl', 'sql']);
     expect(statementsFrom(s, 0, script).length).toBe(4);
-    expect(statementsFrom(s, script.length, script)).toEqual([]);
+    // The caret at the very end is inside the unterminated last statement.
+    expect(statementsFrom(s, script.length, script).map((x) => x.kind)).toEqual(['sql']);
+    // Nothing runnable after the caret: a trailing comment line.
+    const tail = 'SELECT 1 FROM SYSIBM.SYSDUMMY1;\n-- done\n';
+    expect(statementsFrom(splitStatements(tail), tail.indexOf('done'), tail)).toEqual([]);
   });
 
   it('labels are one line and shortened', () => {

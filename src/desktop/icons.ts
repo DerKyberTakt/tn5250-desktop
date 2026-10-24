@@ -28,6 +28,8 @@ export const ICONS = {
   sysreq: svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5" stroke="currentColor"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="700" font-family="Segoe UI, sans-serif" fill="#1f5fa8" stroke="none">SYS</text>'),
   reset: svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5" stroke="currentColor"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="700" font-family="Segoe UI, sans-serif" fill="#2e9b48" stroke="none">RST</text>'),
   ifs: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="#b8891f" fill="#f2c95e"/><path d="M8 14h8" stroke="#7a5a10"/>'),
+  /** Run SQL Scripts: a table with a lightning stroke. */
+  sql: svg('<rect x="3" y="5" width="18" height="14" rx="1.5" stroke="#1f5fa8"/><path d="M3 10h18M9 10v9" stroke="#1f5fa8"/><path d="m15 7-2.5 4.5h3L13 16" stroke="#e0a21b" stroke-width="2" fill="none"/>'),
   settings: svg(
     '<circle cx="12" cy="12" r="3" stroke="currentColor"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor"/>',
   ),

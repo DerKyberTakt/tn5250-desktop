@@ -1,0 +1,221 @@
+/* Run SQL Scripts tab (Tools > Run SQL Scripts). */
+.terminal-frame.sql {
+  display: none;
+  flex-direction: column;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  outline: none;
+}
+
+.terminal-frame.sql.active {
+  display: flex;
+}
+
+.sql-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.sql-top .group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.sql-top .sep {
+  width: 1px;
+  height: 18px;
+  background: var(--chrome-border);
+}
+
+.sql-top .conn {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.sql button {
+  padding: 3px 10px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  cursor: default;
+}
+
+.sql button.primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.sql button:disabled {
+  opacity: 0.45;
+}
+
+.sql select {
+  padding: 2px 4px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--chrome-border));
+  border-radius: 3px;
+}
+
+.sql-editor {
+  flex: 0 0 38%;
+  min-height: 80px;
+  width: 100%;
+  resize: none;
+  padding: 6px 8px;
+  margin: 0;
+  box-sizing: border-box;
+  font-family: var(--vscode-editor-font-family, Consolas, monospace);
+  font-size: 13px;
+  line-height: 1.4;
+  tab-size: 4;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground, var(--vscode-foreground));
+  border: none;
+  border-bottom: 1px solid var(--chrome-border);
+  outline: none;
+  white-space: pre;
+  overflow: auto;
+}
+
+.sql-split {
+  height: 5px;
+  flex: 0 0 5px;
+  cursor: row-resize;
+  background: var(--chrome-bg);
+}
+
+.sql-bottom {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sql-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 0;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.sql-tabs button {
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  padding: 3px 12px;
+}
+
+.sql-tabs button[aria-selected="true"] {
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-editor-background);
+  margin-bottom: -1px;
+}
+
+.sql-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.sql-pane[hidden] {
+  display: none;
+}
+
+.sql-grid {
+  border-collapse: collapse;
+  font-family: var(--vscode-editor-font-family, Consolas, monospace);
+  font-size: 12.5px;
+  white-space: pre;
+}
+
+.sql-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  padding: 3px 10px 3px 6px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  border-right: 1px solid var(--chrome-border);
+  font-weight: 600;
+}
+
+.sql-grid th .type {
+  display: block;
+  font-weight: 400;
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+.sql-grid td {
+  padding: 1px 10px 1px 6px;
+  border-right: 1px solid var(--chrome-border);
+  border-bottom: 1px solid color-mix(in srgb, var(--chrome-border) 50%, transparent);
+}
+
+.sql-grid td.num {
+  text-align: right;
+}
+
+.sql-grid td.null {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.sql-grid tr:hover td {
+  background: var(--chrome-hover);
+}
+
+.sql-more {
+  padding: 6px 8px;
+}
+
+.sql-messages {
+  margin: 0;
+  padding: 6px 8px;
+  list-style: none;
+  font-family: var(--vscode-editor-font-family, Consolas, monospace);
+  font-size: 12.5px;
+}
+
+.sql-messages li {
+  padding: 2px 0;
+  white-space: pre-wrap;
+}
+
+.sql-messages li.error {
+  color: #d0453b;
+}
+
+.sql-messages li.ok {
+  opacity: 0.9;
+}
+
+.sql-messages li .where {
+  opacity: 0.6;
+}
+
+.sql-foot {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 8px;
+  font-size: 12px;
+  background: var(--chrome-bg);
+  border-top: 1px solid var(--chrome-border);
+}
+
+.sql.busy .sql-editor {
+  opacity: 0.8;
+}

@@ -8,6 +8,7 @@ import { confirmDialog, formDialog, listDialog, messageDialog } from './dialogs'
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
+import { SqlTab, type SqlHost } from './sqlTab';
 import { Store } from './store';
 import { TerminalTab, type TabHost } from './terminalTab';
 
@@ -20,7 +21,8 @@ const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 type Entry =
   | { kind: 'terminal'; tab: TerminalTab; button: HTMLElement }
   | { kind: 'settings'; tab: SettingsTab; button: HTMLElement }
-  | { kind: 'ifs'; tab: IfsTab; button: HTMLElement };
+  | { kind: 'ifs'; tab: IfsTab; button: HTMLElement }
+  | { kind: 'sql'; tab: SqlTab; button: HTMLElement };
 
 function byId<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -47,7 +49,7 @@ export function parseHostInput(input: string, defaultPort: number): { host: stri
   return { host, port };
 }
 
-class Shell implements TabHost, IfsHost {
+class Shell implements TabHost, IfsHost, SqlHost {
   readonly store = new Store();
   readonly credentials = new Credentials(this.store);
   system: SystemInfo = { computerName: '', userName: '', platform: '' };
@@ -207,7 +209,7 @@ class Shell implements TabHost, IfsHost {
     }
   }
 
-  changed(tab: TerminalTab | IfsTab): void {
+  changed(tab: TerminalTab | IfsTab | SqlTab): void {
     const entry = this.entries.find((e) => e.tab === tab);
     if (entry) this.renderTabButton(entry);
     if (this.active?.tab === tab) this.refresh();
@@ -357,6 +359,68 @@ class Shell implements TabHost, IfsHost {
     }
   }
 
+  /**
+   * Opens a Run SQL Scripts tab for the active session's host (or the selected / first
+   * saved one), signing on with the saved password or asking once; a working typed
+   * password is remembered when the box is ticked.
+   */
+  private async openSql(): Promise<void> {
+    const t = this.activeTerminal();
+    const sessions = this.store.readSessions();
+    const picked = this.selectedSession >= 0 ? sessions[this.selectedSession] : undefined;
+    const defaults = this.store.readDefaults();
+    const base = t?.profile ?? (picked ? resolveSettings(defaults, picked) : this.store.resolvedSessions()[0]) ?? defaults;
+    let host = base.host || this.store.ifsLast?.host || '';
+    let user = base.signonUser.trim() || (this.store.ifsLast?.host === host ? this.store.ifsLast.user : '');
+    let password = host && user ? await this.credentials.find(user, host, sameName(base, host)) : '';
+    let remember = true;
+    const typed = !password;
+    if (!host || !user || !password) {
+      const values = await formDialog(
+        'Run SQL Scripts',
+        [
+          { label: 'Host', value: host, placeholder: 'myibmi.example.com' },
+          { label: 'User profile', value: user },
+          { label: 'Password', password: true },
+          { label: 'Remember password (Windows Credential Manager)', checkbox: true, value: 'true' },
+        ],
+        'Connect',
+        'Signs on to the IBM i database server, as ACS does. A remembered password is kept in the operating system credential store, never in the settings file.',
+      );
+      if (!values) return;
+      [host = '', user = '', password = ''] = values.slice(0, 3).map((v) => v.trim());
+      remember = values[3] === 'true';
+      if (!host || !user || !password) {
+        this.notify('Host, user profile and password are all needed');
+        return;
+      }
+    }
+    const sameHost = host === base.host;
+    const tab = new SqlTab(
+      this,
+      {
+        host,
+        tls: sameHost ? base.tls : false,
+        trustAnyCertificate: sameHost ? !base.verifyCertificate : false,
+        user,
+        password,
+        timeoutMs: base.connectTimeoutSeconds * 1000,
+        naming: 'sql',
+        defaultSchema: '',
+      },
+      (error) => {
+        if (!error) {
+          void this.store.setIfsLast(host, user);
+          if (typed && remember) void this.credentials.save(user, host, password).catch(() => this.notify('Could not save the password'));
+          return;
+        }
+        if (!typed && /sign-on refused/i.test(errorText(error))) void this.credentials.remove(user, host, sameName(base, host));
+      },
+    );
+    this.addEntry({ kind: 'sql', tab, button: el('div') }, true);
+    void tab.start();
+  }
+
   private openDemo(): void {
     this.addEntry({ kind: 'terminal', tab: new TerminalTab(this, undefined), button: el('div') }, true);
   }
@@ -426,6 +490,10 @@ class Shell implements TabHost, IfsHost {
   private async close(entry: Entry): Promise<void> {
     if (entry.kind === 'terminal' && entry.tab.connected) {
       const ok = await confirmDialog('Close session', `Disconnect and close "${entry.tab.title}"?`, 'Close');
+      if (!ok) return;
+    }
+    if (entry.kind === 'sql' && entry.tab.isDirty) {
+      const ok = await confirmDialog('Close script', 'The script has unsaved changes. Close anyway?', 'Close');
       if (!ok) return;
     }
     const i = this.entries.indexOf(entry);
@@ -576,7 +644,7 @@ class Shell implements TabHost, IfsHost {
   private onFrameMessage(ev: MessageEvent): void {
     const data = ev.data as { tn5250Frame?: boolean; message?: unknown } | undefined;
     if (!data?.tn5250Frame || typeof data.message !== 'object' || data.message === null) return;
-    const entry = this.entries.find((e) => e.kind !== 'ifs' && e.tab.frame.contentWindow === ev.source);
+    const entry = this.entries.find((e) => (e.kind === 'terminal' || e.kind === 'settings') && e.tab.frame.contentWindow === ev.source);
     if (!entry) return;
     const message = data.message as { type?: unknown };
     if (typeof message.type !== 'string') return;
@@ -620,6 +688,7 @@ class Shell implements TabHost, IfsHost {
       { icon: 'reset', title: 'Reset', run: () => t()?.press('reset'), enabled: on },
       '|',
       { icon: 'ifs', title: 'Integrated File System', run: () => void this.openIfs() },
+      { icon: 'sql', title: 'Run SQL Scripts', run: () => void this.openSql() },
       { icon: 'settings', title: 'Settings', run: () => this.openSettings(-1) },
       { icon: 'help', title: `About ${APP_NAME}`, run: () => void this.about() },
       { icon: 'update', title: 'Check for updates', run: () => void this.checkForUpdates() },
@@ -726,6 +795,7 @@ class Shell implements TabHost, IfsHost {
         label: 'Tools',
         items: [
           { label: 'Integrated File System…', run: () => void this.openIfs() },
+          { label: 'Run SQL Scripts…', run: () => void this.openSql() },
           '-',
           { label: 'Saved Passwords…', run: () => void this.managePasswords() },
         ],
