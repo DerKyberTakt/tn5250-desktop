@@ -51,7 +51,7 @@ public class RecordSql {
         String outFile = args.length > 0 ? args[0] : "expected.json";
         Console con = System.console();
         if (con == null) throw new IllegalStateException("run this in a console window");
-        String user = con.readLine("PUB400 user profile: ").trim();
+        String user = con.readLine("User profile: ").trim();
         char[] pw = con.readPassword("Password: ");
 
         AS400 sys = new AS400("localhost", user, new String(pw));
