@@ -112,7 +112,7 @@ func ReadText(r io.Reader, encoding string, header bool) (*Table, error) {
 	for sc.Scan() {
 		line := strings.TrimRight(sc.Text(), "\r")
 		if first {
-			line = strings.TrimPrefix(line, "ï»¿")
+			line = strings.TrimPrefix(line, "\xEF\xBB\xBF")
 		}
 		cells := strings.Split(line, "\t")
 		if first && header {
