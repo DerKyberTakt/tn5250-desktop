@@ -1,6 +1,6 @@
 import { errorText, goApp, wailsRuntime, type IfsConnectRequest, type IfsEntry, type IfsProgress } from './bridge';
-import { friendlyNetError } from '../shared/netErrors';
 import { confirmDialog, messageDialog, promptDialog } from './dialogs';
+import { explainToolError } from './toolErrors';
 
 export interface IfsHost {
   notify(text: string): void;
@@ -170,8 +170,8 @@ export class IfsTab {
       // A refused sign-on is not retried with the same password (the host counts failed
       // attempts and may disable the profile); the shell asks for the password again.
       const refused = /sign-on refused/i.test(raw);
-      const text = refused ? raw : friendlyNetError(raw, host, 0, 'the host servers are started (STRHOSTSVR)');
-      this.showMessage(`Could not open the IFS on ${host}: ${text}`, !refused);
+      const why = explainToolError('IFS', host, raw);
+      this.showMessage(`Could not open the IFS on ${host}: ${why.message}${why.hint ? ` ${why.hint}` : ''}`, !refused);
       this.statusEl.textContent = 'Not connected';
       this.onSignon?.(err);
     } finally {
