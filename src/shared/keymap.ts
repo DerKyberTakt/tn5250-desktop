@@ -17,6 +17,7 @@ export type KeyAction =
   | 'backspace'
   | 'delete'
   | 'insert'
+  | 'endOfField'
   | 'eraseEof'
   | 'eraseInput'
   | 'dup'
@@ -72,7 +73,10 @@ export function keyName(k: KeyEventInfo): string {
   if (MODIFIER_KEYS.has(k.key)) {
     base = k.code || k.key;
   } else if (k.code.startsWith('Numpad')) {
-    base = k.code;
+    // Digits and operators keep the physical code (Numpad1, NumpadAdd) whatever NumLock
+    // says; with NumLock off the keypad's End, Home and arrows get their own names
+    // (NumpadEnd ...) so they can be bound separately, as ACS does.
+    base = k.key.length > 1 ? `Numpad${k.key}` : k.code;
   } else if (k.key === ' ') {
     base = 'Space';
   } else {
@@ -128,7 +132,10 @@ export const ACS_KEYMAP: Keymap = {
   ArrowLeft: 'left',
   ArrowRight: 'right',
   Home: 'home',
-  End: 'eraseEof',
+  NumpadHome: 'home',
+  End: 'endOfField',
+  NumpadEnd: 'endOfField',
+  'Ctrl+End': 'eraseEof',
   Insert: 'insert',
   Delete: 'delete',
   Backspace: 'backspace',
@@ -139,6 +146,7 @@ export const ACS_KEYMAP: Keymap = {
   'Shift+Insert': 'dup',
   'Shift+Home': 'fieldMark',
   'Alt+End': 'eraseInput',
+  'Alt+NumpadEnd': 'eraseInput',
   Pause: 'clear',
   'Ctrl+Pause': 'print',
   PrintScreen: 'printScreen',

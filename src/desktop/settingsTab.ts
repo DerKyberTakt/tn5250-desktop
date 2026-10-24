@@ -37,6 +37,7 @@ export class SettingsTab {
 
   focus(): void {
     this.frame.focus();
+    this.frame.contentWindow?.focus();
   }
 
   dispose(): void {

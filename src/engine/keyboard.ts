@@ -58,7 +58,7 @@ export const OPERATOR_ERRORS: Record<string, string> = {
   '0026': 'Field minus requires a numeric last digit',
 };
 
-const MOVEMENT_ACTIONS = new Set<KeyAction>(['tab', 'backtab', 'left', 'right', 'up', 'down', 'home', 'newline']);
+const MOVEMENT_ACTIONS = new Set<KeyAction>(['tab', 'backtab', 'left', 'right', 'up', 'down', 'home', 'newline', 'endOfField']);
 
 const EBCDIC_NULL = 0x00;
 const EBCDIC_BLANK = 0x40;
@@ -73,6 +73,10 @@ export interface KeyboardOutput {
 
 /** Local keyboard semantics: typing, field editing and AID keys. */
 export class Keyboard {
+  /** State at the moment the current key arrived (see press). */
+  private pastEnd = false;
+  private autoAdvanced = false;
+
   constructor(
     private readonly screen: Screen,
     private readonly state: TerminalState,
@@ -103,11 +107,20 @@ export class Keyboard {
     // Moving the cursor is a natural way out of an operator error.
     if (this.state.inputInhibited === 'error' && MOVEMENT_ACTIONS.has(action)) this.clearError();
     if (this.state.inputInhibited !== 'none') return;
+    // Every key ends the past-the-end / just-auto-advanced states; the handlers below
+    // still see what they were when the key arrived.
+    this.pastEnd = this.state.cursorPastEnd;
+    this.autoAdvanced = this.state.autoAdvanced;
+    this.state.cursorPastEnd = false;
+    this.state.autoAdvanced = false;
     switch (action) {
       case 'fieldExit':
       case 'fieldPlus':
       case 'fieldMinus':
         this.fieldExit(action);
+        break;
+      case 'endOfField':
+        this.endOfField();
         break;
       case 'tab':
         this.moveToField(this.nextField(this.screen.cursor));
@@ -256,10 +269,17 @@ export class Keyboard {
       this.error('0005');
       return;
     }
+    // The field is full and the cursor sits past its last position: the operator must
+    // leave the field first (Field Exit, Tab, an arrow key).
+    if (this.state.cursorPastEnd) {
+      this.error('0020');
+      return;
+    }
     if (!this.validChar(f, ch)) return;
     const text = f.monocase ? ch.toUpperCase() : ch;
     const byte = this.codePage.encode(text);
     const cursor = s.cursor;
+    this.state.autoAdvanced = false;
     if (this.state.insert) {
       const last = s.buffer[f.end - 1];
       if (last !== EBCDIC_NULL && last !== EBCDIC_BLANK) {
@@ -278,8 +298,33 @@ export class Keyboard {
       this.sendAid(AID_AUTO_ENTER);
       return;
     }
-    if (f.fieldExitRequired) return;
-    this.moveToField(this.nextField(f.end - 1));
+    if (f.fieldExitRequired) {
+      // Shown on the last cell, logically past it: Field Exit keeps this character.
+      this.state.cursorPastEnd = true;
+      return;
+    }
+    const next = this.nextField(f.end - 1);
+    if (next) this.state.autoAdvanced = true;
+    this.moveToField(next);
+  }
+
+  /** End of Field: the cursor goes just after the last typed character of the field. */
+  private endOfField(): void {
+    const s = this.screen;
+    const f = this.currentField();
+    if (!f) {
+      this.error('0005');
+      return;
+    }
+    let end = f.end;
+    while (end > f.start && (s.buffer[end - 1] === EBCDIC_NULL || s.buffer[end - 1] === EBCDIC_BLANK)) end -= 1;
+    if (end >= f.end) {
+      // Full: the last cell, past the end (a Field Exit now keeps the text).
+      s.cursor = f.end - 1;
+      this.state.cursorPastEnd = true;
+    } else {
+      s.cursor = end;
+    }
   }
 
   private validChar(f: Field, ch: string): boolean {
@@ -325,7 +370,11 @@ export class Keyboard {
       this.error('0016');
       return;
     }
-    s.buffer.fill(EBCDIC_NULL, s.cursor, f.end);
+    // Pasted text that exactly filled the previous field already moved here by itself;
+    // the paste's own Field Exit must not wipe this field.
+    if (kind === 'fieldExit' && this.autoAdvanced && s.cursor === f.start) return;
+    // Past the end of a full field the character under the cursor is kept.
+    s.buffer.fill(EBCDIC_NULL, this.pastEnd ? s.cursor + 1 : s.cursor, f.end);
     const bytes = s.fieldBytes(f);
     const content = Array.from(bytes).filter((b) => b !== EBCDIC_NULL);
 
@@ -372,6 +421,13 @@ export class Keyboard {
   private backspace(): void {
     const s = this.screen;
     const f = this.currentField();
+    // Past the end of a full field the cursor is after the last character: Backspace
+    // removes that character (PC style, like everywhere else in the field).
+    if (f && this.pastEnd) {
+      s.buffer[f.end - 1] = EBCDIC_NULL;
+      f.mdt = true;
+      return;
+    }
     if (f && s.cursor > f.start) {
       s.cursor -= 1;
       s.buffer.copyWithin(s.cursor, s.cursor + 1, f.end);
@@ -399,7 +455,7 @@ export class Keyboard {
       this.error('0005');
       return;
     }
-    this.screen.buffer.fill(EBCDIC_NULL, this.screen.cursor, f.end);
+    this.screen.buffer.fill(EBCDIC_NULL, this.pastEnd ? this.screen.cursor + 1 : this.screen.cursor, f.end);
     f.mdt = true;
   }
 
@@ -417,7 +473,7 @@ export class Keyboard {
       this.error('0019');
       return;
     }
-    this.screen.buffer.fill(EBCDIC_DUP, this.screen.cursor, f.end);
+    this.screen.buffer.fill(EBCDIC_DUP, this.pastEnd ? this.screen.cursor + 1 : this.screen.cursor, f.end);
     f.mdt = true;
     this.moveToField(this.nextField(f.end - 1));
   }

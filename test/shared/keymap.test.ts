@@ -25,6 +25,10 @@ describe('keyName', () => {
     expect(keyName(k('a', 'KeyA'))).toBe('A');
     expect(keyName(k('A', 'KeyA', { shift: true }))).toBe('A');
     expect(keyName(k('End', 'End', { alt: true }))).toBe('Alt+End');
+    // Keypad with NumLock off: End/Home/arrows get their own names; digits keep the code.
+    expect(keyName(k('End', 'Numpad1'))).toBe('NumpadEnd');
+    expect(keyName(k('Home', 'Numpad7', { alt: true }))).toBe('Alt+NumpadHome');
+    expect(keyName(k('1', 'Numpad1'))).toBe('Numpad1');
   });
 });
 
@@ -42,6 +46,11 @@ describe('ACS keymap', () => {
     expect(resolveAction(k('Escape', 'Escape', { shift: true }), ACS_KEYMAP)).toBe('sysreq');
     expect(resolveAction(k('PageDown'), ACS_KEYMAP)).toBe('pageDown');
     expect(resolveAction(k('Tab', 'Tab', { shift: true }), ACS_KEYMAP)).toBe('backtab');
+    // ACS: End and keypad End = End of Field, Alt+End = Erase Input; Erase EOF on Ctrl+End.
+    expect(resolveAction(k('End'), ACS_KEYMAP)).toBe('endOfField');
+    expect(resolveAction(k('End', 'Numpad1'), ACS_KEYMAP)).toBe('endOfField');
+    expect(resolveAction(k('End', 'Numpad1', { alt: true }), ACS_KEYMAP)).toBe('eraseInput');
+    expect(resolveAction(k('End', 'End', { ctrl: true }), ACS_KEYMAP)).toBe('eraseEof');
     expect(resolveAction(k('x', 'KeyX', { ctrl: true }), ACS_KEYMAP)).toBeUndefined();
   });
 

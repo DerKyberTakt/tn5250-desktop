@@ -38,6 +38,10 @@ function harness(screenSize: '24x80' | '27x132' = '24x80') {
   return { session, sent, host, screen: session.screen, state: session.state };
 }
 
+/** Like TWO_FIELDS, but the first field is field-exit-required (ffw 4040 -> 4048). */
+const FER_FIELDS = '04110008' + '110201' + '1d4048200005' + '110301' + '1d4300200006' + '130202' + '0452' + '0000';
+const text = (h: ReturnType<typeof harness>, i: number): string => cp.decodeBytes(h.screen.fieldBytes(h.screen.fields[i]!));
+
 /** Two fields: a 5-char alpha field at row 2 col 2 and a 6-char numeric-only field at row 3 col 2. */
 const TWO_FIELDS = '04110008' + '110201' + '1d4000200005' + '110301' + '1d4300200006' + '130202' + '0452' + '0000';
 
@@ -238,5 +242,131 @@ describe('Keyboard editing', () => {
     expect(h.screen.cursor).toBe(h.screen.cols - 1);
     h.session.press('newline');
     expect(h.screen.cursor).toBe(h.screen.fields[0]?.start);
+  });
+});
+
+describe('past the end of a full field-exit-required field', () => {
+  it('the last character stays on typing and survives Field Exit', () => {
+    const h = harness();
+    h.host(FER_FIELDS);
+    h.session.type('abcde');
+    expect(h.screen.cursor).toBe(h.screen.fields[0]!.end - 1);
+    h.session.press('fieldExit');
+    expect(text(h, 0)).toBe('abcde');
+    expect(h.screen.cursor).toBe(h.screen.fields[1]?.start);
+  });
+
+  it('typing past the end reports 0020 until the cursor moves', () => {
+    const h = harness();
+    h.host(FER_FIELDS);
+    h.session.type('abcdef');
+    expect(h.state.errorMessage).toMatch(/^0020 /);
+    expect(text(h, 0)).toBe('abcde');
+    h.session.press('reset');
+    h.session.type('x');
+    expect(h.state.errorMessage).toMatch(/^0020 /);
+    h.session.press('left'); // onto the 'd'
+    h.session.type('x');
+    expect(text(h, 0)).toBe('abcxe');
+  });
+
+  it('Erase EOF past the end keeps the field; one cell back it erases', () => {
+    const h = harness();
+    h.host(FER_FIELDS);
+    h.session.type('abcde');
+    h.session.press('eraseEof');
+    expect(text(h, 0)).toBe('abcde');
+    h.session.press('left'); // onto the 'd'
+    h.session.press('eraseEof');
+    expect(text(h, 0)).toBe('abc  ');
+  });
+
+  it('Backspace past the end removes the last character, then works as usual', () => {
+    const h = harness();
+    h.host(FER_FIELDS);
+    h.session.type('abcde');
+    h.session.press('backspace');
+    expect(text(h, 0)).toBe('abcd ');
+    expect(h.screen.cursor).toBe(h.screen.fields[0]!.end - 1);
+    h.session.press('backspace');
+    expect(text(h, 0)).toBe('abc  ');
+    h.session.type('xy');
+    expect(text(h, 0)).toBe('abcxy');
+  });
+
+  it('a click, a host write and Insert end the past-the-end state', () => {
+    for (const leave of ['click', 'host', 'insert'] as const) {
+      const h = harness();
+      h.host(FER_FIELDS);
+      h.session.type('abcde');
+      if (leave === 'click') h.session.setCursor(1, 5);
+      if (leave === 'host') h.host('04110008' + '110501' + e('msg') + '130206' + '04520000');
+      if (leave === 'insert') h.session.press('insert');
+      h.session.press('fieldExit');
+      expect(text(h, 0), leave).toBe('abcd ');
+    }
+  });
+});
+
+describe('Field Exit right after an automatic advance (paste)', () => {
+  it('does not erase the field it just moved into; a later Field Exit does', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(2, 1);
+    h.session.type('42');
+    h.session.setCursor(1, 1);
+    h.session.type('abcde'); // fills field 1, advances to field 2
+    expect(h.screen.cursor).toBe(h.screen.fields[1]?.start);
+    h.session.press('fieldExit');
+    expect(text(h, 1)).toBe('42    ');
+    expect(h.screen.cursor).toBe(h.screen.fields[1]?.start);
+    h.session.press('fieldExit');
+    expect(text(h, 1)).toBe('      ');
+  });
+
+  it('erases as usual when another key came in between', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(2, 1);
+    h.session.type('42');
+    h.session.setCursor(1, 1);
+    h.session.type('abcde');
+    h.session.press('right');
+    h.session.press('left');
+    h.session.press('fieldExit');
+    expect(text(h, 1)).toBe('      ');
+  });
+});
+
+describe('End of Field', () => {
+  it('moves just after the last typed character', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.type('ab');
+    h.session.press('home');
+    h.session.press('endOfField');
+    expect(h.screen.cursor).toBe(h.screen.fields[0]!.start + 2);
+  });
+
+  it('on a full field goes to the last cell past the end, so Field Exit keeps the text', () => {
+    const h = harness();
+    h.host(FER_FIELDS);
+    h.session.type('abcde');
+    h.session.press('home');
+    h.session.press('endOfField');
+    expect(h.screen.cursor).toBe(h.screen.fields[0]!.end - 1);
+    h.session.press('fieldExit');
+    expect(text(h, 0)).toBe('abcde');
+  });
+
+  it('goes to the start of an empty field and reports 0005 outside a field', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.press('right');
+    h.session.press('endOfField');
+    expect(h.screen.cursor).toBe(h.screen.fields[0]?.start);
+    h.screen.cursor = 0;
+    h.session.press('endOfField');
+    expect(h.state.errorMessage).toMatch(/^0005 /);
   });
 });

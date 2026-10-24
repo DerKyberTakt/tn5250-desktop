@@ -380,6 +380,7 @@ class Shell implements TabHost, IfsHost {
         ev.preventDefault();
         void this.close(entry);
       } else if (ev.button === 0) {
+        ev.preventDefault(); // keep keyboard focus in the terminal frame
         this.activate(entry);
       }
     });
@@ -439,6 +440,12 @@ class Shell implements TabHost, IfsHost {
     }
     if (!this.entries.length) this.sidebar.hidden = false;
     this.refresh();
+    this.focusActive();
+  }
+
+  /** Keyboard focus back to the active tab (after menus, dialogs, closing tabs, hiding the panel). */
+  private focusActive(): void {
+    this.active?.tab.focus();
   }
 
   private activeTerminal(): TerminalTab | undefined {
@@ -588,6 +595,7 @@ class Shell implements TabHost, IfsHost {
   private toggleConnections(show = this.sidebar.hidden): void {
     this.sidebar.hidden = !show;
     if (show) byId<HTMLInputElement>('quick-host').focus();
+    else this.focusActive();
     this.updateToolbar();
   }
 
@@ -772,7 +780,9 @@ class Shell implements TabHost, IfsHost {
             b.disabled = item.enabled ? !item.enabled() : false;
             b.addEventListener('click', () => {
               this.closeMenus();
+              const panelWasHidden = this.sidebar.hidden;
               item.run();
+              if (!(panelWasHidden && !this.sidebar.hidden)) this.focusActive();
             });
             li.append(b);
           }

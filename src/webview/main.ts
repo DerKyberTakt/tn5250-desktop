@@ -222,8 +222,15 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
     case 'copySelection':
       copySelection();
       break;
+    case 'focus':
+      terminal.focus();
+      break;
   }
 });
+
+// Focus arriving at this frame (a tab switch, Alt+Tab back to the window) goes to the
+// terminal, so typing works at once instead of after a click.
+window.addEventListener('focus', () => terminal.focus());
 
 new ResizeObserver(() => {
   renderer.resize(viewport.clientWidth, viewport.clientHeight);

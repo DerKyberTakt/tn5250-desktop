@@ -16,6 +16,8 @@ describe('importKmp', () => {
       'B27=[attn]',
       'B999=[enter]',
       'B10=[unknownfn]',
+      'B35=[eof]',
+      'C35=[eraseeof]',
     ].join('\n');
     const r = importKmp(text);
     expect(r.keymap).toEqual({
@@ -23,6 +25,8 @@ describe('importKmp', () => {
       NumpadAdd: 'fieldExit',
       'Ctrl+F1': 'pf13',
       Escape: 'attn',
+      End: 'endOfField',
+      'Ctrl+End': 'eraseEof',
     });
     expect(r.skipped).toEqual(['B999=[enter]', 'B10=[unknownfn]']);
   });

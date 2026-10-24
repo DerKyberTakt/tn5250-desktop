@@ -150,6 +150,9 @@ export class TerminalTab {
   focus(): void {
     this.frame.focus();
     this.frame.contentWindow?.focus();
+    // The page focuses its terminal element itself; a hidden frame cannot take focus at
+    // load time, so an activated tab is told again.
+    this.post({ type: 'focus' });
   }
 
   toggleKeyOverlay(): void {

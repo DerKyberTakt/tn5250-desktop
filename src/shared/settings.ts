@@ -392,6 +392,7 @@ export const KEY_ACTION_GROUPS: Array<{ title: string; actions: Array<[KeyAction
       ['tab', 'Tab (next field)'],
       ['backtab', 'Back Tab'],
       ['home', 'Home'],
+      ['endOfField', 'End of Field'],
       ['newline', 'New Line'],
       ['up', 'Cursor Up'],
       ['down', 'Cursor Down'],

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Switching tabs (click, Window > Next Tab), closing a tab or hiding the connections panel puts keyboard focus in the terminal, so typing works at once; before, Tab moved between the window's buttons until the screen was clicked.
+
 ## 0.1.0
 
 - Demo sessions: tilted watermark, coloured frame, [DEMO] tab prefix and status pill; Duplicate Connection.

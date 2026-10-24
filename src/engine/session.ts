@@ -111,6 +111,8 @@ export class Session5250 {
     if (row < this.screen.rows && col < this.screen.cols) {
       this.keyboard.clearError();
       this.screen.cursor = this.screen.addr(row, col);
+      this.state.cursorPastEnd = false;
+      this.state.autoAdvanced = false;
       this.events.update?.();
     }
   }

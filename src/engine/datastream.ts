@@ -108,6 +108,9 @@ export class DataStreamProcessor {
   process(data: Uint8Array): Response[] {
     const r = new Reader(data);
     const out: Response[] = [];
+    // Anything the host writes ends the keyboard's "past the end of the field" state.
+    this.state.cursorPastEnd = false;
+    this.state.autoAdvanced = false;
     while (!r.eof) {
       if (r.u8() !== ESC) continue;
       if (r.eof) break;
@@ -148,7 +151,12 @@ export class DataStreamProcessor {
             cmd === CMD_READ_INPUT_FIELDS ? 'input' : cmd === CMD_READ_MDT_FIELDS ? 'mdt' : 'mdtAlt';
           this.state.pendingRead = kind;
           this.state.inputInhibited = 'none';
-          if (!this.cursorSet) this.homeCursor();
+          // Home unless an Insert Cursor placed the cursor. A cursor at the top-left corner
+          // outside any input field counts as not placed: a restored image of a screen that
+          // was written but never read carries IC 1,1, and the window it came back from
+          // must not leave the operator there.
+          const at0 = this.screen.fieldAt(0);
+          if (!this.cursorSet || (this.screen.cursor === 0 && !(at0 && !at0.bypass))) this.homeCursor();
           this.cursorSet = false;
           break;
         }

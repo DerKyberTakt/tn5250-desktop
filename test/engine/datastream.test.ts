@@ -231,3 +231,34 @@ describe('DataStreamProcessor commands', () => {
     expect(t.screen.rowText(2, cp).trim()).toBe('Name: Alex');
   });
 });
+
+describe('cursor after a window closes (Restore Screen)', () => {
+  // A full-screen format written without IC and never read, then a window: the host
+  // saves the screen (cursor still at 1,1), shows the window, and restores on F12.
+  const FORMAT = '04110008' + '110305' + e('Name:') + '1d4000200008' + '20';
+  const WINDOW = '04110008' + '110a14' + e('Pick:') + '1d4000200003' + '20' + '130a1a' + '04520000';
+
+  it('READ after the restored image homes the cursor to the first input field', () => {
+    const t = setup();
+    t.proc.process(hexToBytes(FORMAT));
+    expect(t.screen.cursor).toBe(0);
+    const saved = t.proc.process(hexToBytes('0402'))[0]?.data as Uint8Array;
+    t.proc.process(hexToBytes(WINDOW));
+    expect(t.screen.cursor).toBe(t.screen.addr(9, 25));
+    t.proc.process(saved); // Restore Screen replays IC 1,1
+    t.proc.process(hexToBytes('04520000'));
+    expect(t.screen.cursor).toBe(t.screen.fields[0]?.start);
+  });
+
+  it('READ keeps a deliberate Insert Cursor on a protected cell', () => {
+    const t = setup();
+    t.proc.process(hexToBytes(FORMAT + '130505' + '04520000'));
+    expect(t.screen.cursor).toBe(t.screen.addr(4, 4));
+  });
+
+  it('READ on a screen without input fields leaves the cursor at the top-left corner', () => {
+    const t = setup();
+    t.proc.process(hexToBytes('04110008' + '110305' + e('Just text') + '04520000'));
+    expect(t.screen.cursor).toBe(0);
+  });
+});

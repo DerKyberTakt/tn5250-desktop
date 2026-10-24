@@ -86,7 +86,9 @@ export type HostToWebview =
   /** Clipboard text read by the host, in answer to a 'paste' request. */
   | { type: 'paste'; text: string }
   /** Toolbar / menu Copy: copy the selection (the whole screen when nothing is selected), like Ctrl+C. */
-  | { type: 'copySelection' };
+  | { type: 'copySelection' }
+  /** The host made this terminal the active one: take keyboard focus. */
+  | { type: 'focus' };
 
 export type WebviewToHost =
   | { type: 'ready' }

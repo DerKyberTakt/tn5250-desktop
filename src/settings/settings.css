@@ -170,6 +170,18 @@ select {
   cursor: default;
 }
 
+.keyboard input.search {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  margin: 4px 0 12px;
+  padding: 5px 8px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+}
+
 .keyboard h4 {
   margin: 16px 0 6px;
 }

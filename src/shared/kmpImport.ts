@@ -88,7 +88,9 @@ const FUNCTIONS: Record<string, KeyAction> = {
   insert: 'insert',
   delete: 'delete',
   backspace: 'backspace',
-  eof: 'eraseEof',
+  // HOD/ACS: [eof] is End of Field (a cursor move), [eraseeof] erases.
+  eof: 'endOfField',
+  endfield: 'endOfField',
   eraseeof: 'eraseEof',
   eraseinput: 'eraseInput',
   dup: 'dup',

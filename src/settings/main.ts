@@ -467,6 +467,8 @@ function searchFields(query: string): Array<{ page: (typeof PAGES)[number]; fiel
 }
 
 let searchQuery = '';
+/** Filter typed into the Keyboard page's own search box. */
+let keySearch = '';
 let fonts: Array<{ family: string; monospace: boolean }> = [];
 let watermarkImageData: string | undefined;
 let fontFace: { family: string; url: string } | undefined;
@@ -832,15 +834,21 @@ function renderField(f: FieldSpec): HTMLElement | undefined {
   return row;
 }
 
-function renderKeyboard(): HTMLElement {
-  const box = el('div', 'keyboard');
-  box.append(el('p', 'note', 'Click Assign, then press the key combination. Changes apply to this profile only; sessions inherit the defaults.'));
+/**
+ * The key assignment tables, one per group, keeping only the actions whose label, id or
+ * bound key contains `query` (case-insensitive); empty groups are left out.
+ */
+function renderKeyTables(query: string): HTMLElement[] {
+  const q = query.trim().toLowerCase();
   const map = effectiveKeymap(values.keymap);
   const keysFor = (action: KeyAction): string[] => Object.entries(map).filter(([, a]) => a === action).map(([k]) => k);
+  const out: HTMLElement[] = [];
   for (const group of KEY_ACTION_GROUPS) {
-    box.append(el('h4', undefined, group.title));
+    const rows = group.actions.filter(([action, label]) => !q || [action, label, ...keysFor(action)].join(' ').toLowerCase().includes(q));
+    if (!rows.length) continue;
+    out.push(el('h4', undefined, group.title));
     const table = el('table');
-    for (const [action, label] of group.actions) {
+    for (const [action, label] of rows) {
       const tr = el('tr');
       tr.append(el('td', 'fn', label));
       const td = el('td', 'keys');
@@ -867,8 +875,29 @@ function renderKeyboard(): HTMLElement {
       tr.append(act);
       table.append(tr);
     }
-    box.append(table);
+    out.push(table);
   }
+  return out;
+}
+
+function renderKeyboard(): HTMLElement {
+  const box = el('div', 'keyboard');
+  box.append(el('p', 'note', 'Click Assign, then press the key combination. Changes apply to this profile only; sessions inherit the defaults.'));
+  const search = el('input', 'search');
+  search.type = 'search';
+  search.placeholder = 'Find a key or function (e.g. F13, field exit, End)\u2026';
+  search.value = keySearch;
+  const tables = el('div', 'tables');
+  const fill = (): void => {
+    const nodes = renderKeyTables(keySearch);
+    tables.replaceChildren(...(nodes.length ? nodes : [el('p', 'note', 'No keys or functions match.')]));
+  };
+  search.oninput = () => {
+    keySearch = search.value;
+    fill();
+  };
+  box.append(search, tables);
+  fill();
   const imp = el('button', 'secondary', 'Import ACS keyboard map (.kmp)…');
   imp.onclick = () => post({ type: 'importKmp', target: selected });
   box.append(imp);
@@ -913,7 +942,8 @@ function renderMain(main: HTMLElement): void {
   if (searchQuery.trim()) {
     main.append(el('h2', undefined, `${title} › Search: ${searchQuery.trim()}`));
     const hits = searchFields(searchQuery);
-    if (!hits.length) main.append(el('p', 'note', 'No settings match.'));
+    const keyTables = renderKeyTables(searchQuery);
+    if (!hits.length && !keyTables.length) main.append(el('p', 'note', 'No settings match.'));
     let lastPage = '';
     for (const hit of hits) {
       if (hit.page.id !== lastPage) {
@@ -928,6 +958,19 @@ function renderMain(main: HTMLElement): void {
       }
       const node = renderField({ ...hit.field, showIf: undefined, hideIf: undefined });
       if (node) main.append(node);
+    }
+    if (keyTables.length) {
+      const h = el('h4', 'heading link', 'Keyboard › Keyboard');
+      h.onclick = () => {
+        keySearch = searchQuery.trim();
+        searchQuery = '';
+        page = 'keyboard';
+        render();
+      };
+      main.append(h);
+      const box = el('div', 'keyboard');
+      box.append(...keyTables);
+      main.append(box);
     }
   } else {
     const p = PAGES.find((x) => x.id === page) ?? PAGES[0]!;

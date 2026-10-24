@@ -15,6 +15,14 @@ export class TerminalState {
   savedCursor: number | undefined;
   /** Error row contents saved by Write Error Code, restored on Reset. */
   savedErrorRow: Uint8Array | undefined;
+  /**
+   * The last cell of a field-exit-required field was just filled: the cursor is shown
+   * on that cell but is logically past it, so Field Exit / Erase EOF keep the character
+   * and typing is refused (0020) until the cursor moves.
+   */
+  cursorPastEnd = false;
+  /** The last keystroke filled a field and moved to the next one by itself. */
+  autoAdvanced = false;
 
   reset(): void {
     this.inputInhibited = 'system';
@@ -24,5 +32,7 @@ export class TerminalState {
     this.errorMessage = '';
     this.savedCursor = undefined;
     this.savedErrorRow = undefined;
+    this.cursorPastEnd = false;
+    this.autoAdvanced = false;
   }
 }
