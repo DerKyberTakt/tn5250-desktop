@@ -126,6 +126,8 @@ interface GoApp {
   SqlFetch(id: string, cursor: string, maxRows: number): Promise<SqlResult>;
   SqlCancel(id: string): Promise<void>;
   CmdRun(id: string, command: string): Promise<SqlResult>;
+  /** Qshell command; output lines come back as rows of one column. */
+  QshRun(id: string, command: string): Promise<SqlResult>;
   SettingsLoad(): Promise<string>;
   SettingsSave(text: string): Promise<void>;
   SettingsFilePath(): Promise<string>;

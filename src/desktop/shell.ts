@@ -2,12 +2,13 @@ import type { KeyAction } from '../shared/keymap';
 import type { WebviewToHost } from '../shared/protocol';
 import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
-import { errorText, goApp, wailsRuntime, type SystemInfo, type UpdateInfo } from './bridge';
+import { errorText, goApp, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
 import { confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
+import { ConsoleTab, type ConsoleHost, type ConsoleMode } from './consoleTab';
 import { SqlTab, type SqlHost } from './sqlTab';
 import { Store } from './store';
 import { TerminalTab, type TabHost } from './terminalTab';
@@ -22,7 +23,8 @@ type Entry =
   | { kind: 'terminal'; tab: TerminalTab; button: HTMLElement }
   | { kind: 'settings'; tab: SettingsTab; button: HTMLElement }
   | { kind: 'ifs'; tab: IfsTab; button: HTMLElement }
-  | { kind: 'sql'; tab: SqlTab; button: HTMLElement };
+  | { kind: 'sql'; tab: SqlTab; button: HTMLElement }
+  | { kind: 'console'; tab: ConsoleTab; button: HTMLElement };
 
 function byId<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -49,7 +51,7 @@ export function parseHostInput(input: string, defaultPort: number): { host: stri
   return { host, port };
 }
 
-class Shell implements TabHost, IfsHost, SqlHost {
+class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   readonly store = new Store();
   readonly credentials = new Credentials(this.store);
   system: SystemInfo = { computerName: '', userName: '', platform: '' };
@@ -209,7 +211,7 @@ class Shell implements TabHost, IfsHost, SqlHost {
     }
   }
 
-  changed(tab: TerminalTab | IfsTab | SqlTab): void {
+  changed(tab: TerminalTab | IfsTab | SqlTab | ConsoleTab): void {
     const entry = this.entries.find((e) => e.tab === tab);
     if (entry) this.renderTabButton(entry);
     if (this.active?.tab === tab) this.refresh();
@@ -365,6 +367,27 @@ class Shell implements TabHost, IfsHost, SqlHost {
    * password is remembered when the box is ticked.
    */
   private async openSql(): Promise<void> {
+    const s = await this.signonFor('Run SQL Scripts', 'Signs on to the IBM i database server, as ACS does.');
+    if (!s) return;
+    const tab = new SqlTab(this, s.request, s.onSignon);
+    this.addEntry({ kind: 'sql', tab, button: el('div') }, true);
+    void tab.start();
+  }
+
+  private async openConsole(mode: ConsoleMode): Promise<void> {
+    const s = await this.signonFor(mode === 'qsh' ? 'QSH Console' : 'CL Console', 'Signs on to the IBM i remote command server, as ACS does.');
+    if (!s) return;
+    const tab = new ConsoleTab(this, s.request, mode, s.onSignon);
+    this.addEntry({ kind: 'console', tab, button: el('div') }, true);
+    void tab.start();
+  }
+
+  /**
+   * Host, user and password for a host-server tool: the active session's (or the
+   * selected / first saved one's) with the saved password, else a sign-on dialog. The
+   * returned callback remembers a working typed password and forgets a refused saved one.
+   */
+  private async signonFor(title: string, note: string): Promise<{ request: SqlConnectRequest; onSignon: (error?: unknown) => void } | undefined> {
     const t = this.activeTerminal();
     const sessions = this.store.readSessions();
     const picked = this.selectedSession >= 0 ? sessions[this.selectedSession] : undefined;
@@ -377,7 +400,7 @@ class Shell implements TabHost, IfsHost, SqlHost {
     const typed = !password;
     if (!host || !user || !password) {
       const values = await formDialog(
-        'Run SQL Scripts',
+        title,
         [
           { label: 'Host', value: host, placeholder: 'myibmi.example.com' },
           { label: 'User profile', value: user },
@@ -385,40 +408,36 @@ class Shell implements TabHost, IfsHost, SqlHost {
           { label: 'Remember password (Windows Credential Manager)', checkbox: true, value: 'true' },
         ],
         'Connect',
-        'Signs on to the IBM i database server, as ACS does. A remembered password is kept in the operating system credential store, never in the settings file.',
+        `${note} A remembered password is kept in the operating system credential store, never in the settings file.`,
       );
-      if (!values) return;
+      if (!values) return undefined;
       [host = '', user = '', password = ''] = values.slice(0, 3).map((v) => v.trim());
       remember = values[3] === 'true';
       if (!host || !user || !password) {
         this.notify('Host, user profile and password are all needed');
-        return;
+        return undefined;
       }
     }
     const sameHost = host === base.host;
-    const tab = new SqlTab(
-      this,
-      {
-        host,
-        tls: sameHost ? base.tls : false,
-        trustAnyCertificate: sameHost ? !base.verifyCertificate : false,
-        user,
-        password,
-        timeoutMs: base.connectTimeoutSeconds * 1000,
-        naming: 'sql',
-        defaultSchema: '',
-      },
-      (error) => {
-        if (!error) {
-          void this.store.setIfsLast(host, user);
-          if (typed && remember) void this.credentials.save(user, host, password).catch(() => this.notify('Could not save the password'));
-          return;
-        }
-        if (!typed && /sign-on refused/i.test(errorText(error))) void this.credentials.remove(user, host, sameName(base, host));
-      },
-    );
-    this.addEntry({ kind: 'sql', tab, button: el('div') }, true);
-    void tab.start();
+    const request: SqlConnectRequest = {
+      host,
+      tls: sameHost ? base.tls : false,
+      trustAnyCertificate: sameHost ? !base.verifyCertificate : false,
+      user,
+      password,
+      timeoutMs: base.connectTimeoutSeconds * 1000,
+      naming: 'sql',
+      defaultSchema: '',
+    };
+    const onSignon = (error?: unknown): void => {
+      if (!error) {
+        void this.store.setIfsLast(host, user);
+        if (typed && remember) void this.credentials.save(user, host, password).catch(() => this.notify('Could not save the password'));
+        return;
+      }
+      if (!typed && /sign-on refused/i.test(errorText(error))) void this.credentials.remove(user, host, sameName(base, host));
+    };
+    return { request, onSignon };
   }
 
   private openDemo(): void {
@@ -689,6 +708,7 @@ class Shell implements TabHost, IfsHost, SqlHost {
       '|',
       { icon: 'ifs', title: 'Integrated File System', run: () => void this.openIfs() },
       { icon: 'sql', title: 'Run SQL Scripts', run: () => void this.openSql() },
+      { icon: 'console', title: 'Console: CL commands and Qshell', run: () => void this.openConsole('cl') },
       { icon: 'settings', title: 'Settings', run: () => this.openSettings(-1) },
       { icon: 'help', title: `About ${APP_NAME}`, run: () => void this.about() },
       { icon: 'update', title: 'Check for updates', run: () => void this.checkForUpdates() },
@@ -796,6 +816,8 @@ class Shell implements TabHost, IfsHost, SqlHost {
         items: [
           { label: 'Integrated File System…', run: () => void this.openIfs() },
           { label: 'Run SQL Scripts…', run: () => void this.openSql() },
+          { label: 'CL Console…', run: () => void this.openConsole('cl') },
+          { label: 'QSH Console…', run: () => void this.openConsole('qsh') },
           '-',
           { label: 'Saved Passwords…', run: () => void this.managePasswords() },
         ],

@@ -77,3 +77,9 @@ func (a *App) SqlCancel(_ string) {}
 func (a *App) CmdRun(_ string, _ string) (SqlResult, error) {
 	return SqlResult{}, errSQLNotReady
 }
+
+// QshRun runs a Qshell command (QSH CMD(...) with its output sent to a stream file
+// and read back); the output lines come back as rows of one column.
+func (a *App) QshRun(_ string, _ string) (SqlResult, error) {
+	return SqlResult{}, errSQLNotReady
+}

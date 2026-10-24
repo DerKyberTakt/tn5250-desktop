@@ -1,0 +1,116 @@
+/* Console tab (Tools > Console: CL and Qshell). */
+.terminal-frame.console {
+  display: none;
+  flex-direction: column;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  outline: none;
+}
+
+.terminal-frame.console.active {
+  display: flex;
+}
+
+.console-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.console-top .group {
+  display: flex;
+  gap: 4px;
+}
+
+.console-top .sep {
+  width: 1px;
+  height: 18px;
+  background: var(--chrome-border);
+}
+
+.console-top .conn {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.console button {
+  padding: 3px 10px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  cursor: default;
+}
+
+.console button[aria-pressed="true"] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.console-output {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  font-family: var(--vscode-editor-font-family, Consolas, monospace);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.console-output .line.cmd {
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.console-output .line.error {
+  color: #d0453b;
+}
+
+.console-output .line.info {
+  opacity: 0.7;
+}
+
+.console-output .line.msg {
+  opacity: 0.95;
+}
+
+.console-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  font-family: var(--vscode-editor-font-family, Consolas, monospace);
+}
+
+.console-prompt {
+  opacity: 0.8;
+  white-space: pre;
+}
+
+.console-input {
+  flex: 1;
+  padding: 4px 6px;
+  font: inherit;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--chrome-border));
+  border-radius: 3px;
+  outline: none;
+}
+
+.console-input:focus {
+  border-color: var(--tab-accent);
+}
+
+.console.busy .console-output {
+  opacity: 0.85;
+}
