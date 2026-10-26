@@ -223,6 +223,12 @@ export class DataStreamProcessor {
     return out;
   }
 
+  /** The response of a command attention key: cursor and AID, no field data. */
+  aidOnly(aid: number): Uint8Array {
+    const s = this.screen;
+    return Uint8Array.from([s.rowOf(s.cursor) + 1, s.colOf(s.cursor) + 1, aid]);
+  }
+
   /** Builds the AID response for the pending read (or the kind given). */
   readResponse(kind: ReadKind, aid: number): Uint8Array {
     const s = this.screen;
@@ -259,6 +265,7 @@ export class DataStreamProcessor {
     this.state.savedCursor = undefined;
     this.state.savedErrorRow = undefined;
     this.state.pendingRead = undefined;
+    this.state.caKeys = 0;
   }
 
   private put(b: number): void {
@@ -306,6 +313,9 @@ export class DataStreamProcessor {
           s.clearFormatTable();
           const errRow = data[3];
           if (errRow !== undefined && errRow > 0 && errRow <= s.rows) s.errorRow = errRow - 1;
+          // Command key switches (bytes 4-6: F17-24, F9-16, F1-8; F1 = low bit of the last
+          // byte; a set bit = the key returns no data, i.e. a DDS CA key). Absent = all CF.
+          this.state.caKeys = data.length >= 7 ? ((data[4]! << 16) | (data[5]! << 8) | data[6]!) >>> 0 : 0;
           break;
         }
         case O_SF:
@@ -437,7 +447,10 @@ export class DataStreamProcessor {
     const s = this.screen;
     // Record the screen size too: the host may switch between 24x80 and 27x132 in between.
     const size = s.cols === 132 ? [ESC, CMD_CLEAR_UNIT_ALT, 0x00] : [ESC, CMD_CLEAR_UNIT];
-    const out: number[] = [ESC, CMD_RESTORE_SCREEN, ...size, ESC, CMD_WTD, 0x00, 0x00, O_SBA, 1, 1];
+    // The header carries the error row and the command key switches of this screen.
+    const ca = this.state.caKeys;
+    const soh = [O_SOH, 7, 0x00, 0x00, 0x00, s.errorRow + 1, (ca >> 16) & 0xff, (ca >> 8) & 0xff, ca & 0xff];
+    const out: number[] = [ESC, CMD_RESTORE_SCREEN, ...size, ESC, CMD_WTD, 0x00, 0x00, ...soh, O_SBA, 1, 1];
     const fieldsByAttr = new Map<number, Field>();
     for (const f of s.fields) fieldsByAttr.set(f.start - 1, f);
     for (let i = 0; i < s.size; i++) {

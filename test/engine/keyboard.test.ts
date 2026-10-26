@@ -370,3 +370,41 @@ describe('End of Field', () => {
     expect(h.state.errorMessage).toMatch(/^0005 /);
   });
 });
+
+describe('command attention keys send no field data', () => {
+  // Alpha field at row 2 col 2; the header marks F3 and F12 as CA keys.
+  const CA_SCREEN = '04110008' + '0107' + '00000018' + '000804' + '110201' + '1d4000200005' + '130202' + '0452' + '0000';
+
+  it('F3 sends only the cursor and AID; F5 and Enter send what was typed', () => {
+    const h = harness();
+    h.host(CA_SCREEN);
+    h.session.type('1');
+    h.session.press('pf3');
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]!.data).toBe('0203' + '33');
+    h.host('04110008' + '0107' + '00000018' + '000804' + '110201' + '1d4000200005' + '130202' + '04520000');
+    h.session.type('1');
+    h.session.press('pf5');
+    expect(h.sent[1]!.data).toBe('0203' + '35' + '110202' + e('1'));
+  });
+
+  it('a CA key does not trip the mandatory-enter check', () => {
+    const h = harness();
+    // Mandatory enter field (ffw bit 0x0008 of the second byte: 4008)
+    h.host('04110008' + '0107' + '00000018' + '000804' + '110201' + '1d4008200005' + '130202' + '04520000');
+    h.session.press('pf3');
+    expect(h.sent).toHaveLength(1);
+    expect(h.state.errorMessage).toBe('');
+    h.host('04110008' + '0107' + '00000018' + '000804' + '110201' + '1d4008200005' + '130202' + '04520000');
+    h.session.press('enter');
+    expect(h.state.errorMessage).toMatch(/^0007 /);
+  });
+
+  it('without the header bytes every key sends data', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.type('1');
+    h.session.press('pf3');
+    expect(h.sent[0]!.data).toBe('0203' + '33' + '110202' + e('1'));
+  });
+});

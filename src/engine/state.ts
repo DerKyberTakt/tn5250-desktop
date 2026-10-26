@@ -23,6 +23,12 @@ export class TerminalState {
   cursorPastEnd = false;
   /** The last keystroke filled a field and moved to the next one by itself. */
   autoAdvanced = false;
+  /**
+   * Function keys the host declared as command attention keys (DDS CAnn): bit n-1 set
+   * means Fn sends only the cursor and AID, no field data. From the Start of Header
+   * order's command key bytes; 0 when the header did not carry them.
+   */
+  caKeys = 0;
 
   reset(): void {
     this.inputInhibited = 'system';
@@ -34,5 +40,6 @@ export class TerminalState {
     this.savedErrorRow = undefined;
     this.cursorPastEnd = false;
     this.autoAdvanced = false;
+    this.caKeys = 0;
   }
 }

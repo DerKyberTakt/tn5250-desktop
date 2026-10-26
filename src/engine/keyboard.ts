@@ -41,6 +41,13 @@ export const AID: Partial<Record<KeyAction, number>> = {
 };
 const AID_AUTO_ENTER = 0x3f;
 
+/** F-key number of an AID (1-24), 0 for other AIDs. */
+function pfNumber(aid: number): number {
+  if (aid >= 0x31 && aid <= 0x3c) return aid - 0x30;
+  if (aid >= 0xb1 && aid <= 0xbc) return aid - 0xb0 + 12;
+  return 0;
+}
+
 /** Operator error codes, as shown by 5250 displays. */
 export const OPERATOR_ERRORS: Record<string, string> = {
   '0004': 'Data not allowed in this field',
@@ -491,14 +498,18 @@ export class Keyboard {
 
   private sendAid(aid: number): void {
     const s = this.screen;
-    const missing = this.inputFields().find((f) => f.mandatoryEnter && !f.mdt);
+    // A command attention key (DDS CAnn) returns the AID only: what was typed is not
+    // sent, so the program cannot act on it, and mandatory-enter checks do not apply.
+    const pf = pfNumber(aid);
+    const attention = pf > 0 && (this.state.caKeys & (1 << (pf - 1))) !== 0;
+    const missing = attention ? undefined : this.inputFields().find((f) => f.mandatoryEnter && !f.mdt);
     if (missing && aid !== AID.clear && aid !== AID.help) {
       s.cursor = missing.start;
       this.error('0007');
       return;
     }
     const kind = this.state.pendingRead === 'input' ? 'input' : this.state.pendingRead === 'mdtAlt' ? 'mdtAlt' : 'mdt';
-    const data = this.processor.readResponse(kind, aid);
+    const data = attention ? this.processor.aidOnly(aid) : this.processor.readResponse(kind, aid);
     this.state.pendingRead = undefined;
     this.state.inputInhibited = 'system';
     this.out.send(OP_PUT_GET, 0, data);

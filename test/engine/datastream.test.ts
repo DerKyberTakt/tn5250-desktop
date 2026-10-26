@@ -262,3 +262,37 @@ describe('cursor after a window closes (Restore Screen)', () => {
     expect(t.screen.cursor).toBe(0);
   });
 });
+
+describe('Start of Header command key switches', () => {
+  // SOH data: flags, reserved, resequence, error row, then F17-24, F9-16, F1-8 (F1 = low bit).
+  const soh = (keys: string): string => '0107' + '00000018' + keys;
+
+  it('reads which keys are command attention keys', () => {
+    const t = setup();
+    t.proc.process(hexToBytes('04110008' + soh('000804') + '04520000')); // CA03 + CA12
+    expect(t.state.caKeys).toBe((1 << 2) | (1 << 11));
+    t.proc.process(hexToBytes('04110008' + soh('010005') + '04520000')); // CA01, CA03, CA17
+    expect(t.state.caKeys).toBe((1 << 0) | (1 << 2) | (1 << 16));
+  });
+
+  it('treats a short header and Clear Unit as "every key returns data"', () => {
+    const t = setup();
+    t.proc.process(hexToBytes('04110008' + soh('000804') + '04520000'));
+    t.proc.process(hexToBytes('04110008' + '0104' + '00000018' + '04520000'));
+    expect(t.state.caKeys).toBe(0);
+    t.proc.process(hexToBytes('04110008' + soh('000804') + '04520000'));
+    t.proc.process(hexToBytes('0440'));
+    expect(t.state.caKeys).toBe(0);
+  });
+
+  it('keeps the keys of a saved screen through Restore Screen', () => {
+    const t = setup();
+    t.proc.process(hexToBytes('04110008' + soh('000804') + '110305' + e('Name:') + '1d4000200008'));
+    const saved = t.proc.process(hexToBytes('0402'))[0]?.data as Uint8Array;
+    t.proc.process(hexToBytes('0440' + '04110008' + soh('000000') + '110101' + e('win')));
+    expect(t.state.caKeys).toBe(0);
+    t.proc.process(saved);
+    expect(t.state.caKeys).toBe((1 << 2) | (1 << 11));
+    expect(t.screen.errorRow).toBe(23);
+  });
+});
