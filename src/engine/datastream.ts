@@ -311,6 +311,11 @@ export class DataStreamProcessor {
           const len = r.u8();
           const data = r.bytes(len);
           s.clearFormatTable();
+          // A new header starts a new format: an Insert Cursor received before it (for
+          // instance the saved cursor replayed by Restore Screen) no longer places the
+          // cursor, so the next read homes to the first input field unless this format
+          // carries its own IC. That is what a menu redrawn after F3/F12 relies on.
+          this.cursorSet = false;
           const errRow = data[3];
           if (errRow !== undefined && errRow > 0 && errRow <= s.rows) s.errorRow = errRow - 1;
           // Command key switches (bytes 4-6: F17-24, F9-16, F1-8; F1 = low bit of the last

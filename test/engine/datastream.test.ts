@@ -250,6 +250,36 @@ describe('cursor after a window closes (Restore Screen)', () => {
     expect(t.screen.cursor).toBe(t.screen.fields[0]?.start);
   });
 
+  it('a format rewritten after Restore Screen homes the cursor (menu after F3/F12)', () => {
+    // Menu: option field at 20,22 and a second field at 20,68. The operator typed 1 and
+    // pressed Enter (cursor at 20,23), the program saved the screen, showed another
+    // format, and on F3 restores the image and rewrites the whole menu (SOH, fields)
+    // before reading. The saved IC 20,23 must not survive the new header.
+    const MENU = '04110008' + '0107' + '00000018' + '000804' + '111415' + '1d4020200002' + '114443' + '1d4020200008';
+    const t = setup();
+    t.proc.process(hexToBytes(MENU + '04520000'));
+    expect(t.screen.cursor).toBe(t.screen.addr(19, 21));
+    t.screen.cursor = t.screen.addr(19, 22);
+    const saved = t.proc.process(hexToBytes('0402'))[0]?.data as Uint8Array;
+    t.proc.process(hexToBytes('04110008' + '0107' + '00000018' + '000804' + '110305' + e('Other:') + '1d4000200008' + '20' + '04520000'));
+    t.proc.process(saved);
+    expect(t.screen.cursor).toBe(t.screen.addr(19, 22));
+    t.proc.process(hexToBytes(MENU + '04520000'));
+    expect(t.screen.cursor).toBe(t.screen.addr(19, 21));
+  });
+
+  it('Restore Screen alone keeps the saved cursor when the host reads without a new header', () => {
+    const MENU = '04110008' + '0107' + '00000018' + '000804' + '111415' + '1d4020200002' + '114443' + '1d4020200008';
+    const t = setup();
+    t.proc.process(hexToBytes(MENU + '04520000'));
+    t.screen.cursor = t.screen.addr(19, 22);
+    const saved = t.proc.process(hexToBytes('0402'))[0]?.data as Uint8Array;
+    t.proc.process(hexToBytes('04110008' + '0107' + '00000018' + '000804' + '110305' + e('Other:') + '1d4000200008' + '20' + '04520000'));
+    t.proc.process(saved);
+    t.proc.process(hexToBytes('04110000' + '04520000'));
+    expect(t.screen.cursor).toBe(t.screen.addr(19, 22));
+  });
+
   it('READ keeps a deliberate Insert Cursor on a protected cell', () => {
     const t = setup();
     t.proc.process(hexToBytes(FORMAT + '130505' + '04520000'));
