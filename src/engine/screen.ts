@@ -110,12 +110,34 @@ export class Field {
  * The regeneration buffer: one EBCDIC byte per cell. Attribute bytes
  * (0x20..0x3F) live inline, exactly as the 5250 data stream places them.
  */
+/**
+ * A window the host created with the Create Window structured field (enhanced 5250).
+ * The terminal draws the border and remembers what the window covers, so Remove GUI
+ * Window can put it back; `row`/`col` is the top-left cell of the border rectangle.
+ */
+export interface GuiWindow {
+  row: number;
+  col: number;
+  /** Usable rows / columns inside the border. */
+  depth: number;
+  width: number;
+  /** Rectangle rows (depth + 2) and columns (width + 6) actually on the screen. */
+  rows: number;
+  cols: number;
+  /** Cells of the rectangle before the window was drawn, row-major. */
+  saved: Uint8Array;
+  /** Fields that touched the rectangle before the window was drawn. */
+  savedFields: Field[];
+}
+
 export class Screen {
   rows = 24;
   cols = 80;
   buffer = new Uint8Array(24 * 80);
   fields: Field[] = [];
   cursor = 0;
+  /** Open GUI windows, oldest first. */
+  windows: GuiWindow[] = [];
   /** 0-based row used for error messages (Write Error Code). */
   errorRow = 23;
 
@@ -128,6 +150,7 @@ export class Screen {
     this.cols = cols;
     this.buffer = new Uint8Array(rows * cols);
     this.fields = [];
+    this.windows = [];
     this.cursor = 0;
     this.errorRow = rows - 1;
   }
@@ -135,6 +158,7 @@ export class Screen {
   clear(): void {
     this.buffer.fill(0);
     this.fields = [];
+    this.windows = [];
     this.cursor = 0;
   }
 

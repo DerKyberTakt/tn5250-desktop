@@ -10,11 +10,11 @@ import { bytesToHex, hexToBytes, inboundBytes, loadCapture } from '../helpers/fi
 const cp = CodePage.get(37);
 const e = (s: string): string => bytesToHex(cp.encodeString(s));
 
-function setup(terminalType = 'IBM-3477-FC') {
+function setup(terminalType = 'IBM-3477-FC', info: { enhanced?: boolean } = {}) {
   const screen = new Screen();
   const state = new TerminalState();
   const alarms: number[] = [];
-  const proc = new DataStreamProcessor(screen, state, { terminalType }, cp, { alarm: () => alarms.push(1) });
+  const proc = new DataStreamProcessor(screen, state, { terminalType, ...info }, cp, { alarm: () => alarms.push(1) });
   return { screen, state, proc, alarms };
 }
 
@@ -324,5 +324,85 @@ describe('Start of Header command key switches', () => {
     t.proc.process(saved);
     expect(t.state.caKeys).toBe((1 << 2) | (1 << 11));
     expect(t.screen.errorRow).toBe(23);
+  });
+});
+
+describe('enhanced 5250: GUI windows', () => {
+  // Base screen: a label and an input field on row 8, a protected field on row 12.
+  const BASE = '04110008' + '0107' + '00000018' + '000004' + '110802' + e('Name:') + '1d4000200008' + '110c02' + e('Below the window') + '04520000';
+  // WTD: SBA 7,30, Create Window (depth 5, width 20) with a border minor structure:
+  // flags 0, mono 0x21, colour 0x3b, corners/edges '.', '-', '.', '|', '|', ':', '-', ':'.
+  const sfBody = 'd951' + '00' + '0000' + '05' + '14' + '0d01' + '00' + '21' + '3b' + '4b604b4f4f7a607a';
+  const CREATE = '15' + ((sfBody.length / 2) + 2).toString(16).padStart(4, '0') + sfBody;
+  const WINDOW = '04110000' + '11071e' + CREATE + '110821' + e('In the window') + '1d4000200003' + '04520000';
+  const REMOVE = '04110000' + '11071e' + '15' + '0007' + 'd959' + '000000' + '04520000';
+
+  function withWindow() {
+    const t = setup('IBM-3477-FC', { enhanced: true });
+    t.proc.process(hexToBytes(BASE));
+    const before = t.screen.buffer.slice();
+    t.proc.process(hexToBytes(WINDOW));
+    return { t, before };
+  }
+
+  it('answers the Query as an enhanced display', () => {
+    const t = setup('IBM-3477-FC', { enhanced: true });
+    const reply = t.proc.process(hexToBytes('04f30005d97000'))[0]?.data as Uint8Array;
+    expect(reply.length).toBe(67);
+    expect(reply[4]).toBe(0x40);
+    expect(reply[53]).toBe(0x02);
+    expect(reply[54]).toBe(0x80);
+    expect((setup().proc.process(hexToBytes('04f30005d97000'))[0]?.data as Uint8Array).length).toBe(61);
+  });
+
+  it('Create Window draws the border at the write address and clears the inside', () => {
+    const { t } = withWindow();
+    const s = t.screen;
+    // Top border: attribute, upper-left, dashes, upper-right, reset.
+    expect(s.buffer[s.addr(6, 29)]).toBe(0x3b);
+    expect(s.buffer[s.addr(6, 30)]).toBe(0x4b);
+    expect(s.buffer[s.addr(6, 31)]).toBe(0x60);
+    expect(s.buffer[s.addr(6, 30 + 22)]).toBe(0x60);
+    expect(s.buffer[s.addr(6, 30 + 23)]).toBe(0x4b);
+    expect(s.buffer[s.addr(6, 30 + 24)]).toBe(0x20);
+    // Side borders on the first usable row, bottom border row.
+    expect(s.buffer[s.addr(7, 30)]).toBe(0x4f);
+    expect(s.buffer[s.addr(7, 30 + 23)]).toBe(0x4f);
+    expect(s.buffer[s.addr(12, 30)]).toBe(0x7a);
+    // What the base screen had under the window is gone, the window's text is there.
+    expect(t.screen.rowText(7, cp).slice(32, 47)).toBe('In the window  ');
+    expect(t.screen.rowText(11, cp).slice(1, 17)).toBe('Below the window');
+    expect(s.windows).toHaveLength(1);
+    // The base field sits left of the window and stays; the window adds its own.
+    expect(s.fields.map((f) => f.start)).toEqual([s.addr(7, 7), s.addr(7, 46)]);
+  });
+
+  it('Remove GUI Window restores the covered cells and fields', () => {
+    const { t, before } = withWindow();
+    t.proc.process(hexToBytes(REMOVE));
+    expect(Array.from(t.screen.buffer)).toEqual(Array.from(before));
+    expect(t.screen.windows).toHaveLength(0);
+    expect(t.screen.fields.map((f) => f.start)).toEqual([t.screen.addr(7, 7)]);
+  });
+
+  it('Remove All GUI Constructs closes every window, newest first', () => {
+    const { t, before } = withWindow();
+    t.proc.process(hexToBytes('04110000' + '110a28' + CREATE + '04520000'));
+    expect(t.screen.windows).toHaveLength(2);
+    t.proc.process(hexToBytes('04110000' + '15' + '0007' + 'd95f' + '000000' + '04520000'));
+    expect(Array.from(t.screen.buffer)).toEqual(Array.from(before));
+  });
+
+  it('Save Partial Screen answers an image that restores with Restore Partial Screen', () => {
+    const t = setup('IBM-3477-FC', { enhanced: true });
+    t.proc.process(hexToBytes(BASE));
+    const before = t.screen.buffer.slice();
+    const saved = t.proc.process(hexToBytes('0403' + '00' + '07' + '1e' + '05' + '14'))[0]?.data as Uint8Array;
+    expect(bytesToHex(saved.subarray(0, 2))).toBe('0413');
+    t.proc.process(hexToBytes(WINDOW));
+    t.proc.process(saved);
+    expect(Array.from(t.screen.buffer)).toEqual(Array.from(before));
+    expect(t.screen.windows).toHaveLength(0);
+    expect(t.screen.fields.map((f) => f.start)).toEqual([t.screen.addr(7, 7)]);
   });
 });

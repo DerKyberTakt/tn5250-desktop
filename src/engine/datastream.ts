@@ -1,7 +1,7 @@
 import { isAttribute } from './attributes';
 import type { CodePage } from './codepage';
 import { OP_NOOP, OP_PUT_GET, OP_SAVE_SCREEN } from './gds';
-import { Field, Screen } from './screen';
+import { Field, type GuiWindow, Screen } from './screen';
 import type { ReadKind, TerminalState } from './state';
 
 export const ESC = 0x04;
@@ -55,7 +55,18 @@ export interface ProcessEvents {
 export interface TerminalInfo {
   /** Negotiated terminal type, e.g. IBM-3477-FC. */
   terminalType: string;
+  /**
+   * Answer the Query as an enhanced-interface device: the host then draws DDS windows
+   * with the Create Window structured field (border by the terminal, covered area
+   * restored on Remove GUI Window) instead of plain text that stays behind.
+   */
+  enhanced?: boolean;
 }
+
+/** Structured field types of class D9 that the enhanced interface brings. */
+const WDSF_CREATE_WINDOW = 0x51;
+const WDSF_REMOVE_GUI_WINDOW = 0x59;
+const WDSF_REMOVE_ALL_GUI = 0x5f;
 
 class Reader {
   pos = 0;
@@ -176,7 +187,11 @@ export class DataStreamProcessor {
           out.push({ opcode: OP_SAVE_SCREEN, data: this.saveScreen() });
           break;
         case CMD_SAVE_PARTIAL_SCREEN:
+          // flags, top row, left column, depth, width: the host wants the area a window
+          // will cover. The whole screen comes back (tn5250 does the same); the restore
+          // then repaints everything, which is a superset of what was asked for.
           r.bytes(5);
+          out.push({ opcode: OP_SAVE_SCREEN, data: this.saveScreen(CMD_RESTORE_PARTIAL_SCREEN) });
           break;
         case CMD_RESTORE_SCREEN:
           // The saved image that follows replaces everything, including the
@@ -187,6 +202,9 @@ export class DataStreamProcessor {
           this.state.savedErrorRow = undefined;
           break;
         case CMD_RESTORE_PARTIAL_SCREEN:
+          // The image that follows is a full write of what the host saved; whatever
+          // windows were open on top are gone with it.
+          this.screen.windows = [];
           break;
         case CMD_ROLL: {
           const b = r.u8();
@@ -331,7 +349,8 @@ export class DataStreamProcessor {
           break;
         case O_WDSF: {
           const ll = r.u16();
-          r.bytes(Math.max(0, ll - 2));
+          const body = r.bytes(Math.max(0, ll - 2));
+          if (body[0] === 0xd9) this.structuredField(body[1] ?? 0, body.subarray(2));
           break;
         }
         default:
@@ -339,6 +358,119 @@ export class DataStreamProcessor {
           break;
       }
     }
+  }
+
+  /** Write Display Structured Fields of the enhanced interface; others are ignored. */
+  private structuredField(type: number, data: Uint8Array): void {
+    switch (type) {
+      case WDSF_CREATE_WINDOW:
+        this.createWindow(data);
+        break;
+      case WDSF_REMOVE_GUI_WINDOW:
+        this.removeWindow();
+        break;
+      case WDSF_REMOVE_ALL_GUI:
+        while (this.screen.windows.length > 0) this.removeWindow();
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
+   * Create Window: flags, 2 reserved, depth, width, then minor structures (length,
+   * type, ...): 0x01 border presentation = flags, monochrome attribute, colour
+   * attribute, 8 border characters (upper-left, top, upper-right, left, right,
+   * lower-left, bottom, lower-right); 0x10 title/footer (ignored). The window sits at
+   * the current write address and is laid out like the text windows the host draws
+   * for a plain terminal: attribute, border character, attribute, `width` cells,
+   * attribute, border character, attribute; `depth` rows between a top and a bottom
+   * border row.
+   */
+  private createWindow(data: Uint8Array): void {
+    const s = this.screen;
+    const depth = data[3] ?? 0;
+    const width = data[4] ?? 0;
+    if (depth === 0 || width === 0) return;
+    let attr = 0x3b; // blue reverse image, the DDS WDWBORDER default colour
+    const chars = [0x6d, 0x6d, 0x6d, 0x4f, 0x4f, 0x6d, 0x6d, 0x6d]; // '_' and '|'
+    let i = 5;
+    while (i < data.length) {
+      const len = data[i] ?? 0;
+      const type = data[i + 1] ?? 0;
+      if (len < 2) break;
+      if (type === 0x01) {
+        const mono = data[i + 3];
+        const colour = data[i + 4];
+        if (colour !== undefined && isAttribute(colour)) attr = colour;
+        else if (mono !== undefined && isAttribute(mono)) attr = mono;
+        for (let k = 0; k < 8; k++) {
+          const c = data[i + 5 + k];
+          if (c !== undefined && c !== 0x00) chars[k] = c;
+        }
+      }
+      i += len;
+    }
+    const row = s.rowOf(this.addr);
+    const col = s.colOf(this.addr);
+    const rows = Math.min(depth + 2, s.rows - row);
+    const cols = Math.min(width + 6, s.cols - col);
+    if (rows <= 0 || cols <= 0) return;
+    const saved = new Uint8Array(rows * cols);
+    for (let r = 0; r < rows; r++) saved.set(s.buffer.subarray(s.addr(row + r, col), s.addr(row + r, col + cols)), r * cols);
+    const touches = (f: Field): boolean => {
+      for (let r = 0; r < rows; r++) {
+        const a = s.addr(row + r, col);
+        if (f.start - 1 < a + cols && f.end > a) return true;
+      }
+      return false;
+    };
+    const savedFields = s.fields.filter(touches);
+    s.fields = s.fields.filter((f) => !touches(f));
+    const win: GuiWindow = { row, col, depth, width, rows, cols, saved, savedFields };
+    // Draw: every rectangle cell starts as null, then the border.
+    for (let r = 0; r < rows; r++) s.buffer.fill(0, s.addr(row + r, col), s.addr(row + r, col + cols));
+    const put = (r: number, c: number, b: number): void => {
+      if (r < rows && c < cols) s.buffer[s.addr(row + r, col + c)] = b;
+    };
+    const [ul, top, ur, left, right, ll, bottom, lr] = chars as [number, number, number, number, number, number, number, number];
+    const line = (r: number, first: number, mid: number, last: number): void => {
+      put(r, 0, attr);
+      put(r, 1, first);
+      for (let c = 2; c < width + 4; c++) put(r, c, mid);
+      put(r, width + 4, last);
+      put(r, width + 5, 0x20);
+    };
+    line(0, ul, top, ur);
+    for (let r = 1; r <= depth; r++) {
+      put(r, 0, attr);
+      put(r, 1, left);
+      put(r, 2, 0x20);
+      put(r, width + 3, attr);
+      put(r, width + 4, right);
+      put(r, width + 5, 0x20);
+    }
+    line(depth + 1, ll, bottom, lr);
+    s.windows.push(win);
+  }
+
+  /** Remove GUI Window: the newest window goes, and what it covered comes back. */
+  private removeWindow(): void {
+    const s = this.screen;
+    const win = s.windows.pop();
+    if (!win) return;
+    const inside = (f: Field): boolean => {
+      for (let r = 0; r < win.rows; r++) {
+        const a = s.addr(win.row + r, win.col);
+        if (f.start - 1 < a + win.cols && f.end > a) return true;
+      }
+      return false;
+    };
+    s.fields = s.fields.filter((f) => !inside(f));
+    for (let r = 0; r < win.rows; r++) {
+      s.buffer.set(win.saved.subarray(r * win.cols, (r + 1) * win.cols), s.addr(win.row + r, win.col));
+    }
+    for (const f of win.savedFields) s.addField(f);
   }
 
   /** A read command without a preceding Insert Cursor homes the cursor to the first input field. */
@@ -448,14 +580,15 @@ export class DataStreamProcessor {
   }
 
   /** ESC RESTORE + a WTD that rebuilds the current screen, as the host expects for Save Screen. */
-  private saveScreen(): Uint8Array {
+  private saveScreen(restore: number = CMD_RESTORE_SCREEN): Uint8Array {
     const s = this.screen;
     // Record the screen size too: the host may switch between 24x80 and 27x132 in between.
-    const size = s.cols === 132 ? [ESC, CMD_CLEAR_UNIT_ALT, 0x00] : [ESC, CMD_CLEAR_UNIT];
+    // (A partial restore keeps the unit as it is.)
+    const size = restore !== CMD_RESTORE_SCREEN ? [] : s.cols === 132 ? [ESC, CMD_CLEAR_UNIT_ALT, 0x00] : [ESC, CMD_CLEAR_UNIT];
     // The header carries the error row and the command key switches of this screen.
     const ca = this.state.caKeys;
     const soh = [O_SOH, 7, 0x00, 0x00, 0x00, s.errorRow + 1, (ca >> 16) & 0xff, (ca >> 8) & 0xff, ca & 0xff];
-    const out: number[] = [ESC, CMD_RESTORE_SCREEN, ...size, ESC, CMD_WTD, 0x00, 0x00, ...soh, O_SBA, 1, 1];
+    const out: number[] = [ESC, restore, ...size, ESC, CMD_WTD, 0x00, 0x00, ...soh, O_SBA, 1, 1];
     const fieldsByAttr = new Map<number, Field>();
     for (const f of s.fields) fieldsByAttr.set(f.start - 1, f);
     for (let i = 0; i < s.size; i++) {
@@ -473,12 +606,21 @@ export class DataStreamProcessor {
     return Uint8Array.from(out);
   }
 
-  /** Query reply for WSF class D9 type 70 (non-enhanced terminal). */
+  /**
+   * Query reply for WSF class D9 type 70. A plain terminal answers 61 bytes; an
+   * enhanced one 67, with byte 53 bit 6 (enhanced 5250 FCWs and WDSFs) and byte 54
+   * bit 0 (enhanced user interface level 2) set, as tn5250 does.
+   */
   queryReply(): Uint8Array {
     const wide = this.info.terminalType.toUpperCase().startsWith('IBM-3477');
     const ebcdicDigits = (s: string): number[] => Array.from(s, (c) => this.codePage.encode(c));
-    const out = new Uint8Array(61);
-    out.set([0x00, 0x00, 0x88, 0x00, 0x3a, 0xd9, 0x70, 0x80, 0x06, 0x00, 0x01, 0x01, 0x00], 0);
+    const enhanced = this.info.enhanced === true;
+    const out = new Uint8Array(enhanced ? 67 : 61);
+    out.set([0x00, 0x00, 0x88, 0x00, enhanced ? 0x40 : 0x3a, 0xd9, 0x70, 0x80, 0x06, 0x00, 0x01, 0x01, 0x00], 0);
+    if (enhanced) {
+      out[53] = 0x02;
+      out[54] = 0x80;
+    }
     out[29] = 0x01;
     out.set(ebcdicDigits(wide ? '3477' : '3179'), 30);
     out[34] = 0x00;
