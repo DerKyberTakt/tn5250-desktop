@@ -74,7 +74,6 @@ export class SessionController {
         codePage: this.profile.codePage,
         deviceName: this.profile.deviceName,
         typeAhead: this.profile.typeAhead,
-        enhanced: this.profile.enhanced5250,
       },
       {
         send: (bytes) => {

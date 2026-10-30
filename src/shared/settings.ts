@@ -144,7 +144,6 @@ export interface TerminalSettings {
   // Preferences
   mouseWheelPaging: boolean;
   typeAhead: boolean;
-  enhanced5250: boolean;
   alarm: boolean;
   keyClick: boolean;
 
@@ -265,7 +264,6 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
 
   mouseWheelPaging: true,
   typeAhead: true,
-  enhanced5250: false,
   alarm: true,
   keyClick: false,
 

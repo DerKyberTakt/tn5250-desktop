@@ -352,7 +352,7 @@ describe('enhanced 5250: GUI windows', () => {
     expect(reply[4]).toBe(0x40);
     expect(reply[53]).toBe(0x02);
     expect(reply[54]).toBe(0x80);
-    expect((setup().proc.process(hexToBytes('04f30005d97000'))[0]?.data as Uint8Array).length).toBe(61);
+    expect((setup('IBM-3477-FC', { enhanced: false }).proc.process(hexToBytes('04f30005d97000'))[0]?.data as Uint8Array).length).toBe(61);
   });
 
   it('Create Window draws the border at the write address and clears the inside', () => {

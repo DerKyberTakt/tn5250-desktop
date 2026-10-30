@@ -56,9 +56,10 @@ export interface TerminalInfo {
   /** Negotiated terminal type, e.g. IBM-3477-FC. */
   terminalType: string;
   /**
-   * Answer the Query as an enhanced-interface device: the host then draws DDS windows
-   * with the Create Window structured field (border by the terminal, covered area
-   * restored on Remove GUI Window) instead of plain text that stays behind.
+   * Answer the Query as an enhanced-interface device (the normal case, as ACS): the host
+   * then draws DDS windows with the Create Window structured field (border by the
+   * terminal, covered area restored on Remove GUI Window) instead of plain text that
+   * stays behind. False only for tests of the plain reply.
    */
   enhanced?: boolean;
 }

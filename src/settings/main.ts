@@ -156,8 +156,6 @@ const HELP: Partial<Record<Key, string>> = {
   typeAhead:
     'Keys pressed while the keyboard is locked (X SYSTEM) are kept and replayed when the host unlocks it, so you can type the next screen before it appears. An error message or Reset discards them.',
   mouseWheelPaging: 'The mouse wheel presses Page Up and Page Down (Roll). Ctrl+wheel always zooms.',
-  enhanced5250:
-    'Tell the host this is an enhanced-interface display, as ACS does. DDS windows are then sent as GUI windows: the border is drawn here and what a window covered comes back when it closes (a plain terminal keeps the window text until the program repaints). Experimental: reconnect after changing it.',
 };
 
 const YESNO = (key: Key, label: string, note?: string): FieldSpec => ({ kind: 'bool', key, label, note });
@@ -408,11 +406,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     id: 'behavior',
     title: 'Behavior',
     group: 'Preferences',
-    fields: [
-      YESNO('mouseWheelPaging', 'Mouse Wheel = Page Up / Down'),
-      YESNO('typeAhead', 'Type-ahead (buffer keys while locked)'),
-      YESNO('enhanced5250', 'Enhanced 5250 (GUI windows, experimental)'),
-    ],
+    fields: [YESNO('mouseWheelPaging', 'Mouse Wheel = Page Up / Down'), YESNO('typeAhead', 'Type-ahead (buffer keys while locked)')],
   },
 ];
 

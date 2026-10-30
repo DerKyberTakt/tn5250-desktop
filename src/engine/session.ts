@@ -21,7 +21,7 @@ export interface SessionOptions {
   deviceName?: string;
   /** Keep keys pressed while the keyboard is locked (X SYSTEM) and replay them when the host unlocks it. */
   typeAhead?: boolean;
-  /** Answer the host's Query as an enhanced-interface device (GUI windows drawn by the terminal). */
+  /** Answer the host's Query as an enhanced-interface device (GUI windows drawn by the terminal). Default on. */
   enhanced?: boolean;
 }
 
@@ -72,7 +72,7 @@ export class Session5250 {
     this.processor = new DataStreamProcessor(
       this.screen,
       this.state,
-      { terminalType: this.terminalType, enhanced: options.enhanced ?? false },
+      { terminalType: this.terminalType, enhanced: options.enhanced ?? true },
       this.codePage,
       { alarm: () => this.events.alarm?.(), trace: this.events.trace ? (l) => this.events.trace?.(l) : undefined },
     );
