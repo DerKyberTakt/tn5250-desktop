@@ -26,6 +26,8 @@ var (
 	filePort   = flag.Int("file", 18473, "file server port")
 	outPath    = flag.String("out", "hsrecord.jsonl", "log file (JSON lines)")
 	proxyHost  = flag.String("proxy", "", "proxy mode: forward localhost:18470-18476 to this host's 8470-8476 and log both directions")
+	telnetHost = flag.String("telnet", "", "telnet recording mode: forward localhost:<telnet-port> to this host:port (default port 23) and write a Save-Session-Trace style JSON to -out")
+	telnetPort = flag.Int("telnet-port", 2023, "local port of the telnet recording mode")
 	serverSeed = []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF}
 	fileData   = []byte("Hello from the fake IFS")
 	mu         sync.Mutex
@@ -174,6 +176,13 @@ func main() {
 	out, err = os.Create(*outPath)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *telnetHost != "" {
+		remote := *telnetHost
+		if _, _, err := net.SplitHostPort(remote); err != nil {
+			remote = net.JoinHostPort(remote, "23")
+		}
+		runTelnetProxy(*telnetPort, remote, *outPath)
 	}
 	if *proxyHost != "" {
 		runProxy(*proxyHost)
