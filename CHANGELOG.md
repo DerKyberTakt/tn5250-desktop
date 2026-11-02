@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.4 - 2026-11-02
 
 - Right Ctrl = Enter and Left Ctrl = Reset work (default ACS layout), and a Control key assigned on the Keyboard page fires; a bare modifier press was dropped before the keymap was consulted (shared from tn5250-terminal). View > Key Overlay shows what each key does.
 - Enhanced 5250 interface (as ACS): GUI windows drawn by the terminal and restored when the program removes them; prompt windows no longer stay behind on PUTOVR screens (shared from tn5250-terminal).
