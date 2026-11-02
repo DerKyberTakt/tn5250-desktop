@@ -3,7 +3,7 @@ import { DEFAULT_OIA } from '../shared/protocol';
 import { classifyKey, keyName, type Keymap } from '../shared/keymap';
 import { expandTabs, fieldRanges, hotspotAt, urlAt, wordAt } from '../shared/screenText';
 import { SETTINGS_DEFAULTS, effectiveKeymap } from '../shared/settings';
-import { describeKey, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
+import { describeKey, isBareModifier, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
 import { ConnectionOverlay } from './connectionOverlay';
 import { Renderer } from './renderer';
 
@@ -280,7 +280,7 @@ function extendKeyboardSelection(key: string): void {
 window.addEventListener(
   'keyup',
   (e) => {
-    if (isPassThrough(toKeyEventInfo(e))) return;
+    if (isPassThrough(toKeyEventInfo(e), keymap)) return;
     e.preventDefault();
     e.stopPropagation();
   },
@@ -302,13 +302,14 @@ window.addEventListener(
       keyAnchor = undefined;
       keyEnd = undefined;
     }
-    if (isPassThrough(info)) {
+    if (isPassThrough(info, keymap)) {
       logKey(`${describeKey(info)}  [${info.code}]  -> VS Code`);
       return;
     }
     e.preventDefault();
     e.stopPropagation();
-    if (e.repeat && info.key === 'Control') return;
+    // A held Control key auto-repeats: one Enter (Right Ctrl) or Reset, not a stream.
+    if (e.repeat && isBareModifier(info)) return;
     const zoom = zoomActionFor(info);
     if (zoom) {
       const current = renderer.zoom;

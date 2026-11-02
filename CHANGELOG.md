@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Right Ctrl = Enter and Left Ctrl = Reset work (default ACS layout), and a Control key assigned on the Keyboard page fires; a bare modifier press was dropped before the keymap was consulted (shared from tn5250-terminal). View > Key Overlay shows what each key does.
 - Enhanced 5250 interface (as ACS): GUI windows drawn by the terminal and restored when the program removes them; prompt windows no longer stay behind on PUTOVR screens (shared from tn5250-terminal).
 - Back on a menu after F3/F12, the cursor is in the option field again (a format rewritten after Restore Screen homes to its first input field), as in ACS.
 - Shared emulator fixes from tn5250-terminal 0.1.3: command attention keys (DDS CA03, CA12 ...) send no field data, as in ACS; cursor lands in the first input field after a window closes; a full field-exit-required field keeps its last character; End = End of Field (keyboard and keypad), Alt+End = Erase Input, Ctrl+End = Erase EOF; keyboard settings search; Copy connection; watermark preview follows the picked profile; host underline kept in Enhanced UI.

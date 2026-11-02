@@ -1,3 +1,4 @@
+import { keyName, type Keymap } from '../shared/keymap';
 import type { KeyEventInfo } from '../shared/protocol';
 
 /**
@@ -43,10 +44,19 @@ export function toKeyEventInfo(e: KeyboardEvent): KeyEventInfo {
   };
 }
 
-export function isPassThrough(k: KeyEventInfo): boolean {
+/** A press of a modifier key on its own (Control, Shift, Alt, Meta). */
+export function isBareModifier(k: KeyEventInfo): boolean {
+  return k.key === 'Control' || k.key === 'Shift' || k.key === 'Alt' || k.key === 'Meta';
+}
+
+/**
+ * Keys the terminal leaves alone. A Control key pressed on its own is a terminal key
+ * when the keymap binds it (ACS: Right Ctrl = Enter, Left Ctrl = Reset); the other bare
+ * modifiers never reach the host (Alt alone opens the menu bar).
+ */
+export function isPassThrough(k: KeyEventInfo, keymap: Keymap = {}): boolean {
   const key = k.key.toLowerCase();
-  // Bare modifier presses never reach the host as 5250 actions.
-  if (key === 'control' || key === 'shift' || key === 'alt' || key === 'meta') return true;
+  if (isBareModifier(k)) return k.key !== 'Control' || keymap[keyName(k)] === undefined;
   // Alt+F4 closes the window on Windows; Alt alone opens the menu bar.
   if (k.alt && !k.ctrl && !k.meta && (key === 'f4' || key === 'alt')) return true;
   const primary = k.ctrl || k.meta;
