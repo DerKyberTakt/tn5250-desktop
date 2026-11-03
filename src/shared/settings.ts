@@ -384,6 +384,8 @@ export const KEY_ACTION_GROUPS: Array<{ title: string; actions: Array<[KeyAction
       ['pageUp', 'Page Up (Roll Down)'],
       ['pageDown', 'Page Down (Roll Up)'],
       ['recordBackspace', 'Record Backspace'],
+      ['testRequest', 'Test Request'],
+      ['rule', 'Rule line on / off'],
     ],
   },
   {
@@ -398,6 +400,13 @@ export const KEY_ACTION_GROUPS: Array<{ title: string; actions: Array<[KeyAction
       ['down', 'Cursor Down'],
       ['left', 'Cursor Left'],
       ['right', 'Cursor Right'],
+      ['fastUp', 'Fast Cursor Up (3 rows)'],
+      ['fastDown', 'Fast Cursor Down (3 rows)'],
+      ['fastLeft', 'Fast Cursor Left (3 columns)'],
+      ['fastRight', 'Fast Cursor Right (3 columns)'],
+      ['wordRight', 'Tab Word (next word)'],
+      ['wordLeft', 'Backtab Word (previous word)'],
+      ['beginningOfField', 'Beginning of Field'],
     ],
   },
   {
@@ -410,6 +419,10 @@ export const KEY_ACTION_GROUPS: Array<{ title: string; actions: Array<[KeyAction
       ['eraseInput', 'Erase Input'],
       ['dup', 'Dup'],
       ['fieldMark', 'Field Mark'],
+      ['deleteWord', 'Delete Word'],
+      ['eraseField', 'Erase Field'],
+      ['copy', 'Copy'],
+      ['paste', 'Paste'],
     ],
   },
   {

@@ -96,6 +96,30 @@ const FUNCTIONS: Record<string, KeyAction> = {
   dup: 'dup',
   fieldmark: 'fieldMark',
   fldmark: 'fieldMark',
+  // Other spellings ACS/HOD use for functions above.
+  fieldexit: 'fieldExit',
+  'field+': 'fieldPlus',
+  'field-': 'fieldMinus',
+  erinp: 'eraseInput',
+  rcdbacksp: 'recordBackspace',
+  instog: 'insert',
+  printhost: 'print',
+  printps: 'printScreen',
+  printpc: 'printScreen',
+  // Cursor and edit functions added in 0.1.5.
+  fastup: 'fastUp',
+  fastdown: 'fastDown',
+  fastleft: 'fastLeft',
+  fastright: 'fastRight',
+  wordleft: 'wordLeft',
+  wordright: 'wordRight',
+  bof: 'beginningOfField',
+  worddel: 'deleteWord',
+  erasefld: 'eraseField',
+  test: 'testRequest',
+  rule: 'rule',
+  copy: 'copy',
+  paste: 'paste',
 };
 for (let i = 1; i <= 24; i++) {
   FUNCTIONS[`pf${i}`] = `pf${i}` as KeyAction;

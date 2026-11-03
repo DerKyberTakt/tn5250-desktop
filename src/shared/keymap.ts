@@ -32,6 +32,19 @@ export type KeyAction =
   | 'print'
   | 'recordBackspace'
   | 'printScreen'
+  | 'fastUp'
+  | 'fastDown'
+  | 'fastLeft'
+  | 'fastRight'
+  | 'wordLeft'
+  | 'wordRight'
+  | 'beginningOfField'
+  | 'deleteWord'
+  | 'eraseField'
+  | 'testRequest'
+  | 'rule'
+  | 'copy'
+  | 'paste'
   | 'pf1'
   | 'pf2'
   | 'pf3'
@@ -131,6 +144,19 @@ export const ACS_KEYMAP: Keymap = {
   ArrowDown: 'down',
   ArrowLeft: 'left',
   ArrowRight: 'right',
+  'Ctrl+ArrowUp': 'fastUp',
+  'Ctrl+ArrowDown': 'fastDown',
+  'Ctrl+ArrowLeft': 'fastLeft',
+  'Ctrl+ArrowRight': 'fastRight',
+  'Alt+ArrowLeft': 'wordLeft',
+  'Alt+ArrowRight': 'wordRight',
+  'Ctrl+Delete': 'deleteWord',
+  'Ctrl+F12': 'testRequest',
+  'Ctrl+Home': 'rule',
+  'Ctrl+C': 'copy',
+  'Ctrl+Insert': 'copy',
+  'Ctrl+V': 'paste',
+  'Shift+Insert': 'paste',
   Home: 'home',
   NumpadHome: 'home',
   End: 'endOfField',
@@ -143,7 +169,6 @@ export const ACS_KEYMAP: Keymap = {
   'Shift+Escape': 'sysreq',
   PageUp: 'pageUp',
   PageDown: 'pageDown',
-  'Shift+Insert': 'dup',
   'Shift+Home': 'fieldMark',
   'Alt+End': 'eraseInput',
   'Alt+NumpadEnd': 'eraseInput',

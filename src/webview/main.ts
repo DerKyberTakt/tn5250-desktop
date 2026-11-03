@@ -96,6 +96,14 @@ function applyFontFace(face: { family: string; url: string } | undefined): void 
   void document.fonts.load(`16px ${JSON.stringify(face.family)}`).then(() => renderer.setOptions({}));
 }
 
+/** Rule line toggled from the keyboard for this tab; undefined = follow the setting. */
+let ruleLineOverride: boolean | undefined;
+
+function toggleRuleLine(): void {
+  ruleLineOverride = !(ruleLineOverride ?? config.settings.ruleLine);
+  renderer.setOptions({ ruleLine: ruleLineOverride });
+}
+
 function applyConfig(): void {
   const st = config.settings;
   const root = document.documentElement.style;
@@ -146,7 +154,7 @@ function applyConfig(): void {
     cursorStyle: st.cursorStyle,
     cursorBlink: st.cursorBlink,
     blinkText: st.blinkText,
-    ruleLine: st.ruleLine,
+    ruleLine: ruleLineOverride ?? st.ruleLine,
     ruleLineStyle: st.ruleLineStyle,
     ruleLineFollowsCursor: st.ruleLineFollowsCursor,
     highlightActiveField: st.uiMode === 'classic' && st.colorActiveField !== st.colorBackground,
@@ -319,16 +327,16 @@ window.addEventListener(
       return;
     }
     if (config.keyOverlay) post({ type: 'key', event: info });
-    if ((info.ctrl && !info.shift && !info.alt && info.key.toLowerCase() === 'c') || (info.ctrl && info.key === 'Insert')) {
-      copySelection();
-      logKey(`${keyName(info)}  -> copy`);
-      return;
-    }
-    // Paste: the keydown is cancelled above, so the browser never fires its own paste event;
-    // the host reads the clipboard and answers with a 'paste' message.
-    if ((info.ctrl && !info.shift && !info.alt && info.key.toLowerCase() === 'v') || (info.shift && !info.ctrl && !info.alt && info.key === 'Insert')) {
-      post({ type: 'paste' });
-      logKey(`${keyName(info)}  -> paste`);
+    const result = classifyKey(info, keymap);
+    // Copy, paste and the rule line are the terminal's own keys (the keymap decides which):
+    // they work while disconnected too.
+    if (result.kind === 'action' && (result.action === 'copy' || result.action === 'paste' || result.action === 'rule')) {
+      logKey(`${keyName(info)}  -> ${result.action}`);
+      if (result.action === 'copy') copySelection();
+      // Paste: the keydown is cancelled above, so the browser never fires its own paste event;
+      // the host reads the clipboard and answers with a 'paste' message.
+      else if (result.action === 'paste') post({ type: 'paste' });
+      else toggleRuleLine();
       return;
     }
     if (config.settings.keyClick) beep(1200, 0.02);
@@ -338,7 +346,6 @@ window.addEventListener(
       logKey(`${keyName(info)}  -> (not connected)`);
       return;
     }
-    const result = classifyKey(info, keymap);
     if (result.kind === 'text') {
       logKey(`${describeKey(info)}  -> text`);
       post({ type: 'text', text: result.text });

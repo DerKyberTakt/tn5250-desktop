@@ -54,6 +54,22 @@ describe('ACS keymap', () => {
     expect(resolveAction(k('x', 'KeyX', { ctrl: true }), ACS_KEYMAP)).toBeUndefined();
   });
 
+  it('binds the ACS cursor/edit functions added in 0.1.5 and copy/paste as actions', () => {
+    expect(resolveAction(k('ArrowUp', 'ArrowUp', { ctrl: true }), ACS_KEYMAP)).toBe('fastUp');
+    expect(resolveAction(k('ArrowDown', 'ArrowDown', { ctrl: true }), ACS_KEYMAP)).toBe('fastDown');
+    expect(resolveAction(k('ArrowRight', 'ArrowRight', { alt: true }), ACS_KEYMAP)).toBe('wordRight');
+    expect(resolveAction(k('ArrowLeft', 'ArrowLeft', { alt: true }), ACS_KEYMAP)).toBe('wordLeft');
+    expect(resolveAction(k('Delete', 'Delete', { ctrl: true }), ACS_KEYMAP)).toBe('deleteWord');
+    expect(resolveAction(k('F12', 'F12', { ctrl: true }), ACS_KEYMAP)).toBe('testRequest');
+    expect(resolveAction(k('Home', 'Home', { ctrl: true }), ACS_KEYMAP)).toBe('rule');
+    expect(resolveAction(k('c', 'KeyC', { ctrl: true }), ACS_KEYMAP)).toBe('copy');
+    expect(resolveAction(k('Insert', 'Insert', { ctrl: true }), ACS_KEYMAP)).toBe('copy');
+    expect(resolveAction(k('v', 'KeyV', { ctrl: true }), ACS_KEYMAP)).toBe('paste');
+    expect(resolveAction(k('Insert', 'Insert', { shift: true }), ACS_KEYMAP)).toBe('paste');
+    // Dup is assignable but unbound by default (ACS pastes on Shift+Insert).
+    expect(Object.values(ACS_KEYMAP)).not.toContain('dup');
+  });
+
   it('classifies text keys', () => {
     expect(isTextKey(k('a', 'KeyA'))).toBe(true);
     expect(isTextKey(k('5', 'Numpad5'))).toBe(true);

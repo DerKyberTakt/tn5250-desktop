@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CodePage } from '../../src/engine/codepage';
-import { FLAG_ATN, FLAG_SRQ, OP_NOOP, OP_PUT_GET, parseRecord } from '../../src/engine/gds';
+import { FLAG_ATN, FLAG_SRQ, FLAG_TRQ, OP_NOOP, OP_PUT_GET, parseRecord } from '../../src/engine/gds';
 import { Session5250 } from '../../src/engine/session';
 import { bytesToHex, hexToBytes, inboundBytes, loadCapture } from '../helpers/fixture';
 
@@ -242,6 +242,92 @@ describe('Keyboard editing', () => {
     expect(h.screen.cursor).toBe(h.screen.cols - 1);
     h.session.press('newline');
     expect(h.screen.cursor).toBe(h.screen.fields[0]?.start);
+  });
+});
+
+describe('ACS cursor and edit functions (0.1.5)', () => {
+  it('fast cursor moves three cells or rows and wraps like the arrows', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.screen.cursor = 0;
+    h.session.press('fastRight');
+    expect(h.screen.cursor).toBe(3);
+    h.session.press('fastDown');
+    expect(h.screen.cursor).toBe(3 + 3 * h.screen.cols);
+    h.screen.cursor = 0;
+    h.session.press('fastLeft');
+    expect(h.screen.cursor).toBe(h.screen.size - 3);
+    h.screen.cursor = 0;
+    h.session.press('fastUp');
+    expect(h.screen.cursor).toBe(h.screen.size - 3 * h.screen.cols);
+  });
+
+  it('Tab Word and Backtab Word jump between word starts anywhere on the screen', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    const f0 = h.screen.fields[0]!;
+    const f1 = h.screen.fields[1]!;
+    h.screen.cursor = f0.start;
+    h.session.type('ab');
+    h.session.press('tab');
+    h.session.type('12');
+    h.screen.cursor = f0.start;
+    h.session.press('wordRight');
+    expect(h.screen.cursor).toBe(f1.start);
+    h.session.press('wordRight'); // wraps to the first word again
+    expect(h.screen.cursor).toBe(f0.start);
+    h.screen.cursor = f1.start + 1;
+    h.session.press('wordLeft'); // start of the current word first
+    expect(h.screen.cursor).toBe(f1.start);
+    h.session.press('wordLeft');
+    expect(h.screen.cursor).toBe(f0.start);
+  });
+
+  it('Beginning of Field goes to the field start and reports 0005 outside a field', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    const f0 = h.screen.fields[0]!;
+    h.screen.cursor = f0.start + 3;
+    h.session.press('beginningOfField');
+    expect(h.screen.cursor).toBe(f0.start);
+    h.screen.cursor = 0;
+    h.session.press('beginningOfField');
+    expect(h.state.inputInhibited).toBe('error');
+    expect(h.state.errorMessage.startsWith('0005')).toBe(true);
+  });
+
+  it('Delete Word removes the word under the cursor and the blanks after it, within the field', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    const f0 = h.screen.fields[0]!;
+    h.screen.cursor = f0.start;
+    h.session.type('ab cd'); // fills the 5-char field and auto-advances
+    h.screen.cursor = f0.start;
+    h.session.press('deleteWord');
+    expect(bytesToHex(h.screen.fieldBytes(f0))).toBe(e('cd') + '000000');
+    expect(f0.mdt).toBe(true);
+    expect(h.screen.cursor).toBe(f0.start);
+    expect(bytesToHex(h.screen.fieldBytes(h.screen.fields[1]!))).toBe('000000000000');
+  });
+
+  it('Erase Field clears the whole field and puts the cursor at its start', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    const f0 = h.screen.fields[0]!;
+    h.screen.cursor = f0.start;
+    h.session.type('abc');
+    h.screen.cursor = f0.start + 1;
+    h.session.press('eraseField');
+    expect(bytesToHex(h.screen.fieldBytes(f0))).toBe('0000000000');
+    expect(h.screen.cursor).toBe(f0.start);
+    expect(f0.mdt).toBe(true);
+  });
+
+  it('Test Request sends a record with the TRQ flag and no data', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.press('testRequest');
+    expect(h.sent.map((s) => [s.opcode, s.flags1, s.data])).toEqual([[OP_NOOP, FLAG_TRQ, '']]);
   });
 });
 

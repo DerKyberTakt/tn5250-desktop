@@ -31,7 +31,7 @@ export const TYPE_AHEAD_LIMIT = 256;
 type QueuedKey = { kind: 'press'; action: KeyAction } | { kind: 'type'; text: string };
 
 /** Keys that act immediately even while the keyboard is locked. */
-const IMMEDIATE_ACTIONS = new Set<KeyAction>(['reset', 'attn', 'sysreq', 'printScreen']);
+const IMMEDIATE_ACTIONS = new Set<KeyAction>(['reset', 'attn', 'sysreq', 'testRequest', 'printScreen']);
 
 export interface SessionEvents {
   /** Bytes to write to the socket. */

@@ -1,6 +1,6 @@
 import type { CodePage } from './codepage';
 import type { DataStreamProcessor } from './datastream';
-import { FLAG_ATN, FLAG_SRQ, OP_NOOP, OP_PUT_GET } from './gds';
+import { FLAG_ATN, FLAG_SRQ, FLAG_TRQ, OP_NOOP, OP_PUT_GET } from './gds';
 import type { Field, Screen } from './screen';
 import type { TerminalState } from './state';
 import type { KeyAction } from '../shared/keymap';
@@ -65,7 +65,27 @@ export const OPERATOR_ERRORS: Record<string, string> = {
   '0026': 'Field minus requires a numeric last digit',
 };
 
-const MOVEMENT_ACTIONS = new Set<KeyAction>(['tab', 'backtab', 'left', 'right', 'up', 'down', 'home', 'newline', 'endOfField']);
+const MOVEMENT_ACTIONS = new Set<KeyAction>([
+  'tab',
+  'backtab',
+  'left',
+  'right',
+  'up',
+  'down',
+  'home',
+  'newline',
+  'endOfField',
+  'fastUp',
+  'fastDown',
+  'fastLeft',
+  'fastRight',
+  'wordLeft',
+  'wordRight',
+  'beginningOfField',
+]);
+
+/** Cells a fast cursor key moves per press (ACS "fast cursor"). */
+const FAST_STEP = 3;
 
 const EBCDIC_NULL = 0x00;
 const EBCDIC_BLANK = 0x40;
@@ -147,6 +167,27 @@ export class Keyboard {
       case 'down':
         this.moveCursor(this.screen.cols);
         break;
+      case 'fastLeft':
+        this.moveCursor(-FAST_STEP);
+        break;
+      case 'fastRight':
+        this.moveCursor(FAST_STEP);
+        break;
+      case 'fastUp':
+        this.moveCursor(-FAST_STEP * this.screen.cols);
+        break;
+      case 'fastDown':
+        this.moveCursor(FAST_STEP * this.screen.cols);
+        break;
+      case 'wordLeft':
+        this.wordStart(-1);
+        break;
+      case 'wordRight':
+        this.wordStart(1);
+        break;
+      case 'beginningOfField':
+        this.beginningOfField();
+        break;
       case 'home':
         this.moveToField(this.firstField());
         break;
@@ -158,6 +199,12 @@ export class Keyboard {
         break;
       case 'delete':
         this.deleteChar();
+        break;
+      case 'deleteWord':
+        this.deleteWord();
+        break;
+      case 'eraseField':
+        this.eraseField();
         break;
       case 'insert':
         this.state.insert = !this.state.insert;
@@ -180,7 +227,13 @@ export class Keyboard {
       case 'sysreq':
         this.out.send(OP_NOOP, FLAG_SRQ, new Uint8Array(0));
         break;
+      case 'testRequest':
+        this.out.send(OP_NOOP, FLAG_TRQ, new Uint8Array(0));
+        break;
       case 'printScreen':
+      case 'copy':
+      case 'paste':
+      case 'rule':
         break; // handled by the UI
       default: {
         const aid = AID[action];
@@ -247,6 +300,35 @@ export class Keyboard {
   private moveCursor(delta: number): void {
     const size = this.screen.size;
     this.screen.cursor = (((this.screen.cursor + delta) % size) + size) % size;
+  }
+
+  /** A cell that separates words: null, blank or a field attribute. */
+  private isBlankCell(pos: number): boolean {
+    const b = this.screen.buffer[pos] ?? EBCDIC_NULL;
+    return b === EBCDIC_NULL || b === EBCDIC_BLANK || (b >= 0x20 && b <= 0x3f);
+  }
+
+  /** Tab Word / Backtab Word: the start of the next (or previous) word anywhere on the screen, wrapping. */
+  private wordStart(dir: 1 | -1): void {
+    const s = this.screen;
+    const n = s.size;
+    let p = s.cursor;
+    for (let i = 0; i < n; i++) {
+      p = (p + dir + n) % n;
+      if (!this.isBlankCell(p) && this.isBlankCell((p - 1 + n) % n)) {
+        s.cursor = p;
+        return;
+      }
+    }
+  }
+
+  private beginningOfField(): void {
+    const f = this.currentField();
+    if (!f) {
+      this.error('0005');
+      return;
+    }
+    this.screen.cursor = f.start;
   }
 
   private backtab(): void {
@@ -454,6 +536,36 @@ export class Keyboard {
     s.buffer.copyWithin(s.cursor, s.cursor + 1, f.end);
     s.buffer[f.end - 1] = EBCDIC_NULL;
     f.mdt = true;
+  }
+
+  /** Delete Word: the word under the cursor and the blanks after it; the rest of the field shifts left. */
+  private deleteWord(): void {
+    const s = this.screen;
+    const f = this.currentField();
+    if (!f) {
+      this.error('0005');
+      return;
+    }
+    const blank = (p: number): boolean => s.buffer[p] === EBCDIC_NULL || s.buffer[p] === EBCDIC_BLANK;
+    let end = s.cursor;
+    while (end < f.end && !blank(end)) end += 1;
+    while (end < f.end && blank(end)) end += 1;
+    if (end === s.cursor) return;
+    s.buffer.copyWithin(s.cursor, end, f.end);
+    s.buffer.fill(EBCDIC_NULL, f.end - (end - s.cursor), f.end);
+    f.mdt = true;
+  }
+
+  /** Erase Field: the whole current field, cursor back to its start. */
+  private eraseField(): void {
+    const f = this.currentField();
+    if (!f) {
+      this.error('0005');
+      return;
+    }
+    this.screen.buffer.fill(EBCDIC_NULL, f.start, f.end);
+    f.mdt = true;
+    this.screen.cursor = f.start;
   }
 
   private eraseEof(): void {
