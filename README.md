@@ -17,6 +17,13 @@ It shares its TN5250 engine and terminal UI with the
 - **Integrated File System browser** (Tools menu): browse, upload, download, rename,
   delete. It talks to the IBM i file server directly, like IBM i Access Client
   Solutions does, so the host needs only its standard host servers (STRHOSTSVR).
+- **Run SQL Scripts** and a **CL / QSH Console** (Tools menu). They use the remote
+  command server and the file server, nothing else: a query is materialised in QTEMP,
+  copied to a UTF-8 CSV stream file in /tmp and read back, other statements run through
+  RUNSQL, Qshell output is captured the same way. Because of that, a statement is at most
+  5000 characters, update counts are not reported, NULL shows as an empty field, and the
+  first 10,000 rows of a query are kept for paging. A result's column types come from
+  QSYS2.SYSCOLUMNS.
 - No telemetry. Connections go only to the hosts you enter. Passwords are kept in the
   operating system credential store.
 - Updates from GitHub: the ↓ toolbar button glows green when a new release is out, and
