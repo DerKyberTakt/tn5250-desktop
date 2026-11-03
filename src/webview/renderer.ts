@@ -22,6 +22,28 @@ function refKey(ref: ScrollBarRef): string {
   return ref.kind === 'host' ? `h${ref.bar.addr}` : `s${ref.index}`;
 }
 
+/** Cells whose characters the enhanced renderer replaces by widgets: radio/check indicators and push button brackets. */
+function selectionWidgetCells(s: ScreenSnapshot): Uint8Array<ArrayBuffer> {
+  const mask = new Uint8Array(s.rows * s.cols);
+  for (const sel of s.gui?.selections ?? []) {
+    for (const c of sel.choices) {
+      if (c.empty) continue;
+      if (c.indicatorCol !== undefined && (sel.style === 'radio' || sel.style === 'check')) mask[c.row * s.cols + c.indicatorCol] = 1;
+      if (sel.style === 'button' && !c.noBox) {
+        // The '<' and '>' the host would show on a character display.
+        const first = c.row * s.cols + c.col;
+        const text = s.text.slice(first, first + c.length);
+        const open = text.indexOf('<');
+        const close = text.lastIndexOf('>');
+        if (open >= 0) mask[first + open] = 1;
+        if (close > open) mask[first + close] = 1;
+      }
+    }
+    if (sel.separator) mask.fill(1, sel.separator.row * s.cols + sel.separator.col, sel.separator.row * s.cols + sel.separator.col + sel.separator.length);
+  }
+  return mask;
+}
+
 /** Cells of every GUI window border: the top and bottom rows and the three columns at each side. */
 function windowBorderCells(s: ScreenSnapshot): Uint8Array<ArrayBuffer> {
   const mask = new Uint8Array(s.rows * s.cols);
@@ -219,6 +241,8 @@ export class Renderer {
   private subfiles: SubfileArea[] = [];
   /** 1 where a cell is part of a GUI window border (enhanced mode draws a frame instead of the characters). */
   private windowBorderMask = new Uint8Array(0);
+  /** 1 where a selection field's indicator or push button bracket sits (enhanced mode draws widgets there). */
+  private selectionMask = new Uint8Array(0);
   /** The scroll bar part under the mouse, for hover feedback. */
   private scrollHover: ScrollBarTarget | undefined;
   /** While the thumb of a host bar is dragged: the position it is shown at. */
@@ -262,6 +286,7 @@ export class Renderer {
     this.syntax = highlightScreen(screen);
     this.subfiles = this.options.subfileScrollBar && !screen.gui?.scrollBars.length ? detectSubfiles(screen) : [];
     this.windowBorderMask = windowBorderCells(screen);
+    this.selectionMask = selectionWidgetCells(screen);
     this.thumbPreview = undefined;
     if (resized) this.layout();
     this.draw();
@@ -490,6 +515,7 @@ export class Renderer {
     this.drawBackground(w + this.pad * 2 + this.gutter, h + this.pad * 2, enhanced);
     ctx.restore();
     if (enhanced) this.drawWindowFrames();
+    this.drawSelections(enhanced);
 
     ctx.font = this.font();
     ctx.textBaseline = 'middle';
@@ -523,8 +549,9 @@ export class Renderer {
       // A null cell outside any field shows nothing: no underline, no reverse.
       const decorated = ch !== NULL || this.fieldMask[i] === 1;
       if (!decorated || current.nondisplay) continue;
-      // Enhanced mode draws window borders as frames; the border characters stay hidden.
-      if (enhanced && this.windowBorderMask[i] === 1) continue;
+      // Enhanced mode draws window borders as frames and selection indicators as widgets;
+      // the characters the host sent for them stay hidden.
+      if (enhanced && (this.windowBorderMask[i] === 1 || this.selectionMask[i] === 1)) continue;
 
       const row = Math.floor(i / cols);
       const col = i % cols;
@@ -606,6 +633,109 @@ export class Renderer {
     for (const ref of this.scrollBars()) {
       const hover = this.scrollHover && refKey(this.scrollHover.ref) === refKey(ref) ? this.scrollHover.hit.part : undefined;
       this.drawScrollBar(this.geometryFor(ref), enhanced, hover, this.thumbPreview !== undefined && ref.kind === 'host' && this.thumbPreview.addr === ref.bar.addr);
+    }
+  }
+
+  /**
+   * Selection fields: radio buttons and check boxes in the indicator cells, push buttons as
+   * rounded frames around their text, the selection cursor as a highlighted box, mnemonic
+   * letters underlined and the menu bar separator as a line. Drawn under the text; the
+   * Classic style keeps the host's characters and only adds the widgets.
+   */
+  private drawSelections(enhanced: boolean): void {
+    const s = this.screen;
+    if (!s?.gui?.selections.length) return;
+    const ctx = this.ctx;
+    const e = this.theme.enhanced;
+    const accent = enhanced ? e.activeField : this.theme.colors.white;
+    const border = enhanced ? e.fieldBorder : this.theme.colors.blue;
+    const fill = enhanced ? e.fieldFill : 'rgba(255,255,255,0.10)';
+    const radius = enhanced ? e.cornerRadius : 2;
+    for (const sel of s.gui.selections) {
+      sel.choices.forEach((c, i) => {
+        if (c.empty) return;
+        const onCursor = sel.cursor === i;
+        const x = this.x(c.col);
+        const y = this.y(c.row);
+        const w = c.length * this.cellW;
+        const h = this.cellH;
+        ctx.save();
+        if (c.state === 'unavailable') ctx.globalAlpha = 0.55;
+        if (sel.style === 'button') {
+          if (!c.noBox) {
+            this.roundRect(x - 2, y + 1, w + 4, h - 2, radius);
+            ctx.fillStyle = c.state === 'selected' ? accent : fill;
+            ctx.fill();
+            ctx.lineWidth = onCursor ? 1.5 : 1;
+            ctx.strokeStyle = onCursor ? accent : border;
+            if (onCursor && enhanced) {
+              ctx.shadowColor = accent;
+              ctx.shadowBlur = 8;
+            }
+            ctx.stroke();
+          }
+        } else if ((sel.style === 'radio' || sel.style === 'check') && c.indicatorCol !== undefined && enhanced) {
+          const cx = this.x(c.indicatorCol) + this.cellW / 2;
+          const cy = y + h / 2;
+          const r = Math.max(3, Math.min(this.cellW, h) * 0.38);
+          ctx.lineWidth = 1.2;
+          ctx.strokeStyle = onCursor ? accent : border;
+          ctx.fillStyle = fill;
+          if (sel.style === 'radio') {
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            if (c.state === 'selected') {
+              ctx.beginPath();
+              ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+              ctx.fillStyle = accent;
+              ctx.fill();
+            }
+          } else {
+            this.roundRect(cx - r, cy - r, 2 * r, 2 * r, 2);
+            ctx.fill();
+            ctx.stroke();
+            if (c.state === 'selected') {
+              ctx.beginPath();
+              ctx.moveTo(cx - r * 0.55, cy);
+              ctx.lineTo(cx - r * 0.1, cy + r * 0.5);
+              ctx.lineTo(cx + r * 0.6, cy - r * 0.5);
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = accent;
+              ctx.stroke();
+            }
+          }
+        }
+        // The selection cursor: a highlighted box around the text (the host reverses the attribute in Classic).
+        if (onCursor && enhanced && sel.style !== 'button') {
+          this.roundRect(x - 2, y + 1, w + 4, h - 2, radius);
+          ctx.fillStyle = e.fieldFill;
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = accent;
+          ctx.shadowColor = accent;
+          ctx.shadowBlur = 6;
+          ctx.stroke();
+        }
+        if (c.mnemonic !== undefined && c.mnemonic < c.length) {
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = onCursor ? accent : border;
+          ctx.fillRect(this.x(c.col + c.mnemonic), y + h - 2, this.cellW, 1);
+        }
+        ctx.restore();
+      });
+      if (sel.separator && enhanced) {
+        ctx.save();
+        ctx.strokeStyle = border;
+        ctx.lineWidth = 1;
+        const y = this.y(sel.separator.row) + this.cellH / 2;
+        ctx.beginPath();
+        ctx.moveTo(this.x(sel.separator.col), y);
+        ctx.lineTo(this.x(sel.separator.col + sel.separator.length), y);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
 

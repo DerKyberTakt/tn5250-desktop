@@ -1,5 +1,6 @@
 import { ATTR_NORMAL, isAttribute } from './attributes';
 import type { CodePage } from './codepage';
+import { choiceAt, isPushButtons, isSingleChoice, type GuiSelection } from './selection';
 import type { ScreenSnapshot } from '../shared/protocol';
 
 /** Field Format Word bits (SF order). */
@@ -136,6 +137,16 @@ export interface GuiWindow {
   savedFields: Field[];
   title?: GuiText;
   footer?: GuiText;
+  /** Create Window flag bit 0: the cursor stays inside the window until Unrestricted Window Cursor Movement. */
+  restrictCursor: boolean;
+}
+
+/** The cells the cursor may use while a window restricts it: 0-based, inclusive. */
+export interface CursorBounds {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
 }
 
 /**
@@ -158,6 +169,8 @@ export interface GuiScrollBar {
   size: number;
   /** Rows (or columns) to scroll, reported with the next read; 1 = arrow, more = slider drag. */
   increment: number;
+  /** Address of the selection field this bar belongs to: it then reports with that field, not on its own. */
+  owner?: number;
 }
 
 export class Screen {
@@ -170,6 +183,8 @@ export class Screen {
   windows: GuiWindow[] = [];
   /** Scroll bars defined by the host, in screen order. */
   scrollBars: GuiScrollBar[] = [];
+  /** Selection fields (menu bars, choice fields, push buttons) defined by the host, in screen order. */
+  selections: GuiSelection[] = [];
   /** 0-based row used for error messages (Write Error Code). */
   errorRow = 23;
 
@@ -184,6 +199,7 @@ export class Screen {
     this.fields = [];
     this.windows = [];
     this.scrollBars = [];
+    this.selections = [];
     this.cursor = 0;
     this.errorRow = rows - 1;
   }
@@ -193,13 +209,36 @@ export class Screen {
     this.fields = [];
     this.windows = [];
     this.scrollBars = [];
+    this.selections = [];
     this.cursor = 0;
   }
 
-  /** A new format (SOH, Clear Format Table): the fields go, and with them the scroll bars, which are format table entries too. */
+  /** A new format (SOH, Clear Format Table): the fields go, and with them the scroll bars and selection fields, which are format table entries too. */
   clearFormatTable(): void {
     this.fields = [];
     this.scrollBars = [];
+    this.selections = [];
+  }
+
+  /** Adds or redefines a selection field at its address, keeping screen order. */
+  addSelection(sel: GuiSelection): void {
+    const idx = this.selections.findIndex((s) => s.addr === sel.addr);
+    if (idx >= 0) {
+      this.selections[idx] = sel;
+      return;
+    }
+    const pos = this.selections.findIndex((s) => s.addr > sel.addr);
+    if (pos < 0) this.selections.push(sel);
+    else this.selections.splice(pos, 0, sel);
+  }
+
+  /** The selection field one of whose choices covers the address. */
+  selectionAt(addr: number): { sel: GuiSelection; choice: number } | undefined {
+    for (const sel of this.selections) {
+      const choice = choiceAt(sel, this, addr);
+      if (choice >= 0) return { sel, choice };
+    }
+    return undefined;
   }
 
   /** Adds or redefines a scroll bar at its address, keeping screen order. */
@@ -216,6 +255,25 @@ export class Screen {
 
   scrollBarAt(addr: number): GuiScrollBar | undefined {
     return this.scrollBars.find((b) => b.addr === addr);
+  }
+
+  /** The usable area of the newest window that restricts the cursor, if any. */
+  cursorBounds(): CursorBounds | undefined {
+    for (let i = this.windows.length - 1; i >= 0; i--) {
+      const w = this.windows[i]!;
+      if (!w.restrictCursor) continue;
+      return { top: w.row + 1, left: w.col + 3, bottom: Math.min(this.rows - 1, w.row + w.rows - 2), right: Math.min(this.cols - 1, w.col + w.cols - 4) };
+    }
+    return undefined;
+  }
+
+  /** Whether an address is inside the cursor bounds (always true without a restricting window). */
+  cursorAllowed(addr: number): boolean {
+    const b = this.cursorBounds();
+    if (!b) return true;
+    const row = this.rowOf(addr);
+    const col = this.colOf(addr);
+    return row >= b.top && row <= b.bottom && col >= b.left && col <= b.right;
   }
 
   addr(row: number, col: number): number {
@@ -312,6 +370,23 @@ export class Screen {
           size: b.size,
           total: b.total,
           pos: b.pos,
+        })),
+        selections: this.selections.map((s) => ({
+          addr: s.addr,
+          kind: s.kind,
+          style: isPushButtons(s.kind) || s.indicators === 'button' ? 'button' : s.indicators === 'left' ? (isSingleChoice(s.kind) ? 'radio' : 'check') : 'plain',
+          cursor: s.cursor,
+          choices: s.choices.map((c) => ({
+            row: c.row,
+            col: c.textCol,
+            length: c.textLen,
+            indicatorCol: c.indicatorCol,
+            state: c.state,
+            empty: c.empty,
+            noBox: c.noBox,
+            mnemonic: c.mnemonic,
+          })),
+          separator: s.separator && s.separator.row >= 0 ? s.separator : undefined,
         })),
       },
     };

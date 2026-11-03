@@ -2,6 +2,7 @@ import { ATTR_NORMAL, isAttribute } from './attributes';
 import type { CodePage } from './codepage';
 import { OP_NOOP, OP_PUT_GET, OP_SAVE_SCREEN } from './gds';
 import { Field, type GuiScrollBar, type GuiText, type GuiWindow, Screen } from './screen';
+import { firstCursorChoice, layoutSelection, parseSelection, refreshSelection, selectionBytes, selectionRightEdge, writeSelection, type GuiSelection } from './selection';
 import type { ReadKind, TerminalState } from './state';
 
 export const ESC = 0x04;
@@ -65,8 +66,12 @@ export interface TerminalInfo {
 }
 
 /** Structured field types of class D9 that the enhanced interface brings. */
+const WDSF_DEFINE_SELECTION = 0x50;
 const WDSF_CREATE_WINDOW = 0x51;
+const WDSF_UNRESTRICTED_CURSOR = 0x52;
 const WDSF_DEFINE_SCROLL_BAR = 0x53;
+const WDSF_WRITE_DATA = 0x54;
+const WDSF_MOUSE_BUTTONS = 0x55;
 const WDSF_REMOVE_GUI_WINDOW = 0x59;
 const WDSF_REMOVE_GUI_SCROLL_BAR = 0x5b;
 const WDSF_REMOVE_ALL_GUI = 0x5f;
@@ -209,6 +214,9 @@ export class DataStreamProcessor {
           this.addr = 0;
           this.state.savedCursor = undefined;
           this.state.savedErrorRow = undefined;
+          this.state.mouseButtons = [];
+          this.state.pendingMouse = undefined;
+          this.state.queuedMouse = undefined;
           break;
         case CMD_RESTORE_PARTIAL_SCREEN:
           // The image that follows is a full write of what the host saved; whatever
@@ -266,19 +274,36 @@ export class DataStreamProcessor {
   readResponse(kind: ReadKind, aid: number): Uint8Array {
     const s = this.screen;
     const out: number[] = [s.rowOf(s.cursor) + 1, s.colOf(s.cursor) + 1, aid];
-    type Entry = { addr: number; field?: Field; bar?: GuiScrollBar };
+    type Entry = { addr: number; field?: Field; bar?: GuiScrollBar; sel?: GuiSelection };
     const entries: Entry[] = [
       ...s.fields.filter((f) => !f.bypass).map((f) => ({ addr: f.start - 1, field: f })),
-      ...s.scrollBars.map((b) => ({ addr: b.addr, bar: b })),
+      ...s.scrollBars.filter((b) => b.owner === undefined).map((b) => ({ addr: b.addr, bar: b })),
+      ...s.selections.map((x) => ({ addr: x.addr, sel: x })),
     ].sort((a, b) => a.addr - b.addr);
-    for (const { field: f, bar } of entries) {
+    const increment = (bar: GuiScrollBar | undefined): void => {
+      const n = (bar?.increment ?? 0) >>> 0;
+      out.push((n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff);
+      if (bar) {
+        bar.increment = 0;
+        bar.mdt = false;
+      }
+    };
+    for (const { field: f, bar, sel } of entries) {
+      if (sel) {
+        // A selection field: the choice number or one byte per choice, then the scroll
+        // increment of its list; on MDT reads only when the field's MDT is on, after an SBA
+        // of the cell past the field address.
+        const ownBar = sel.scrollBarAddr !== undefined ? s.scrollBarAt(sel.scrollBarAddr) : undefined;
+        if (kind !== 'input' && !sel.mdt && !ownBar?.mdt) continue;
+        if (kind !== 'input') out.push(O_SBA, s.rowOf(sel.addr + 1) + 1, s.colOf(sel.addr + 1) + 1);
+        out.push(...selectionBytes(sel));
+        if (sel.scrollBarAddr !== undefined) increment(ownBar);
+        continue;
+      }
       if (bar) {
         if (kind !== 'input' && !bar.mdt) continue;
         if (kind !== 'input') out.push(O_SBA, s.rowOf(bar.addr) + 1, s.colOf(bar.addr) + 1);
-        const n = bar.increment >>> 0;
-        out.push((n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff);
-        bar.increment = 0;
-        bar.mdt = false;
+        increment(bar);
         continue;
       }
       if (!f) continue;
@@ -313,6 +338,9 @@ export class DataStreamProcessor {
     this.state.savedErrorRow = undefined;
     this.state.pendingRead = undefined;
     this.state.caKeys = 0;
+    this.state.mouseButtons = [];
+    this.state.pendingMouse = undefined;
+    this.state.queuedMouse = undefined;
   }
 
   private put(b: number): void {
@@ -398,6 +426,21 @@ export class DataStreamProcessor {
       case WDSF_DEFINE_SCROLL_BAR:
         this.defineScrollBar(data);
         break;
+      case WDSF_UNRESTRICTED_CURSOR:
+        for (const w of this.screen.windows) w.restrictCursor = false;
+        break;
+      case WDSF_WRITE_DATA:
+        this.writeData(data);
+        break;
+      case WDSF_MOUSE_BUTTONS:
+        this.mouseButtons(data);
+        break;
+      case WDSF_DEFINE_SELECTION:
+        this.defineSelection(data);
+        break;
+      case 0x58: // Remove GUI Selection Field: the construct at the current address goes, the screen stays.
+        this.removeSelection(this.addr);
+        break;
       case WDSF_REMOVE_GUI_WINDOW:
         this.removeWindow();
         break;
@@ -407,10 +450,67 @@ export class DataStreamProcessor {
       case WDSF_REMOVE_ALL_GUI:
         while (this.screen.windows.length > 0) this.removeWindow();
         this.screen.scrollBars = [];
+        this.screen.selections = [];
         break;
       default:
         break;
     }
+  }
+
+  /**
+   * Define Selection Field at the current write address: the choices are laid out and
+   * written into the buffer as a character display would show them (attribute cells,
+   * radio/check indicators, push button characters); a list with TotalRows/SliderPos gets
+   * a scroll bar at its right edge that reports with the field. The address is not moved.
+   */
+  private defineSelection(data: Uint8Array): void {
+    const s = this.screen;
+    const sel = parseSelection(data, this.addr, this.codePage);
+    if (!sel) return;
+    layoutSelection(sel, s);
+    const lastRow = Math.max(...sel.choices.map((c) => c.row), sel.separator?.row ?? 0);
+    const edge = selectionRightEdge(sel);
+    if (lastRow >= s.rows || edge + (sel.total !== undefined ? 2 : 0) > s.cols) return;
+    const previous = s.selections.find((x) => x.addr === sel.addr);
+    if (previous?.scrollBarAddr !== undefined) s.scrollBars = s.scrollBars.filter((b) => b.addr !== previous.scrollBarAddr);
+    writeSelection(sel, s, this.codePage);
+    if (sel.total !== undefined && sel.pos !== undefined && sel.kind !== 'menuBar') {
+      const row = s.rowOf(sel.addr);
+      const bar: GuiScrollBar = {
+        addr: s.addr(row, edge - 1),
+        horizontal: false,
+        moveCursor: true,
+        mdt: false,
+        total: sel.total,
+        pos: sel.pos,
+        size: sel.rows,
+        increment: 0,
+        owner: sel.addr,
+      };
+      if (sel.rows >= 3 && row + sel.rows <= s.rows) {
+        for (let r = 0; r < sel.rows; r++) {
+          s.buffer[s.addr(row + r, edge - 1)] = 0x22; // white: the leading scroll bar attribute of a GUI-like display
+          s.buffer[s.addr(row + r, edge)] = 0;
+          s.buffer[s.addr(row + r, edge + 1)] = ATTR_NORMAL;
+        }
+        s.addScrollBar(bar);
+        sel.scrollBarAddr = bar.addr;
+      }
+    }
+    // A redefinition keeps the selection cursor where it was.
+    if (previous && previous.cursor >= 0 && s.selectionAt(s.cursor)?.sel === previous) {
+      sel.cursor = Math.min(previous.cursor, sel.choices.length - 1);
+      if (sel.choices[sel.cursor]?.noCursor) sel.cursor = firstCursorChoice(sel);
+    }
+    s.addSelection(sel);
+  }
+
+  private removeSelection(addr: number): void {
+    const s = this.screen;
+    const sel = s.selections.find((x) => x.addr === addr);
+    if (!sel) return;
+    s.selections = s.selections.filter((x) => x !== sel);
+    if (sel.scrollBarAddr !== undefined) s.scrollBars = s.scrollBars.filter((b) => b.addr !== sel.scrollBarAddr);
   }
 
   /**
@@ -518,7 +618,7 @@ export class DataStreamProcessor {
     };
     const savedFields = s.fields.filter(touches);
     s.fields = s.fields.filter((f) => !touches(f));
-    const win: GuiWindow = { row, col, depth, width, rows, cols, saved, savedFields, title, footer };
+    const win: GuiWindow = { row, col, depth, width, rows, cols, saved, savedFields, title, footer, restrictCursor: ((data[0] ?? 0) & 0x80) !== 0 };
     // Draw: every rectangle cell starts as null, then the border.
     for (let r = 0; r < rows; r++) s.buffer.fill(0, s.addr(row + r, col), s.addr(row + r, col + cols));
     const put = (r: number, c: number, b: number): void => {
@@ -556,6 +656,54 @@ export class DataStreamProcessor {
     s.windows.push(win);
   }
 
+  /**
+   * Write Data: flag (bit 0 must be on), reserved, then the data for the entry field whose
+   * first position is the current write address; the rest of the field is nulled. The
+   * address does not move. (Continued and word-wrap fields: see the FCW support.)
+   */
+  private writeData(data: Uint8Array): void {
+    const s = this.screen;
+    if (data.length < 2 || ((data[0] as number) & 0x80) === 0) return;
+    const f = s.fields.find((x) => x.start === this.addr);
+    if (!f) return;
+    const text = data.subarray(2);
+    if (text.length > f.length) return;
+    s.buffer.fill(0, f.start, f.end);
+    for (let i = 0; i < text.length; i++) {
+      const b = text[i] as number;
+      s.buffer[f.start + i] = b;
+    }
+  }
+
+  /**
+   * Programmable Mouse Buttons: 3 reserved bytes then 4-byte event definitions (flags:
+   * bit 0 two-event, bit 1 move the cursor, bit 2 queue while locked, bit 3 marker box;
+   * first event; second event; AID). Every structured field replaces the whole table;
+   * none = the table is cleared.
+   */
+  private mouseButtons(data: Uint8Array): void {
+    const defs = [];
+    for (let i = 3; i + 4 <= data.length; i += 4) {
+      const flags = data[i] as number;
+      const first = data[i + 1] as number;
+      const second = data[i + 2] as number;
+      const aid = data[i + 3] as number;
+      if (first === 0 || first > 0x12) continue;
+      defs.push({
+        twoEvent: (flags & 0x80) !== 0,
+        moveCursor: (flags & 0x40) !== 0,
+        queue: (flags & 0x20) !== 0,
+        marker: (flags & 0x10) !== 0,
+        first,
+        second,
+        aid,
+      });
+    }
+    this.state.mouseButtons = defs;
+    this.state.pendingMouse = undefined;
+    this.state.queuedMouse = undefined;
+  }
+
   /** Remove GUI Window: the newest window goes, and what it covered comes back. */
   private removeWindow(): void {
     const s = this.screen;
@@ -575,10 +723,23 @@ export class DataStreamProcessor {
     for (const f of win.savedFields) s.addField(f);
   }
 
-  /** A read command without a preceding Insert Cursor homes the cursor to the first input field. */
+  /** A read command without a preceding Insert Cursor homes the cursor to the first input field (inside the window that restricts the cursor, if one does). */
   private homeCursor(): void {
     const s = this.screen;
-    const first = s.fields.find((f) => !f.bypass);
+    const first = s.fields.find((f) => !f.bypass && s.cursorAllowed(f.start));
+    // A selection field before the first entry field is the home instead: the selection
+    // cursor goes to its first choice.
+    for (const sel of s.selections) {
+      const idx = firstCursorChoice(sel);
+      if (idx < 0) continue;
+      const c = sel.choices[idx]!;
+      const start = s.addr(c.row, c.textCol);
+      if (!s.cursorAllowed(start) || (first && first.start < start)) continue;
+      sel.cursor = idx;
+      s.cursor = start;
+      refreshSelection(sel, s);
+      return;
+    }
     if (first) s.cursor = first.start;
   }
 

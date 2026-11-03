@@ -37,6 +37,35 @@ export interface SnapshotScrollBar {
   pos: number;
 }
 
+/** A choice of a selection field as laid out on the screen. */
+export interface SnapshotChoice {
+  row: number;
+  /** First text cell and the text cells (TextSize). */
+  col: number;
+  length: number;
+  /** Cell of the radio/check indicator character, when the field has one. */
+  indicatorCol?: number;
+  state: 'available' | 'selected' | 'unavailable';
+  empty: boolean;
+  /** Push button without a box. */
+  noBox: boolean;
+  /** 0-based offset of the mnemonic character in the text. */
+  mnemonic?: number;
+}
+
+/** A selection field the host defined (enhanced 5250 Define Selection Field). */
+export interface SnapshotSelection {
+  addr: number;
+  kind: string;
+  /** How the terminal draws it: radio buttons, check boxes, push buttons, or text only (menu bars, lists). */
+  style: 'radio' | 'check' | 'button' | 'plain';
+  /** Index of the choice the selection cursor is on, -1 when the cursor is elsewhere. */
+  cursor: number;
+  choices: SnapshotChoice[];
+  /** Menu bar separator line. */
+  separator?: { row: number; col: number; length: number };
+}
+
 export interface ScreenSnapshot {
   rows: number;
   cols: number;
@@ -56,7 +85,13 @@ export interface ScreenSnapshot {
   attrs: number[];
   cursor: { row: number; col: number };
   /** Enhanced 5250 constructs drawn by the terminal (absent on demo screens). */
-  gui?: { windows: SnapshotWindow[]; scrollBars: SnapshotScrollBar[] };
+  gui?: {
+    windows: SnapshotWindow[];
+    scrollBars: SnapshotScrollBar[];
+    selections: SnapshotSelection[];
+    /** Pointer event codes the host programmed (Programmable Mouse Buttons); the webview reports only these. */
+    mouseEvents?: number[];
+  };
 }
 
 export type InputInhibit = 'none' | 'system' | 'error';
@@ -128,6 +163,8 @@ export type WebviewToHost =
   | { type: 'click'; row: number; col: number }
   /** Pointer use of a host scroll bar: forward = toward the end (Roll Up / Roll Right); increment rows or columns (1 = arrow, 0 = a page). */
   | { type: 'scroll'; addr: number; forward: boolean; increment: number }
+  /** A pointer event the host programmed (5250 event code 1..0x12) at a cell. */
+  | { type: 'mouse'; event: number; row: number; col: number }
   | { type: 'copy'; text: string }
   /** Ctrl+V / Shift+Insert: asks the host for the clipboard text (webviews cannot read it). */
   | { type: 'paste' }

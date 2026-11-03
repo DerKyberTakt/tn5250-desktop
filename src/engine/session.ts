@@ -117,15 +117,34 @@ export class Session5250 {
     this.notify();
   }
 
-  /** Moves the cursor (mouse click); also leaves an operator error state. */
+  /** Moves the cursor (mouse click); also leaves an operator error state. A window that restricts the cursor keeps clicks outside it from moving it. */
   setCursor(row: number, col: number): void {
-    if (row < this.screen.rows && col < this.screen.cols) {
+    if (row < this.screen.rows && col < this.screen.cols && this.screen.cursorAllowed(this.screen.addr(row, col))) {
       this.keyboard.clearError();
-      this.screen.cursor = this.screen.addr(row, col);
+      const addr = this.screen.addr(row, col);
+      const hit = this.screen.selectionAt(addr);
+      if (hit) {
+        // A click on a choice selects it.
+        this.keyboard.clickChoice(hit.sel, hit.choice);
+        this.notify();
+        return;
+      }
+      this.screen.cursor = addr;
       this.state.cursorPastEnd = false;
       this.state.autoAdvanced = false;
+      // Pointer use outside an open pull-down: the host asked for its cancel AID.
+      const pulldown = this.screen.selections.find((sel) => sel.cancelAid !== 0 && (sel.kind === 'singlePulldown' || sel.kind === 'multiplePulldown' || sel.kind === 'pushButtonsPulldown'));
+      if (pulldown && this.state.inputInhibited === 'none') this.keyboard.pressAid(pulldown.cancelAid);
       this.notify();
     }
+  }
+
+  /** A pointer event at a cell for the host's Programmable Mouse Buttons table; true when the host took it. */
+  mouseEvent(event: number, row: number, col: number): boolean {
+    if (row >= this.screen.rows || col >= this.screen.cols) return false;
+    const taken = this.keyboard.mouseEvent(event, row, col);
+    if (taken) this.notify();
+    return taken;
   }
 
   /** Pointer use of a host scroll bar: Roll AID with the increment; see Keyboard.scrollBar. */
@@ -164,6 +183,7 @@ export class Session5250 {
    * operator error or host error message discards the rest, as ACS does.
    */
   private drainQueue(): void {
+    this.keyboard.flushQueuedMouse();
     while (this.queue.length > 0 && this.state.inputInhibited === 'none') {
       const key = this.queue.shift()!;
       if (key.kind === 'press') this.keyboard.press(key.action);
@@ -173,7 +193,9 @@ export class Session5250 {
   }
 
   snapshot(): ScreenSnapshot {
-    return this.screen.toSnapshot(this.codePage);
+    const snap = this.screen.toSnapshot(this.codePage);
+    if (snap.gui) snap.gui.mouseEvents = this.state.mouseButtons.map((d) => d.first);
+    return snap;
   }
 
   oia(connected: boolean): OiaState {

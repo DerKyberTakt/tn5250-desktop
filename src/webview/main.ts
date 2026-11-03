@@ -206,6 +206,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
   switch (msg.type) {
     case 'screen':
       lastScreen = { rows: msg.screen.rows, cols: msg.screen.cols, fields: msg.screen.fields };
+      hostMouseEvents = msg.screen.gui?.mouseEvents ?? [];
       renderer.setScreen(msg.screen);
       renderOia();
       break;
@@ -442,6 +443,35 @@ function handleHotspot(cell: { row: number; col: number }): boolean {
 }
 
 let lastScreen: { rows: number; cols: number; fields: Array<{ start: number; length: number; bypass: boolean }> } | undefined;
+/** Pointer event codes the host programmed (Programmable Mouse Buttons). */
+let hostMouseEvents: number[] = [];
+
+/**
+ * 5250 pointer event code for a mouse event: 1-3 left (pressed, released, double click),
+ * 4-6 right, 7-9 middle, +9 with Shift. Undefined for other buttons.
+ */
+function mouseEventCode(e: MouseEvent, kind: 'down' | 'up' | 'dbl'): number | undefined {
+  const base = e.button === 0 ? 1 : e.button === 2 ? 4 : e.button === 1 ? 7 : undefined;
+  if (base === undefined) return undefined;
+  return base + (kind === 'down' ? 0 : kind === 'up' ? 1 : 2) + (e.shiftKey ? 9 : 0);
+}
+
+/** Reports a pointer event the host asked for; true when it was one. */
+function hostMouseEvent(e: MouseEvent, kind: 'down' | 'up' | 'dbl'): boolean {
+  const code = mouseEventCode(e, kind);
+  if (code === undefined || !hostMouseEvents.includes(code)) return false;
+  const cell = cellFromMouse(e);
+  if (!cell) return false;
+  e.preventDefault();
+  post({ type: 'mouse', event: code, row: cell.row, col: cell.col });
+  return true;
+}
+canvas.addEventListener('contextmenu', (e) => {
+  if (hostMouseEvents.some((c) => c === 4 || c === 5 || c === 6 || c === 13 || c === 14 || c === 15)) e.preventDefault();
+});
+canvas.addEventListener('mouseup', (e) => {
+  hostMouseEvent(e, 'up');
+});
 
 /**
  * Double-click: on a word, the word (kept inside the input field when there is one); on a
@@ -450,6 +480,7 @@ let lastScreen: { rows: number; cols: number; fields: Array<{ start: number; len
  */
 canvas.addEventListener('dblclick', (e) => {
   e.preventDefault();
+  if (hostMouseEvent(e, 'dbl')) return;
   const cell = cellFromMouse(e);
   if (!cell || !lastScreen) return;
   const field = fieldRanges(lastScreen).find((r) => r.row === cell.row && !r.bypass && cell.col >= r.col && cell.col < r.col + r.length);
@@ -477,7 +508,16 @@ let dragging = false;
 /** A host scroll bar thumb being dragged: where it started and what it stands for. */
 let thumbDrag: { target: ScrollBarTarget; startPx: number; units: number } | undefined;
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
+  // Scroll bars first, then pointer events the host programmed, then the ordinary click.
+  const p0 = canvasPoint(e);
+  if (e.button === 0 && renderer.scrollBarAt(p0.x, p0.y) === undefined && hostMouseEvent(e, 'down')) {
+    terminal.focus();
+    return;
+  }
+  if (e.button !== 0) {
+    hostMouseEvent(e, 'down');
+    return;
+  }
   terminal.focus();
   const p = canvasPoint(e);
   const target = renderer.scrollBarAt(p.x, p.y);

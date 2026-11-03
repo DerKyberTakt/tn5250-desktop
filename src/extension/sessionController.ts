@@ -249,6 +249,12 @@ export class SessionController {
     this.touch();
   }
 
+  /** A pointer event for the host's Programmable Mouse Buttons table. */
+  mouseEvent(event: number, row: number, col: number): void {
+    if (!this.connected) return;
+    if (this.session.mouseEvent(event, row, col)) this.touch();
+  }
+
   publish(): void {
     this.events.screen(this.session.snapshot(), this.session.oia(this.connected));
   }

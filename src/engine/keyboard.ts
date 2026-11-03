@@ -2,7 +2,15 @@ import type { CodePage } from './codepage';
 import { AID_ROLL_DOWN, AID_ROLL_LEFT, AID_ROLL_RIGHT, AID_ROLL_UP, type DataStreamProcessor } from './datastream';
 import { FLAG_ATN, FLAG_SRQ, FLAG_TRQ, OP_NOOP, OP_PUT_GET } from './gds';
 import type { Field, Screen } from './screen';
-import type { TerminalState } from './state';
+import { deselectChoice, firstCursorChoice, isSingleChoice, mnemonicChoice, refreshSelection, selectChoice, stepChoice, stepRow, type GuiSelection } from './selection';
+import { AID_TWO_EVENT, type TerminalState } from './state';
+
+/** A place Tab / Field Advance stops at: an entry field or a selection field. */
+interface Stop {
+  start: number;
+  field?: Field;
+  sel?: GuiSelection;
+}
 import type { KeyAction } from '../shared/keymap';
 
 /** Attention identifiers sent with a read response. */
@@ -134,6 +142,10 @@ export class Keyboard {
     // Moving the cursor is a natural way out of an operator error.
     if (this.state.inputInhibited === 'error' && MOVEMENT_ACTIONS.has(action)) this.clearError();
     if (this.state.inputInhibited !== 'none') return;
+    // A keystroke cancels a programmable two-event mouse sequence that was started.
+    this.state.pendingMouse = undefined;
+    // Inside a selection field most keys mean something else (choice navigation, select).
+    if (this.selectionKey(action)) return;
     // Every key ends the past-the-end / just-auto-advanced states; the handlers below
     // still see what they were when the key arrived.
     this.pastEnd = this.state.cursorPastEnd;
@@ -276,30 +288,83 @@ export class Keyboard {
     return f && !f.bypass ? f : undefined;
   }
 
-  private firstField(): Field | undefined {
-    return this.inputFields()[0];
+  /**
+   * Where Tab / Field Advance may stop: entry fields and selection fields the cursor may
+   * reach (all of them, or those inside a window that restricts the cursor), in screen
+   * order. A selection field counts at its first cursor-accepting choice.
+   */
+  private stops(): Stop[] {
+    const s = this.screen;
+    const out: Stop[] = this.inputFields().map((f) => ({ start: f.start, field: f }));
+    for (const sel of s.selections) {
+      const first = firstCursorChoice(sel);
+      if (first < 0) continue;
+      const c = sel.choices[first]!;
+      out.push({ start: s.addr(c.row, c.textCol), sel });
+    }
+    return out.filter((st) => s.cursorAllowed(st.start)).sort((a, b) => a.start - b.start);
   }
 
-  private nextField(from: number): Field | undefined {
-    const fields = this.inputFields();
-    const here = fields.find((f) => f.contains(from));
-    const after = fields.find((f) => f.start > from && f !== here);
-    return after ?? fields[0];
+  private stopContains(st: Stop, addr: number): boolean {
+    if (st.field) return st.field.contains(addr);
+    return st.sel !== undefined && this.screen.selectionAt(addr)?.sel === st.sel;
   }
 
-  private prevField(from: number): Field | undefined {
-    const fields = this.inputFields();
-    const before = [...fields].reverse().find((f) => f.start < from && !f.contains(from));
-    return before ?? fields[fields.length - 1];
+  private firstField(): Stop | undefined {
+    return this.stops()[0];
   }
 
-  private moveToField(f: Field | undefined): void {
-    if (f) this.screen.cursor = f.start;
+  private nextField(from: number): Stop | undefined {
+    const stops = this.stops();
+    const here = stops.find((st) => this.stopContains(st, from));
+    const after = stops.find((st) => st.start > from && st !== here && !this.stopContains(st, from));
+    return after ?? stops[0];
   }
 
+  private prevField(from: number): Stop | undefined {
+    const stops = this.stops();
+    const before = [...stops].reverse().find((st) => st.start < from && !this.stopContains(st, from));
+    return before ?? stops[stops.length - 1];
+  }
+
+  /** Moves to a stop: the first cell of an entry field, or the first (or last) choice of a selection field. */
+  private moveToField(st: Stop | undefined, fromEnd = false): void {
+    if (!st) return;
+    this.leaveSelection();
+    if (st.sel) {
+      const idx = firstCursorChoice(st.sel, fromEnd && st.sel.charAdvance);
+      this.enterSelection(st.sel, idx);
+      return;
+    }
+    this.screen.cursor = st.start;
+  }
+
+  /**
+   * Moves the cursor by `delta` cells, wrapping around the screen; inside a window that
+   * restricts the cursor it wraps within the window's usable area instead.
+   */
   private moveCursor(delta: number): void {
-    const size = this.screen.size;
-    this.screen.cursor = (((this.screen.cursor + delta) % size) + size) % size;
+    const s = this.screen;
+    const b = s.cursorBounds();
+    if (!b) {
+      const size = s.size;
+      s.cursor = (((s.cursor + delta) % size) + size) % size;
+      return;
+    }
+    const w = b.right - b.left + 1;
+    const h = b.bottom - b.top + 1;
+    let row = Math.min(Math.max(s.rowOf(s.cursor), b.top), b.bottom) - b.top;
+    let col = Math.min(Math.max(s.colOf(s.cursor), b.left), b.right) - b.left;
+    if (Math.abs(delta) >= s.cols && delta % s.cols === 0) {
+      row = (((row + delta / s.cols) % h) + h) % h;
+    } else {
+      const flat = row * w + col + delta;
+      const n = w * h;
+      const p = ((flat % n) + n) % n;
+      row = Math.floor(p / w);
+      col = p % w;
+    }
+    s.cursor = s.addr(b.top + row, b.left + col);
   }
 
   /** A cell that separates words: null, blank or a field attribute. */
@@ -337,21 +402,23 @@ export class Keyboard {
       this.screen.cursor = f.start;
       return;
     }
-    this.moveToField(this.prevField(this.screen.cursor));
+    this.moveToField(this.prevField(this.screen.cursor), true);
   }
 
   private newline(): void {
     const s = this.screen;
+    this.leaveSelection();
     const row = (s.rowOf(s.cursor) + 1) % s.rows;
     s.cursor = s.addr(row, 0);
     if (!this.currentField()) {
-      const next = this.inputFields().find((f) => f.start >= s.cursor) ?? this.firstField();
+      const next = this.stops().find((st) => st.start >= s.cursor) ?? this.firstField();
       this.moveToField(next);
     }
   }
 
   private typeChar(ch: string): void {
     if (this.state.inputInhibited !== 'none') return;
+    if (this.selectionType(ch)) return;
     const s = this.screen;
     const f = this.currentField();
     if (!f) {
@@ -619,9 +686,271 @@ export class Keyboard {
     if (!bar || this.state.inputInhibited !== 'none') return;
     bar.mdt = true;
     bar.increment = Math.max(0, Math.floor(increment));
-    if (bar.moveCursor) this.screen.cursor = bar.addr + (bar.horizontal ? 1 : this.screen.cols);
+    // The cursor goes onto the bar when the host asked for it, unless the selection cursor
+    // is already in the list the bar belongs to (the host then knows which list to scroll).
+    const inOwner = bar.owner !== undefined && this.screen.selectionAt(this.screen.cursor)?.sel.addr === bar.owner;
+    if (bar.moveCursor && !inOwner) this.screen.cursor = bar.addr + (bar.horizontal ? 1 : this.screen.cols);
     const aid = bar.horizontal ? (forward ? AID_ROLL_RIGHT : AID_ROLL_LEFT) : forward ? AID_ROLL_UP : AID_ROLL_DOWN;
     this.sendAid(aid);
+  }
+
+  // ---- selection fields --------------------------------------------------
+
+  /** The selection field whose choice the cursor is on, with the choice index. */
+  private activeSelection(): { sel: GuiSelection; choice: number } | undefined {
+    const hit = this.screen.selectionAt(this.screen.cursor);
+    if (!hit) return undefined;
+    if (hit.sel.cursor < 0) hit.sel.cursor = hit.choice;
+    return { sel: hit.sel, choice: hit.sel.cursor };
+  }
+
+  /** Puts the selection cursor on a choice: the text cursor goes to its first text cell. */
+  private enterSelection(sel: GuiSelection, idx: number): void {
+    if (idx < 0) return;
+    const c = sel.choices[idx]!;
+    sel.cursor = idx;
+    this.screen.cursor = this.screen.addr(c.row, c.textCol);
+    refreshSelection(sel, this.screen);
+  }
+
+  /** Clears the selection cursor of the field the cursor is leaving, if any. */
+  private leaveSelection(): void {
+    for (const sel of this.screen.selections) {
+      if (sel.cursor >= 0) {
+        sel.cursor = -1;
+        refreshSelection(sel, this.screen);
+      }
+    }
+  }
+
+  /**
+   * Selects (or toggles, in a multiple choice field) the choice, refreshes the field and
+   * runs auto-enter: the choice's own AID, or Enter, goes to the host at once.
+   */
+  private applyChoice(sel: GuiSelection, idx: number, toggle: boolean): void {
+    const c = sel.choices[idx];
+    if (!c || c.empty) return;
+    if (c.state === 'unavailable') {
+      this.error('0004');
+      return;
+    }
+    let deselected = false;
+    if (toggle && c.state === 'selected' && !isSingleChoice(sel.kind)) {
+      deselectChoice(sel, idx);
+      deselected = true;
+    } else if (toggle && c.state === 'selected' && isSingleChoice(sel.kind)) {
+      // Space on an already selected single choice deselects it.
+      deselectChoice(sel, idx);
+      deselected = true;
+    } else {
+      selectChoice(sel, idx);
+    }
+    refreshSelection(sel, this.screen);
+    const numeric = sel.indicators === 'numeric1' || sel.indicators === 'numeric2';
+    const autoEnter = sel.autoEnter === 1 || sel.autoEnter === 3 ? !deselected && !(sel.autoEnter === 3 && numeric) : sel.autoEnter === 2;
+    if (autoEnter && !(numeric && sel.indicators === 'numeric2')) {
+      const aid = !deselected && c.aid !== undefined && sel.autoSelect ? c.aid : AID.enter!;
+      this.sendAid(aid);
+    }
+  }
+
+  /** A pointer click on a choice: the selection cursor moves there and the choice is selected (as Space does). */
+  clickChoice(sel: GuiSelection, idx: number): void {
+    if (this.state.inputInhibited !== 'none' || sel.choices[idx]?.noCursor) return;
+    this.leaveSelection();
+    this.enterSelection(sel, idx);
+    this.applyChoice(sel, idx, !isSingleChoice(sel.kind));
+  }
+
+  /** Keys that mean something inside a selection field; true when handled. */
+  private selectionKey(action: KeyAction): boolean {
+    const active = this.activeSelection();
+    if (!active) return false;
+    const { sel, choice } = active;
+    const s = this.screen;
+    const roll = (aid: number): void => {
+      this.sendAid(aid);
+    };
+    const go = (idx: number): boolean => {
+      if (idx < 0) return false;
+      this.enterSelection(sel, idx);
+      return true;
+    };
+    const c = sel.choices[choice]!;
+    switch (action) {
+      case 'left':
+      case 'fastLeft':
+        if (c.left) {
+          roll(AID_ROLL_LEFT);
+          return true;
+        }
+        if (go(stepChoice(sel, choice, -1))) return true;
+        if (sel.keepCursor) return true;
+        this.leaveSelection();
+        s.cursor = s.addr(c.row, c.col);
+        return false;
+      case 'right':
+      case 'fastRight':
+        if (c.right) {
+          roll(AID_ROLL_RIGHT);
+          return true;
+        }
+        if (go(stepChoice(sel, choice, 1))) return true;
+        if (sel.keepCursor) return true;
+        this.leaveSelection();
+        s.cursor = s.addr(c.row, c.textCol + c.textLen);
+        return false;
+      case 'up':
+      case 'fastUp':
+        if (c.top) {
+          roll(AID_ROLL_DOWN);
+          return true;
+        }
+        if (go(stepRow(sel, choice, -1))) return true;
+        if (sel.keepCursor) return true;
+        this.leaveSelection();
+        return false;
+      case 'down':
+      case 'fastDown':
+        if (c.last) {
+          roll(AID_ROLL_UP);
+          return true;
+        }
+        if (go(stepRow(sel, choice, 1))) return true;
+        if (sel.keepCursor) return true;
+        this.leaveSelection();
+        return false;
+      case 'tab':
+      case 'fieldExit':
+      case 'fieldPlus':
+      case 'fieldMinus':
+        if (sel.charAdvance && action === 'tab' && go(stepChoice(sel, choice, 1))) return true;
+        this.moveToField(this.nextField(s.addr(sel.choices[0]!.row, sel.choices[0]!.col)));
+        return true;
+      case 'backtab':
+        if (sel.charAdvance && go(stepChoice(sel, choice, -1))) return true;
+        this.moveToField(this.prevField(s.addr(sel.choices[0]!.row, sel.choices[0]!.col)), true);
+        return true;
+      case 'delete':
+        if (deselectChoice(sel, choice)) {
+          refreshSelection(sel, s);
+          if (sel.autoEnter === 2) this.sendAid(AID.enter!);
+        }
+        return true;
+      case 'enter':
+        if (sel.autoSelect && c.state !== 'selected' && c.state !== 'unavailable') {
+          selectChoice(sel, choice);
+          refreshSelection(sel, s);
+        }
+        return false; // the normal Enter follows
+      case 'insert':
+        return true;
+      case 'beginningOfField':
+      case 'endOfField':
+      case 'eraseEof':
+      case 'eraseField':
+      case 'backspace':
+      case 'deleteWord':
+      case 'dup':
+      case 'fieldMark':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /** Typed characters inside a selection field: Space and / select, letters match mnemonics, digits numeric choices; true when handled. */
+  private selectionType(ch: string): boolean {
+    const active = this.activeSelection();
+    if (!active) return false;
+    const { sel, choice } = active;
+    if (ch === ' ') {
+      this.applyChoice(sel, choice, true);
+      return true;
+    }
+    if (ch === '/') {
+      this.applyChoice(sel, choice, false);
+      return true;
+    }
+    if (sel.indicators === 'numeric1' || sel.indicators === 'numeric2') {
+      const idx = sel.choices.findIndex((c) => !c.noCursor && c.digits !== undefined && c.digits.trim() === ch);
+      if (idx >= 0) {
+        this.enterSelection(sel, idx);
+        this.applyChoice(sel, idx, false);
+      } else {
+        this.error('0004');
+      }
+      return true;
+    }
+    const idx = mnemonicChoice(sel, ch);
+    if (idx >= 0) {
+      this.enterSelection(sel, idx);
+      this.applyChoice(sel, idx, false);
+      return true;
+    }
+    this.error('0004');
+    return true;
+  }
+
+  /**
+   * A pointer event the host programmed (Programmable Mouse Buttons): `event` is the
+   * 5250 event code (1 = left pressed ... 0x12 = shifted middle double click) at a cell.
+   * Returns true when the event was taken (an AID went out or is pending), so the caller
+   * does not also treat it as an ordinary click. A single event while the keyboard is
+   * locked is kept when the definition says so and sent at the next unlock.
+   */
+  mouseEvent(event: number, row: number, col: number): boolean {
+    const s = this.screen;
+    const st = this.state;
+    const pending = st.pendingMouse;
+    if (pending) {
+      if (pending.def.second !== event) return true; // still waiting for the trailing edge
+      st.pendingMouse = undefined;
+      if (st.inputInhibited !== 'none') return true;
+      if (pending.def.moveCursor) s.cursor = s.addr(row, col);
+      // Two-event inbound: cursor, X'80', where the first event was, then the host's AID
+      // and (as for that AID) the field data.
+      const data = this.processor.readResponse(st.pendingRead === 'input' ? 'input' : st.pendingRead === 'mdtAlt' ? 'mdtAlt' : 'mdt', pending.def.aid);
+      const out = new Uint8Array(data.length + 3);
+      out.set(data.subarray(0, 2), 0);
+      out[2] = AID_TWO_EVENT;
+      out[3] = pending.row + 1;
+      out[4] = pending.col + 1;
+      out.set(data.subarray(2), 5);
+      st.pendingRead = undefined;
+      st.inputInhibited = 'system';
+      this.out.send(OP_PUT_GET, 0, out);
+      return true;
+    }
+    const def = st.mouseButtons.find((d) => d.first === event);
+    if (!def) return false;
+    if (def.twoEvent) {
+      if (st.inputInhibited !== 'none') return false;
+      st.pendingMouse = { def, row, col };
+      return true;
+    }
+    if (st.inputInhibited !== 'none') {
+      if (def.queue) st.queuedMouse = { def, row, col };
+      return true;
+    }
+    if (def.moveCursor) s.cursor = s.addr(row, col);
+    this.sendAid(def.aid);
+    return true;
+  }
+
+  /** Sends a host-defined AID (pull-down cancel, programmed buttons) with the usual read response. */
+  pressAid(aid: number): void {
+    if (this.state.inputInhibited !== 'none') return;
+    this.sendAid(aid);
+  }
+
+  /** Sends a single mouse event kept while the keyboard was locked (called on unlock). */
+  flushQueuedMouse(): void {
+    const q = this.state.queuedMouse;
+    if (!q || this.state.inputInhibited !== 'none') return;
+    this.state.queuedMouse = undefined;
+    if (q.def.moveCursor) this.screen.cursor = this.screen.addr(q.row, q.col);
+    this.sendAid(q.def.aid);
   }
 
   private sendAid(aid: number): void {
