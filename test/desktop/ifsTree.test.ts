@@ -1,0 +1,56 @@
+import { describe, expect, it } from 'vitest';
+import { IfsTreeModel, canMoveInto, crumbs, joinPath, parentPath } from '../../src/desktop/ifsTree';
+
+describe('IFS tree model', () => {
+  it('splits a path into clickable crumbs', () => {
+    expect(crumbs('/')).toEqual([{ name: '/', path: '/' }]);
+    expect(crumbs('/home/JSMITH/src')).toEqual([
+      { name: '/', path: '/' },
+      { name: 'home', path: '/home' },
+      { name: 'JSMITH', path: '/home/JSMITH' },
+      { name: 'src', path: '/home/JSMITH/src' },
+    ]);
+    expect(joinPath('/', 'tmp')).toBe('/tmp');
+    expect(joinPath('/tmp', 'a')).toBe('/tmp/a');
+    expect(parentPath('/tmp/a')).toBe('/tmp');
+    expect(parentPath('/tmp')).toBe('/');
+    expect(parentPath('/')).toBe('/');
+  });
+
+  it('builds placeholders down to the current folder and fills them when listed', () => {
+    const m = new IfsTreeModel();
+    const node = m.ensurePath('/home/JSMITH');
+    expect(node.path).toBe('/home/JSMITH');
+    expect(m.root.expanded).toBe(true);
+    expect(m.find('/home')?.expanded).toBe(true);
+    expect(m.find('/home')?.children?.map((c) => c.name)).toEqual(['JSMITH']);
+    // Listing the root keeps the JSMITH placeholder under home and sorts folders by name.
+    m.setChildren('/', ['tmp', 'home', 'QSYS.LIB']);
+    expect(m.root.children?.map((c) => c.name)).toEqual(['home', 'QSYS.LIB', 'tmp']);
+    expect(m.find('/home/JSMITH')).toBeDefined();
+    m.setChildren('/home/JSMITH', ['b', 'a']);
+    expect(m.find('/home/JSMITH')?.children?.map((c) => c.path)).toEqual(['/home/JSMITH/a', '/home/JSMITH/b']);
+  });
+
+  it('lists only the visible rows, expanded nodes first to last', () => {
+    const m = new IfsTreeModel();
+    m.setChildren('/', ['home', 'tmp']);
+    m.setChildren('/home', ['JSMITH']);
+    m.find('/home')!.expanded = true;
+    expect(m.rows().map((r) => `${r.depth}:${r.node.path}`)).toEqual(['0:/', '1:/home', '2:/home/JSMITH', '1:/tmp']);
+    m.toggle('/home');
+    expect(m.rows().map((r) => r.node.path)).toEqual(['/', '/home', '/tmp']);
+    m.forget('/home');
+    expect(m.find('/home')?.children).toBeUndefined();
+    expect(m.find('/home/JSMITH')).toBeUndefined();
+  });
+
+  it('refuses moves into itself, a descendant, or the folder it is already in', () => {
+    expect(canMoveInto('/home/a', '/tmp')).toBe(true);
+    expect(canMoveInto('/home/a', '/home')).toBe(false);
+    expect(canMoveInto('/home/a', '/home/a')).toBe(false);
+    expect(canMoveInto('/home/a', '/home/a/b')).toBe(false);
+    expect(canMoveInto('/home/ab', '/home/a')).toBe(true);
+    expect(canMoveInto('/', '/tmp')).toBe(false);
+  });
+});

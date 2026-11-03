@@ -59,6 +59,141 @@
   user-select: text;
 }
 
+/* Breadcrumb path: segments are buttons; the pencil (or Ctrl+L) swaps in the text box. */
+.ifs-pathbox {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.ifs-crumbs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  overflow: hidden;
+  padding: 1px 4px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  cursor: text;
+}
+
+.ifs-crumbs[hidden] {
+  display: none;
+}
+
+.ifs-crumbs .sep {
+  padding: 0 2px;
+  opacity: 0.6;
+}
+
+.ifs .ifs-crumbs button.crumb {
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font-family: var(--vscode-editor-font-family);
+  white-space: nowrap;
+}
+
+.ifs .ifs-crumbs button.crumb:hover,
+.ifs .ifs-crumbs button.crumb.drop-target {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--chrome-border);
+}
+
+.ifs .ifs-crumbs button.crumb.current {
+  font-weight: 600;
+}
+
+.ifs .ifs-path-edit {
+  padding: 2px 7px;
+}
+
+.ifs-path[hidden] {
+  display: none;
+}
+
+/* Tree pane + splitter + list. */
+.ifs-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ifs-treepane {
+  width: 220px;
+  flex: none;
+  overflow: auto;
+  border-right: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.ifs-treepane[hidden],
+.ifs-vsplit[hidden] {
+  display: none;
+}
+
+.ifs-vsplit {
+  width: 5px;
+  flex: none;
+  cursor: col-resize;
+  background: var(--chrome-bg);
+}
+
+.ifs-tree {
+  padding: 4px 0;
+  font-size: 13px;
+  user-select: none;
+}
+
+.ifs-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ifs-node:hover,
+.ifs-node.drop-target {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.ifs-node.current {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.ifs-node.error .name {
+  text-decoration: underline dotted;
+}
+
+.ifs-node .arrow {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  opacity: 0.8;
+}
+
+.ifs-node .icon {
+  display: inline-block;
+  width: 14px;
+  height: 11px;
+  border: 1px solid #b8891f;
+  border-radius: 2px;
+  background: #d9a93a;
+}
+
+.ifs-list tbody tr.drop-target {
+  outline: 1px dashed var(--tab-accent);
+  outline-offset: -1px;
+}
+
 .ifs-fav {
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
