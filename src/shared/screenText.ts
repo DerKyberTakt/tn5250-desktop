@@ -215,3 +215,47 @@ export function expandTabs(line: string, opt: PasteOptions): Array<{ text: strin
   if (buf) out.push({ text: buf });
   return out;
 }
+
+/** A subfile found on the screen by its SFLEND marker; rows are 0-based and inclusive. */
+export interface SubfileArea {
+  top: number;
+  bottom: number;
+  /** 'more' = More... or + (there are records after this page); 'bottom' = Bottom (the last page). */
+  end: 'more' | 'bottom';
+  /** Column of the marker text, where the scroll bar should sit. */
+  col: number;
+}
+
+/**
+ * Finds subfiles by the text SFLEND(*MORE) / (*PLUS) puts at the right end of the row
+ * after the last record: "More...", "Bottom" or "+". The subfile is taken to be the block
+ * of rows above the marker up to (not including) the nearest row that is blank or holds
+ * an underlined heading, which is how subfile headings are usually written. Rows with
+ * host scroll bars are not considered; the host's own bar wins.
+ */
+export function detectSubfiles(s: Pick<ScreenSnapshot, 'rows' | 'cols' | 'text' | 'attrs'>): SubfileArea[] {
+  const out: SubfileArea[] = [];
+  const underlined = (row: number): boolean => {
+    let attr = ATTR_NORMAL;
+    for (let i = row * s.cols; i < (row + 1) * s.cols; i++) {
+      const a = s.attrs[i] ?? 0;
+      if (isAttribute(a)) attr = a;
+      else if (s.text.charAt(i) !== ' ' && s.text.charAt(i) !== NULL && decodeAttribute(attr).underline) return true;
+    }
+    return false;
+  };
+  const blank = (row: number): boolean => rowText(s, row).trim() === '';
+  for (let row = 1; row < s.rows; row++) {
+    const line = rowText(s, row);
+    const trimmed = line.trimEnd();
+    const m = /(More\.\.\.|Bottom|\+)$/.exec(trimmed);
+    if (!m || m.index < s.cols - 12) continue;
+    // The marker row itself is the row after the last record; the records are above it.
+    let top = row - 1;
+    while (top > 0 && !blank(top - 1) && !underlined(top - 1)) top--;
+    if (top > row - 1 || blank(top)) continue;
+    out.push({ top, bottom: row, end: m[1] === 'Bottom' ? 'bottom' : 'more', col: m.index });
+    row = row + 1;
+  }
+  return out;
+}

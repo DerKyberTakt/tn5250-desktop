@@ -13,6 +13,30 @@ export interface SnapshotField {
   bypass: boolean;
 }
 
+/** A GUI window the host created (enhanced 5250 Create Window); the rectangle includes the border. */
+export interface SnapshotWindow {
+  row: number;
+  col: number;
+  rows: number;
+  cols: number;
+  title?: { text: string; align: 'center' | 'left' | 'right' };
+  footer?: { text: string; align: 'center' | 'left' | 'right' };
+}
+
+/** A scroll bar the host defined (enhanced 5250 Define Scroll Bar Field, DDS SFLEND(*SCRBAR)). */
+export interface SnapshotScrollBar {
+  /** Cell index of the top-left cell; identifies the bar in a 'scroll' message. */
+  addr: number;
+  row: number;
+  col: number;
+  horizontal: boolean;
+  /** Rows (vertical) or columns (horizontal) the bar occupies, arrows included; vertical bars are 3 columns wide. */
+  size: number;
+  /** Rows (columns) the application can scroll through, and how many are above (left of) the first shown. */
+  total: number;
+  pos: number;
+}
+
 export interface ScreenSnapshot {
   rows: number;
   cols: number;
@@ -31,6 +55,8 @@ export interface ScreenSnapshot {
    */
   attrs: number[];
   cursor: { row: number; col: number };
+  /** Enhanced 5250 constructs drawn by the terminal (absent on demo screens). */
+  gui?: { windows: SnapshotWindow[]; scrollBars: SnapshotScrollBar[] };
 }
 
 export type InputInhibit = 'none' | 'system' | 'error';
@@ -100,6 +126,8 @@ export type WebviewToHost =
   | { type: 'action'; action: KeyAction }
   | { type: 'text'; text: string }
   | { type: 'click'; row: number; col: number }
+  /** Pointer use of a host scroll bar: forward = toward the end (Roll Up / Roll Right); increment rows or columns (1 = arrow, 0 = a page). */
+  | { type: 'scroll'; addr: number; forward: boolean; increment: number }
   | { type: 'copy'; text: string }
   /** Ctrl+V / Shift+Insert: asks the host for the clipboard text (webviews cannot read it). */
   | { type: 'paste' }

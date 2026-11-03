@@ -1,9 +1,42 @@
 import { ATTR_NORMAL, decodeAttribute, isAttribute, type Color } from '../engine/attributes';
-import type { ScreenSnapshot } from '../shared/protocol';
-import { decoratedFieldCells, fieldRanges, keyLabelsIn, markedFieldRanges, rowText, urlsIn, type FieldRange } from '../shared/screenText';
+import type { ScreenSnapshot, SnapshotScrollBar, SnapshotWindow } from '../shared/protocol';
+import { decoratedFieldCells, detectSubfiles, fieldRanges, keyLabelsIn, markedFieldRanges, rowText, urlsIn, type FieldRange, type SubfileArea } from '../shared/screenText';
 import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
 import { highlightScreen, Tok } from '../shared/sourceHighlight';
 import { fitFont } from './fit';
+import { scrollBarGeometry, scrollBarHit, type Rect, type ScrollBarGeometry, type ScrollHit } from './gui';
+
+/** Width of the gutter right of the text where the synthetic subfile scroll bar lives. */
+const GUTTER = 18;
+
+/** A scroll bar on the screen: one the host defined, or the synthetic one beside a subfile. */
+export type ScrollBarRef = { kind: 'host'; bar: SnapshotScrollBar } | { kind: 'subfile'; area: SubfileArea; index: number };
+
+export interface ScrollBarTarget {
+  ref: ScrollBarRef;
+  hit: ScrollHit;
+  geometry: ScrollBarGeometry;
+}
+
+function refKey(ref: ScrollBarRef): string {
+  return ref.kind === 'host' ? `h${ref.bar.addr}` : `s${ref.index}`;
+}
+
+/** Cells of every GUI window border: the top and bottom rows and the three columns at each side. */
+function windowBorderCells(s: ScreenSnapshot): Uint8Array<ArrayBuffer> {
+  const mask = new Uint8Array(s.rows * s.cols);
+  for (const w of s.gui?.windows ?? []) {
+    for (let r = 0; r < w.rows; r++) {
+      const base = (w.row + r) * s.cols + w.col;
+      if (r === 0 || r === w.rows - 1) mask.fill(1, base, base + w.cols);
+      else {
+        mask.fill(1, base, base + Math.min(3, w.cols));
+        mask.fill(1, base + Math.max(0, w.cols - 3), base + w.cols);
+      }
+    }
+  }
+  return mask;
+}
 
 /** Enhanced mode draws no box around input fields longer than this (characters). */
 const BOX_MAX_FIELD_LENGTH = 60;
@@ -117,6 +150,8 @@ export interface RendererOptions {
   watermarkOffsetY: number;
   underlineUrls: boolean;
   keyButtons: boolean;
+  /** Draw a scroll bar beside every subfile (More... / Bottom), not only host-defined ones. */
+  subfileScrollBar: boolean;
   demoMode: boolean;
   demoLabel: string;
   demoColor: string;
@@ -165,6 +200,7 @@ export class Renderer {
     watermarkOffsetY: 0,
     underlineUrls: true,
     keyButtons: false,
+    subfileScrollBar: false,
     demoMode: false,
     demoLabel: 'DEMO',
     demoColor: '#ff9f1c',
@@ -179,6 +215,16 @@ export class Renderer {
   private blinkOn = true;
   private watermarkImage: HTMLImageElement | undefined;
   private ruleCell: { row: number; col: number } | undefined;
+  /** Subfiles found for the synthetic scroll bar (only when the option is on). */
+  private subfiles: SubfileArea[] = [];
+  /** 1 where a cell is part of a GUI window border (enhanced mode draws a frame instead of the characters). */
+  private windowBorderMask = new Uint8Array(0);
+  /** The scroll bar part under the mouse, for hover feedback. */
+  private scrollHover: ScrollBarTarget | undefined;
+  /** While the thumb of a host bar is dragged: the position it is shown at. */
+  private thumbPreview: { addr: number; pos: number } | undefined;
+  /** Extra canvas width right of the text (synthetic scroll bar). */
+  private gutter = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -214,7 +260,84 @@ export class Renderer {
     this.ranges = fieldRanges(screen);
     this.boxRanges = markedFieldRanges(screen);
     this.syntax = highlightScreen(screen);
+    this.subfiles = this.options.subfileScrollBar && !screen.gui?.scrollBars.length ? detectSubfiles(screen) : [];
+    this.windowBorderMask = windowBorderCells(screen);
+    this.thumbPreview = undefined;
     if (resized) this.layout();
+    this.draw();
+  }
+
+  /** The scroll bars on the screen: the host's, or the synthetic subfile ones. */
+  private scrollBars(): ScrollBarRef[] {
+    const host = this.screen?.gui?.scrollBars ?? [];
+    if (host.length > 0) return host.map((bar) => ({ kind: 'host', bar }));
+    return this.subfiles.map((area, index) => ({ kind: 'subfile', area, index }));
+  }
+
+  private geometryFor(ref: ScrollBarRef): ScrollBarGeometry {
+    if (ref.kind === 'host') {
+      const b = ref.bar;
+      const preview = this.thumbPreview?.addr === b.addr ? this.thumbPreview.pos : undefined;
+      return scrollBarGeometry({
+        horizontal: b.horizontal,
+        x: this.x(b.col),
+        y: this.y(b.row),
+        cellW: this.cellW,
+        cellH: this.cellH,
+        size: b.size,
+        total: b.total,
+        pos: preview ?? b.pos,
+        page: b.horizontal ? b.size - 2 : b.size,
+      });
+    }
+    // Synthetic: in the gutter right of the text, as tall as the subfile block plus its marker row.
+    const a = ref.area;
+    const size = a.bottom - a.top + 1;
+    return scrollBarGeometry({
+      horizontal: false,
+      x: this.x(this.screen?.cols ?? 80) + 2,
+      y: this.y(a.top),
+      cellW: GUTTER - 4,
+      cellH: this.cellH,
+      size,
+      // Position is unknown for a synthetic bar: the thumb sits at the top while there is more, at the bottom on the last page.
+      total: 3,
+      pos: a.end === 'bottom' ? 2 : 0,
+      page: 1,
+      spanCells: 1,
+    });
+  }
+
+  /** The scroll bar part at a point in canvas CSS pixels, if any. */
+  scrollBarAt(x: number, y: number): ScrollBarTarget | undefined {
+    const px = x - this.pad;
+    const py = y - this.pad;
+    for (const ref of this.scrollBars()) {
+      const geometry = this.geometryFor(ref);
+      const hit = scrollBarHit(geometry, px, py);
+      if (hit) return { ref, hit, geometry };
+    }
+    return undefined;
+  }
+
+  /** Hover feedback for scroll bars; pass undefined when the mouse left them. */
+  setScrollHover(target: ScrollBarTarget | undefined): void {
+    const before = this.scrollHover;
+    if (before === target) return;
+    const same = before && target && before.ref.kind === target.ref.kind && before.hit.part === target.hit.part && refKey(before.ref) === refKey(target.ref);
+    this.scrollHover = target;
+    if (!same) this.draw();
+  }
+
+  /** Shows the thumb of a host bar at another position while it is dragged. */
+  setThumbPreview(addr: number, pos: number): void {
+    this.thumbPreview = { addr, pos };
+    this.draw();
+  }
+
+  clearThumbPreview(): void {
+    if (!this.thumbPreview) return;
+    this.thumbPreview = undefined;
     this.draw();
   }
 
@@ -301,8 +424,9 @@ export class Renderer {
     if (!this.screen || this.viewportW <= 0 || this.viewportH <= 0) return;
     const { rows, cols } = this.screen;
     this.pad = this.options.uiMode === 'enhanced' ? this.theme.enhanced.padding : 0;
+    this.gutter = this.options.subfileScrollBar ? GUTTER : 0;
     const m = fitFont({
-      boxW: this.viewportW,
+      boxW: this.viewportW - this.gutter,
       boxH: this.viewportH,
       pad: this.pad,
       rows,
@@ -317,7 +441,8 @@ export class Renderer {
     this.fontPx = m.px;
     this.cellW = m.cellW;
     this.cellH = m.cellH;
-    const { cssW, cssH } = m;
+    const cssW = m.cssW + this.gutter;
+    const cssH = m.cssH;
     const dpr = window.devicePixelRatio || 1;
     this.canvas.style.width = `${cssW}px`;
     this.canvas.style.height = `${cssH}px`;
@@ -362,8 +487,9 @@ export class Renderer {
 
     ctx.save();
     ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
-    this.drawBackground(w + this.pad * 2, h + this.pad * 2, enhanced);
+    this.drawBackground(w + this.pad * 2 + this.gutter, h + this.pad * 2, enhanced);
     ctx.restore();
+    if (enhanced) this.drawWindowFrames();
 
     ctx.font = this.font();
     ctx.textBaseline = 'middle';
@@ -397,6 +523,8 @@ export class Renderer {
       // A null cell outside any field shows nothing: no underline, no reverse.
       const decorated = ch !== NULL || this.fieldMask[i] === 1;
       if (!decorated || current.nondisplay) continue;
+      // Enhanced mode draws window borders as frames; the border characters stay hidden.
+      if (enhanced && this.windowBorderMask[i] === 1) continue;
 
       const row = Math.floor(i / cols);
       const col = i % cols;
@@ -448,6 +576,8 @@ export class Renderer {
       ctx.fillRect(this.x(r.col1), this.y(r.row1), (r.col2 - r.col1 + 1) * this.cellW, (r.row2 - r.row1 + 1) * this.cellH);
     }
 
+    this.drawGui(enhanced);
+
     // Cursor. Never reveal nondisplay data under a block cursor.
     const { row, col } = s.cursor;
     if (row >= 0 && row < rows && col >= 0 && col < cols && (this.blinkOn || !this.options.cursorBlink)) {
@@ -469,6 +599,134 @@ export class Renderer {
 
     // The rule line goes on top so it is always visible.
     this.drawRuleLine(w, h);
+  }
+
+  /** Scroll bars: the host's (Define Scroll Bar Field) or the synthetic subfile ones. */
+  private drawGui(enhanced: boolean): void {
+    for (const ref of this.scrollBars()) {
+      const hover = this.scrollHover && refKey(this.scrollHover.ref) === refKey(ref) ? this.scrollHover.hit.part : undefined;
+      this.drawScrollBar(this.geometryFor(ref), enhanced, hover, this.thumbPreview !== undefined && ref.kind === 'host' && this.thumbPreview.addr === ref.bar.addr);
+    }
+  }
+
+  private drawScrollBar(g: ScrollBarGeometry, enhanced: boolean, hover: ScrollHit['part'] | undefined, dragging: boolean): void {
+    const ctx = this.ctx;
+    const e = this.theme.enhanced;
+    const accent = enhanced ? e.activeField : this.theme.colors.blue;
+    const border = enhanced ? e.fieldBorder : this.theme.colors.blue;
+    const radius = Math.min(6, g.box.w / 2, g.box.h / 2);
+    ctx.save();
+    // Track.
+    this.roundRect(g.box.x, g.box.y, g.box.w, g.box.h, radius);
+    ctx.fillStyle = enhanced ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.10)';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = border;
+    ctx.globalAlpha = 0.7;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // Arrows.
+    const arrow = (r: Rect, dir: 'up' | 'down' | 'left' | 'right', lit: boolean): void => {
+      if (lit) {
+        this.roundRect(r.x, r.y, r.w, r.h, radius);
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fill();
+      }
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      const s = Math.max(2.5, Math.min(r.w, r.h) * 0.28);
+      ctx.beginPath();
+      if (dir === 'up') {
+        ctx.moveTo(cx - s, cy + s / 2);
+        ctx.lineTo(cx, cy - s / 2);
+        ctx.lineTo(cx + s, cy + s / 2);
+      } else if (dir === 'down') {
+        ctx.moveTo(cx - s, cy - s / 2);
+        ctx.lineTo(cx, cy + s / 2);
+        ctx.lineTo(cx + s, cy - s / 2);
+      } else if (dir === 'left') {
+        ctx.moveTo(cx + s / 2, cy - s);
+        ctx.lineTo(cx - s / 2, cy);
+        ctx.lineTo(cx + s / 2, cy + s);
+      } else {
+        ctx.moveTo(cx - s / 2, cy - s);
+        ctx.lineTo(cx + s / 2, cy);
+        ctx.lineTo(cx - s / 2, cy + s);
+      }
+      ctx.closePath();
+      ctx.fillStyle = lit ? '#ffffff' : accent;
+      ctx.fill();
+    };
+    arrow(g.back, g.horizontal ? 'left' : 'up', hover === 'back');
+    arrow(g.forward, g.horizontal ? 'right' : 'down', hover === 'forward');
+    // Thumb.
+    const inset = 2;
+    const t: Rect = { x: g.thumb.x + inset, y: g.thumb.y + inset, w: Math.max(2, g.thumb.w - 2 * inset), h: Math.max(2, g.thumb.h - 2 * inset) };
+    this.roundRect(t.x, t.y, t.w, t.h, Math.max(1, radius - inset));
+    const lit = hover === 'thumb' || dragging;
+    ctx.fillStyle = lit ? '#ffffff' : accent;
+    if (enhanced && lit) {
+      ctx.shadowColor = accent;
+      ctx.shadowBlur = 8;
+    }
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * Enhanced mode: a GUI window is a rounded frame with a soft shadow and its title on the
+   * top edge, in place of the border characters the host sent for a character display.
+   */
+  private drawWindowFrames(): void {
+    const s = this.screen;
+    if (!s?.gui) return;
+    const ctx = this.ctx;
+    const e = this.theme.enhanced;
+    for (const w of s.gui.windows) {
+      // The frame runs through the middle of the border cells: the corner characters sit
+      // in column 1 of the rectangle (column 0 is the attribute), the text starts at column 3.
+      const x = this.x(w.col + 1) + this.cellW / 2;
+      const y = this.y(w.row) + this.cellH / 2;
+      const width = (w.cols - 3) * this.cellW;
+      const height = (w.rows - 1) * this.cellH;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.55)';
+      ctx.shadowBlur = 18;
+      ctx.shadowOffsetX = 4;
+      ctx.shadowOffsetY = 6;
+      this.roundRect(x, y, width, height, e.cornerRadius + 2);
+      ctx.fillStyle = e.gradientEnd;
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      this.roundRect(x, y, width, height, e.cornerRadius + 2);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = e.fieldBorder;
+      ctx.stroke();
+      ctx.restore();
+      this.drawWindowText(w.title, y, x, width);
+      this.drawWindowText(w.footer, y + height, x, width);
+    }
+  }
+
+  private drawWindowText(t: SnapshotWindow['title'], lineY: number, x: number, width: number): void {
+    if (!t?.text) return;
+    const ctx = this.ctx;
+    const e = this.theme.enhanced;
+    ctx.save();
+    ctx.font = this.font();
+    ctx.textBaseline = 'middle';
+    const textW = ctx.measureText(t.text).width;
+    const padX = this.cellW * 0.6;
+    const boxW = Math.min(width - this.cellW, textW + padX * 2);
+    const bx = t.align === 'left' ? x + this.cellW : t.align === 'right' ? x + width - this.cellW - boxW : x + (width - boxW) / 2;
+    this.roundRect(bx, lineY - this.cellH / 2 + 1, boxW, this.cellH - 2, e.cornerRadius);
+    ctx.fillStyle = e.fieldBorder;
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText(t.text, bx + padX, lineY, boxW - padX * 2);
+    ctx.restore();
   }
 
   private drawBackground(w: number, h: number, enhanced: boolean): void {

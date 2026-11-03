@@ -1,5 +1,5 @@
 import type { CodePage } from './codepage';
-import type { DataStreamProcessor } from './datastream';
+import { AID_ROLL_DOWN, AID_ROLL_LEFT, AID_ROLL_RIGHT, AID_ROLL_UP, type DataStreamProcessor } from './datastream';
 import { FLAG_ATN, FLAG_SRQ, FLAG_TRQ, OP_NOOP, OP_PUT_GET } from './gds';
 import type { Field, Screen } from './screen';
 import type { TerminalState } from './state';
@@ -606,6 +606,22 @@ export class Keyboard {
     this.screen.buffer[this.screen.cursor] = EBCDIC_FIELD_MARK;
     f.mdt = true;
     if (this.screen.cursor + 1 < f.end) this.screen.cursor += 1;
+  }
+
+  /**
+   * Pointer use of a host scroll bar (enhanced 5250): the bar's MDT goes on with the
+   * increment to report (1 = an arrow, more = a slider drag, 0 = a page), the cursor moves
+   * onto the bar when the host asked for that, and a Roll AID goes to the host: Roll Up /
+   * Roll Right toward the end, Roll Down / Roll Left back.
+   */
+  scrollBar(addr: number, forward: boolean, increment: number): void {
+    const bar = this.screen.scrollBarAt(addr);
+    if (!bar || this.state.inputInhibited !== 'none') return;
+    bar.mdt = true;
+    bar.increment = Math.max(0, Math.floor(increment));
+    if (bar.moveCursor) this.screen.cursor = bar.addr + (bar.horizontal ? 1 : this.screen.cols);
+    const aid = bar.horizontal ? (forward ? AID_ROLL_RIGHT : AID_ROLL_LEFT) : forward ? AID_ROLL_UP : AID_ROLL_DOWN;
+    this.sendAid(aid);
   }
 
   private sendAid(aid: number): void {

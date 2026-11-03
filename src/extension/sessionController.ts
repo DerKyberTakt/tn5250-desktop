@@ -242,6 +242,13 @@ export class SessionController {
     this.session.setCursor(row, col);
   }
 
+  /** Pointer use of a host scroll bar (arrow, page, slider drag). */
+  scrollBar(addr: number, forward: boolean, increment: number): void {
+    if (!this.connected) return;
+    this.session.scrollBar(addr, forward, increment);
+    this.touch();
+  }
+
   publish(): void {
     this.events.screen(this.session.snapshot(), this.session.oia(this.connected));
   }

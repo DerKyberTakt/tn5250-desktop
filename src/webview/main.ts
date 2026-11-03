@@ -5,7 +5,8 @@ import { doubleClickRange, expandTabs, fieldRanges, hotspotAt, urlAt } from '../
 import { SETTINGS_DEFAULTS, effectiveKeymap } from '../shared/settings';
 import { isBareModifier, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
 import { ConnectionOverlay } from './connectionOverlay';
-import { Renderer } from './renderer';
+import { dragUnits } from './gui';
+import { Renderer, type ScrollBarTarget } from './renderer';
 
 const vscode = acquireVsCodeApi();
 
@@ -169,6 +170,7 @@ function applyConfig(): void {
     watermarkOffsetY: st.watermarkOffsetY,
     underlineUrls: st.hotspotsUrl,
     keyButtons: st.hotspots3d || st.uiMode === 'enhanced',
+    subfileScrollBar: st.subfileScrollBar,
     demoMode: st.demoMode,
     demoLabel: st.demoLabel,
     demoColor: st.demoColor,
@@ -455,10 +457,39 @@ canvas.addEventListener('dblclick', (e) => {
   if (range) renderer.selectRange(cell.row, range.start, range.end);
 });
 
+function canvasPoint(e: MouseEvent): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+/** Sends one scroll request for a scroll bar part: arrows one row, the track a page. */
+function scrollRequest(target: ScrollBarTarget): void {
+  const forward = target.hit.part === 'forward' || (target.hit.part === 'track' && target.hit.forward);
+  if (target.ref.kind === 'subfile') {
+    post({ type: 'action', action: forward ? 'pageDown' : 'pageUp' });
+    return;
+  }
+  const increment = target.hit.part === 'track' ? 0 : 1;
+  post({ type: 'scroll', addr: target.ref.bar.addr, forward, increment });
+}
+
 let dragging = false;
+/** A host scroll bar thumb being dragged: where it started and what it stands for. */
+let thumbDrag: { target: ScrollBarTarget; startPx: number; units: number } | undefined;
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   terminal.focus();
+  const p = canvasPoint(e);
+  const target = renderer.scrollBarAt(p.x, p.y);
+  if (target) {
+    e.preventDefault();
+    if (target.hit.part === 'thumb' && target.ref.kind === 'host') {
+      thumbDrag = { target, startPx: target.geometry.horizontal ? p.x : p.y, units: 0 };
+    } else {
+      scrollRequest(target);
+    }
+    return;
+  }
   const cell = cellFromMouse(e);
   if (!cell) return;
   dragging = true;
@@ -467,11 +498,40 @@ canvas.addEventListener('mousedown', (e) => {
   renderer.startSelection(cell.row, cell.col);
 });
 window.addEventListener('mousemove', (e) => {
-  if (!dragging) return;
+  if (thumbDrag) {
+    const { target, startPx } = thumbDrag;
+    if (target.ref.kind !== 'host') return;
+    const p = canvasPoint(e);
+    const bar = target.ref.bar;
+    const page = bar.horizontal ? bar.size - 2 : bar.size;
+    thumbDrag.units = dragUnits(target.geometry, (target.geometry.horizontal ? p.x : p.y) - startPx, bar.total, bar.pos, page);
+    renderer.setThumbPreview(bar.addr, bar.pos + thumbDrag.units);
+    return;
+  }
+  if (!dragging) {
+    // Hover feedback on scroll bars (only while the mouse is over the canvas).
+    if (e.target === canvas) {
+      const p = canvasPoint(e);
+      const target = renderer.scrollBarAt(p.x, p.y);
+      renderer.setScrollHover(target);
+      canvas.style.cursor = target ? 'pointer' : config.settings.pointer === 'crosshair' ? 'crosshair' : 'default';
+    }
+    return;
+  }
   const cell = cellFromMouse(e);
   if (cell) renderer.extendSelection(cell.row, cell.col);
 });
+canvas.addEventListener('mouseleave', () => renderer.setScrollHover(undefined));
 window.addEventListener('mouseup', (e) => {
+  if (thumbDrag) {
+    const { target, units } = thumbDrag;
+    thumbDrag = undefined;
+    renderer.clearThumbPreview();
+    if (target.ref.kind === 'host' && units !== 0) {
+      post({ type: 'scroll', addr: target.ref.bar.addr, forward: units > 0, increment: Math.abs(units) });
+    }
+    return;
+  }
   if (!dragging) return;
   dragging = false;
   renderer.endSelection();

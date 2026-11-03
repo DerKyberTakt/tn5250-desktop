@@ -1,7 +1,7 @@
-import { isAttribute } from './attributes';
+import { ATTR_NORMAL, isAttribute } from './attributes';
 import type { CodePage } from './codepage';
 import { OP_NOOP, OP_PUT_GET, OP_SAVE_SCREEN } from './gds';
-import { Field, type GuiWindow, Screen } from './screen';
+import { Field, type GuiScrollBar, type GuiText, type GuiWindow, Screen } from './screen';
 import type { ReadKind, TerminalState } from './state';
 
 export const ESC = 0x04;
@@ -66,8 +66,16 @@ export interface TerminalInfo {
 
 /** Structured field types of class D9 that the enhanced interface brings. */
 const WDSF_CREATE_WINDOW = 0x51;
+const WDSF_DEFINE_SCROLL_BAR = 0x53;
 const WDSF_REMOVE_GUI_WINDOW = 0x59;
+const WDSF_REMOVE_GUI_SCROLL_BAR = 0x5b;
 const WDSF_REMOVE_ALL_GUI = 0x5f;
+
+/** Roll AIDs a scroll bar sends: toward the end (Roll Up / Roll Right) or back (Roll Down / Roll Left). */
+export const AID_ROLL_UP = 0xf5;
+export const AID_ROLL_DOWN = 0xf4;
+export const AID_ROLL_LEFT = 0xd9;
+export const AID_ROLL_RIGHT = 0xda;
 
 class Reader {
   pos = 0;
@@ -204,8 +212,9 @@ export class DataStreamProcessor {
           break;
         case CMD_RESTORE_PARTIAL_SCREEN:
           // The image that follows is a full write of what the host saved; whatever
-          // windows were open on top are gone with it.
+          // windows and scroll bars were open on top are gone with it.
           this.screen.windows = [];
+          this.screen.scrollBars = [];
           break;
         case CMD_ROLL: {
           const b = r.u8();
@@ -248,12 +257,31 @@ export class DataStreamProcessor {
     return Uint8Array.from([s.rowOf(s.cursor) + 1, s.colOf(s.cursor) + 1, aid]);
   }
 
-  /** Builds the AID response for the pending read (or the kind given). */
+  /**
+   * Builds the AID response for the pending read (or the kind given). Entry fields and
+   * scroll bars come back in screen order; a scroll bar is 4 bytes (the scroll increment
+   * set by pointer use), after an SBA of its own address on MDT reads, and only when its
+   * MDT is on. Reporting resets the bar's increment and MDT, as the host redefines it.
+   */
   readResponse(kind: ReadKind, aid: number): Uint8Array {
     const s = this.screen;
     const out: number[] = [s.rowOf(s.cursor) + 1, s.colOf(s.cursor) + 1, aid];
-    for (const f of s.fields) {
-      if (f.bypass) continue;
+    type Entry = { addr: number; field?: Field; bar?: GuiScrollBar };
+    const entries: Entry[] = [
+      ...s.fields.filter((f) => !f.bypass).map((f) => ({ addr: f.start - 1, field: f })),
+      ...s.scrollBars.map((b) => ({ addr: b.addr, bar: b })),
+    ].sort((a, b) => a.addr - b.addr);
+    for (const { field: f, bar } of entries) {
+      if (bar) {
+        if (kind !== 'input' && !bar.mdt) continue;
+        if (kind !== 'input') out.push(O_SBA, s.rowOf(bar.addr) + 1, s.colOf(bar.addr) + 1);
+        const n = bar.increment >>> 0;
+        out.push((n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff);
+        bar.increment = 0;
+        bar.mdt = false;
+        continue;
+      }
+      if (!f) continue;
       const bytes = s.fieldBytes(f);
       if (kind === 'input') {
         for (const b of bytes) out.push(b === 0 ? 0x40 : b);
@@ -367,15 +395,66 @@ export class DataStreamProcessor {
       case WDSF_CREATE_WINDOW:
         this.createWindow(data);
         break;
+      case WDSF_DEFINE_SCROLL_BAR:
+        this.defineScrollBar(data);
+        break;
       case WDSF_REMOVE_GUI_WINDOW:
         this.removeWindow();
         break;
+      case WDSF_REMOVE_GUI_SCROLL_BAR:
+        this.screen.scrollBars = this.screen.scrollBars.filter((b) => b.addr !== this.addr);
+        break;
       case WDSF_REMOVE_ALL_GUI:
         while (this.screen.windows.length > 0) this.removeWindow();
+        this.screen.scrollBars = [];
         break;
       default:
         break;
     }
+  }
+
+  /**
+   * Define Scroll Bar Field: flags (bit 0 horizontal, bit 1 move the cursor onto the bar
+   * when the pointer uses it, bit 7 MDT), reserved, total rows/columns (4 bytes), slider
+   * position (4 bytes), rows or columns the bar occupies, then optional minor structures
+   * (0x03 scroll bar indicators: characters and highlighting, which the terminal draws its
+   * own way). The bar sits at the current write address: a vertical bar is 3 columns wide
+   * (attribute, bar, attribute), a horizontal one 1 row. The cells under it are blanked so
+   * the terminal can draw the bar; the address is not moved.
+   */
+  private defineScrollBar(data: Uint8Array): void {
+    const s = this.screen;
+    if (data.length < 11) return;
+    const flags = data[0] as number;
+    const u32 = (i: number): number => (((data[i] as number) << 24) | ((data[i + 1] as number) << 16) | ((data[i + 2] as number) << 8) | (data[i + 3] as number)) >>> 0;
+    const horizontal = (flags & 0x80) !== 0;
+    const size = data[10] as number;
+    const row = s.rowOf(this.addr);
+    const col = s.colOf(this.addr);
+    if (size < (horizontal ? 7 : 3)) return;
+    if (horizontal ? col + size > s.cols : row + size > s.rows || col + 3 > s.cols) return;
+    const bar: GuiScrollBar = {
+      addr: this.addr,
+      horizontal,
+      moveCursor: (flags & 0x40) !== 0,
+      mdt: (flags & 0x01) !== 0,
+      total: u32(2),
+      pos: u32(6),
+      size,
+      increment: 0,
+    };
+    if (horizontal) {
+      s.buffer[s.addr(row, col)] = ATTR_NORMAL;
+      s.buffer.fill(0, s.addr(row, col + 1), s.addr(row, col + size - 1));
+      s.buffer[s.addr(row, col + size - 1)] = ATTR_NORMAL;
+    } else {
+      for (let r = 0; r < size; r++) {
+        s.buffer[s.addr(row + r, col)] = ATTR_NORMAL;
+        s.buffer[s.addr(row + r, col + 1)] = 0;
+        s.buffer[s.addr(row + r, col + 2)] = ATTR_NORMAL;
+      }
+    }
+    s.addScrollBar(bar);
   }
 
   /**
@@ -395,6 +474,8 @@ export class DataStreamProcessor {
     if (depth === 0 || width === 0) return;
     let attr = 0x3b; // blue reverse image, the DDS WDWBORDER default colour
     const chars = [0x6d, 0x6d, 0x6d, 0x4f, 0x4f, 0x6d, 0x6d, 0x6d]; // '_' and '|'
+    let title: GuiText | undefined;
+    let footer: GuiText | undefined;
     let i = 5;
     while (i < data.length) {
       const len = data[i] ?? 0;
@@ -409,6 +490,15 @@ export class DataStreamProcessor {
           const c = data[i + 5 + k];
           if (c !== undefined && c !== 0x00) chars[k] = c;
         }
+      } else if (type === 0x10 && len > 6) {
+        // Title/footer: flags (bits 0-1 orientation: 00 centred, 01 right, 10 left; bit 2
+        // footer), monochrome attribute, colour attribute, reserved, text.
+        const flags = data[i + 2] ?? 0;
+        const orientation = (flags >> 6) & 0x03;
+        const text = this.codePage.decodeBytes(data, i + 6, i + len).split(String.fromCharCode(0)).join(' ').trim();
+        const entry: GuiText = { text, align: orientation === 1 ? 'right' : orientation === 2 ? 'left' : 'center' };
+        if ((flags & 0x20) !== 0) footer = entry;
+        else title = entry;
       }
       i += len;
     }
@@ -428,7 +518,7 @@ export class DataStreamProcessor {
     };
     const savedFields = s.fields.filter(touches);
     s.fields = s.fields.filter((f) => !touches(f));
-    const win: GuiWindow = { row, col, depth, width, rows, cols, saved, savedFields };
+    const win: GuiWindow = { row, col, depth, width, rows, cols, saved, savedFields, title, footer };
     // Draw: every rectangle cell starts as null, then the border.
     for (let r = 0; r < rows; r++) s.buffer.fill(0, s.addr(row + r, col), s.addr(row + r, col + cols));
     const put = (r: number, c: number, b: number): void => {
@@ -452,6 +542,17 @@ export class DataStreamProcessor {
       put(r, width + 5, 0x20);
     }
     line(depth + 1, ll, bottom, lr);
+    // The title sits in the top border, the footer in the bottom one, as the 5494 writes
+    // them for a character display; the enhanced renderer draws them its own way.
+    const writeText = (r: number, t: GuiText | undefined): void => {
+      if (!t?.text) return;
+      const room = width + 2; // cells between the corner characters
+      const text = this.codePage.encodeString(t.text.slice(0, room));
+      const start = t.align === 'left' ? 0 : t.align === 'right' ? room - text.length : Math.floor((room - text.length) / 2);
+      for (let k = 0; k < text.length; k++) put(r, 2 + start + k, text[k] as number);
+    };
+    writeText(0, title);
+    writeText(depth + 1, footer);
     s.windows.push(win);
   }
 

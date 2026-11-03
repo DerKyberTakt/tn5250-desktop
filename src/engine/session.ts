@@ -128,6 +128,12 @@ export class Session5250 {
     }
   }
 
+  /** Pointer use of a host scroll bar: Roll AID with the increment; see Keyboard.scrollBar. */
+  scrollBar(addr: number, forward: boolean, increment: number): void {
+    this.keyboard.scrollBar(addr, forward, increment);
+    this.notify();
+  }
+
   /** Types text into the current field. */
   type(text: string): void {
     if (this.enqueue({ kind: 'type', text })) return;

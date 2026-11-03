@@ -149,6 +149,8 @@ export interface TerminalSettings {
   keyClick: boolean;
   /** What to do with PC commands the host sends through STRPCCMD (PC Organizer). */
   pcCommands: PcCommandPolicy;
+  /** Draw a scroll bar beside every subfile (More... / Bottom), not only the ones the host defines. */
+  subfileScrollBar: boolean;
 
   /** Key name -> action overrides on top of the ACS layout; null unbinds a key. */
   keymap: Record<string, KeyAction | null>;
@@ -272,6 +274,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   alarm: true,
   keyClick: false,
   pcCommands: 'links',
+  subfileScrollBar: false,
 
   keymap: {},
   keyWarningsIgnored: [],

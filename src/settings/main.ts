@@ -202,6 +202,8 @@ const HELP: Partial<Record<Key, string>> = {
   typeAhead:
     'Keys pressed while the keyboard is locked (X SYSTEM) are kept and replayed when the host unlocks it, so you can type the next screen before it appears. An error message or Reset discards them.',
   mouseWheelPaging: 'The mouse wheel presses Page Up and Page Down (Roll). Ctrl+wheel always zooms.',
+  subfileScrollBar:
+    'Draws a scroll bar beside every subfile that shows More..., Bottom or + at its end, even when the display file does not ask for one (SFLEND(*SCRBAR)). Clicks send Page Up / Page Down. A scroll bar the host defines itself is always shown and can also be dragged.',
   pcCommands:
     'Host programs can ask the PC to run a command (STRPCCMD, PC Organizer), usually START with a web address. Open links: http(s) links open in the browser at once, anything else asks first. Always ask: every command asks. Run everything: nothing asks. Off: the host shows its "PCO.EXE is not active" screen instead.',
 };
@@ -293,6 +295,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'heading', label: 'Viewing' },
       { kind: 'select', key: 'columnSeparators', label: 'Column Separators', options: [['dot', 'Dot'], ['line', 'Line'], ['none', 'None']] },
       YESNO('showStatusLine', 'Status Bar (OIA)'),
+      YESNO('subfileScrollBar', 'Scroll bar on every subfile (More... / Bottom)'),
     ],
   },
   {

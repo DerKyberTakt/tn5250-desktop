@@ -278,6 +278,9 @@ export class TerminalTab {
       case 'click':
         this.controller?.setCursor(msg.row, msg.col);
         break;
+      case 'scroll':
+        this.controller?.scrollBar(msg.addr, msg.forward, msg.increment);
+        break;
       case 'copy':
         void goApp().ClipboardSet(msg.text);
         break;

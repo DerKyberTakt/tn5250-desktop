@@ -115,6 +115,12 @@ export class Field {
  * The terminal draws the border and remembers what the window covers, so Remove GUI
  * Window can put it back; `row`/`col` is the top-left cell of the border rectangle.
  */
+/** Title or footer text of a GUI window (Create Window minor structure 0x10). */
+export interface GuiText {
+  text: string;
+  align: 'center' | 'left' | 'right';
+}
+
 export interface GuiWindow {
   row: number;
   col: number;
@@ -128,6 +134,30 @@ export interface GuiWindow {
   saved: Uint8Array;
   /** Fields that touched the rectangle before the window was drawn. */
   savedFields: Field[];
+  title?: GuiText;
+  footer?: GuiText;
+}
+
+/**
+ * A scroll bar the host defined with the Define Scroll Bar Field structured field
+ * (enhanced 5250; DDS SFLEND(*SCRBAR)). It is an input field of its own: pointer use
+ * sends a Roll AID and the next read returns a 4-byte scroll increment at its address.
+ */
+export interface GuiScrollBar {
+  /** Buffer offset of the top-left cell (the leading attribute). */
+  addr: number;
+  horizontal: boolean;
+  /** Move the text cursor onto the bar when the pointer scrolls it (flag bit 1). */
+  moveCursor: boolean;
+  mdt: boolean;
+  /** Rows (or columns) of data the application can scroll through. */
+  total: number;
+  /** Rows (or columns) above (left of) the first one shown. */
+  pos: number;
+  /** Screen rows (vertical) or columns (horizontal) the bar occupies, arrows included. */
+  size: number;
+  /** Rows (or columns) to scroll, reported with the next read; 1 = arrow, more = slider drag. */
+  increment: number;
 }
 
 export class Screen {
@@ -138,6 +168,8 @@ export class Screen {
   cursor = 0;
   /** Open GUI windows, oldest first. */
   windows: GuiWindow[] = [];
+  /** Scroll bars defined by the host, in screen order. */
+  scrollBars: GuiScrollBar[] = [];
   /** 0-based row used for error messages (Write Error Code). */
   errorRow = 23;
 
@@ -151,6 +183,7 @@ export class Screen {
     this.buffer = new Uint8Array(rows * cols);
     this.fields = [];
     this.windows = [];
+    this.scrollBars = [];
     this.cursor = 0;
     this.errorRow = rows - 1;
   }
@@ -159,11 +192,30 @@ export class Screen {
     this.buffer.fill(0);
     this.fields = [];
     this.windows = [];
+    this.scrollBars = [];
     this.cursor = 0;
   }
 
+  /** A new format (SOH, Clear Format Table): the fields go, and with them the scroll bars, which are format table entries too. */
   clearFormatTable(): void {
     this.fields = [];
+    this.scrollBars = [];
+  }
+
+  /** Adds or redefines a scroll bar at its address, keeping screen order. */
+  addScrollBar(bar: GuiScrollBar): void {
+    const idx = this.scrollBars.findIndex((b) => b.addr === bar.addr);
+    if (idx >= 0) {
+      this.scrollBars[idx] = bar;
+      return;
+    }
+    const pos = this.scrollBars.findIndex((b) => b.addr > bar.addr);
+    if (pos < 0) this.scrollBars.push(bar);
+    else this.scrollBars.splice(pos, 0, bar);
+  }
+
+  scrollBarAt(addr: number): GuiScrollBar | undefined {
+    return this.scrollBars.find((b) => b.addr === addr);
   }
 
   addr(row: number, col: number): number {
@@ -250,6 +302,18 @@ export class Screen {
       fields: this.fields.map((f) => ({ start: f.start, length: f.length, bypass: f.bypass })),
       attrs,
       cursor: { row: this.rowOf(this.cursor), col: this.colOf(this.cursor) },
+      gui: {
+        windows: this.windows.map((w) => ({ row: w.row, col: w.col, rows: w.rows, cols: w.cols, title: w.title, footer: w.footer })),
+        scrollBars: this.scrollBars.map((b) => ({
+          addr: b.addr,
+          row: this.rowOf(b.addr),
+          col: this.colOf(b.addr),
+          horizontal: b.horizontal,
+          size: b.size,
+          total: b.total,
+          pos: b.pos,
+        })),
+      },
     };
   }
 
