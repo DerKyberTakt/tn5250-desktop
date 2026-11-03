@@ -72,7 +72,7 @@ type SqlResult struct {
 
 const defaultPageRows = 500
 
-var errCancelled = errors.New("cancelled")
+var errSQLCancelled = errors.New("cancelled")
 
 // sqlCache keeps a materialised result so the page can fetch it page by page.
 type sqlCache struct {
@@ -308,7 +308,7 @@ func (s *sqlSession) query(stmt string, maxRows int, start time.Time) (SqlResult
 		return failedResult(res, start), nil
 	}
 	if s.cancel.Load() {
-		return SqlResult{}, errCancelled
+		return SqlResult{}, errSQLCancelled
 	}
 
 	// Export with a header row; a host that does not know ADDCOLNAM gets the plain form
@@ -325,7 +325,7 @@ func (s *sqlSession) query(stmt string, maxRows int, start time.Time) (SqlResult
 		return failed(err, start), nil
 	}
 	if s.cancel.Load() {
-		return SqlResult{}, errCancelled
+		return SqlResult{}, errSQLCancelled
 	}
 
 	// Column types from the catalogue of the QTEMP table (best effort: a failure here
