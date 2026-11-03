@@ -229,6 +229,11 @@ select {
   align-items: center;
   gap: 6px 10px;
   margin: 4px 0 12px;
+  max-width: 760px; /* no wider than the key tables below */
+}
+
+.keyboard > p.note {
+  max-width: 760px;
 }
 
 .keyboard .kb-toolbar .searchbox {

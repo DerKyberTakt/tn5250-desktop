@@ -1127,8 +1127,7 @@ function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLE
               return;
             }
             search.value = `key:${cap.code}`;
-            keySearch = search.value;
-            fill();
+            search.dispatchEvent(new Event('input')); // runs the filter and shows the clear (x)
           };
           r.append(key);
         }
@@ -1259,7 +1258,7 @@ function renderKeyboard(): HTMLElement {
     warn.append(b, ignore);
     box.append(warn);
   }
-  box.append(el('p', 'note', 'Click Assign, then type the key or key combination to assign it at once (a modifier on its own, like Right Ctrl, is taken when you release it). Or click the keys on the picture to build it and press Save keybind; keys you type then add to the picture. Esc or Cancel leaves Assign. Changes apply to this profile only; sessions inherit the defaults.'));
+  box.append(el('p', 'note', 'Assign, then type the key or combination (a modifier on its own, like Right Ctrl, counts when released), or click the keys on the picture and press Save keybind. Esc or Cancel leaves Assign. A click on a key cap without Assign filters the list; the x clears it. This profile only; sessions inherit the defaults.'));
   box.append(tables);
   fill();
   return box;
