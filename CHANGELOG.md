@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.5 - 2026-11-03
 
 - Keyboard settings page: Assign takes Ctrl combinations and a bare modifier on release (Esc cancels); a key taken from another function says so with Undo; a function whose ACS key is gone is flagged with Restore; Import and Reset at the top with explanations; the .kmp picker opens in Documents\IBM\iAccessClient\Emulator and the import lands in the form until saved (shared from tn5250-terminal).
 - A bare Alt press is the terminal's (no menu focus on release); unmapped Ctrl/Alt chords are consumed in the desktop app so the browser engine's own shortcuts never fire; the key overlay names bare modifiers by their key.
