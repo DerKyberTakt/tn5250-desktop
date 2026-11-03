@@ -149,6 +149,8 @@ export interface TerminalSettings {
 
   /** Key name -> action overrides on top of the ACS layout; null unbinds a key. */
   keymap: Record<string, KeyAction | null>;
+  /** Functions whose "no key for ..." warning on the Keyboard page was dismissed; cleared again when the function gets a key or a .kmp is imported. */
+  keyWarningsIgnored: KeyAction[];
 }
 
 export const SETTINGS_DEFAULTS: TerminalSettings = {
@@ -268,6 +270,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   keyClick: false,
 
   keymap: {},
+  keyWarningsIgnored: [],
 };
 
 export const SETTINGS_KEYS = Object.keys(SETTINGS_DEFAULTS) as Array<keyof TerminalSettings>;

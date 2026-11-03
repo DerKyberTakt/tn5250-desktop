@@ -181,9 +181,8 @@ const CODEPAGES: Array<[string, string]> = [
   ['1149', '1149 Iceland (euro)'],
 ];
 
-const whenEnhanced = (v: TerminalSettings): string | undefined =>
-  v.uiMode === 'enhanced' ? 'Not used while the screen style is Enhanced: the field box, active field and transparent status line on the Enhanced UI page replace it.' : undefined;
-const whenClassic = (v: TerminalSettings): string | undefined => (v.uiMode === 'classic' ? 'Not used while the screen style is Classic. Switch the screen style to Enhanced to use it.' : undefined);
+const whenEnhanced = (v: TerminalSettings): string | undefined => (v.uiMode === 'enhanced' ? 'Not used in the Enhanced screen style.' : undefined);
+const whenClassic = (v: TerminalSettings): string | undefined => (v.uiMode === 'classic' ? 'Not used in the Classic screen style.' : undefined);
 
 const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec[] }> = [
   {
@@ -306,7 +305,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'color', key: 'colorOiaError', label: 'Error indicators' },
       { kind: 'color', key: 'colorOiaBackground', label: 'OIA background', lockedWhen: whenEnhanced },
       { kind: 'heading', label: 'Other' },
-      { kind: 'color', key: 'colorBackground', label: 'Screen background' },
+      { kind: 'color', key: 'colorBackground', label: 'Screen background', lockedWhen: whenEnhanced },
       { kind: 'color', key: 'colorCursor', label: 'Cursor' },
       { kind: 'color', key: 'colorActiveField', label: 'Active field', lockedWhen: whenEnhanced },
       { kind: 'color', key: 'colorRuleLine', label: 'Crosshair ruler' },
@@ -646,11 +645,11 @@ function renderField(f: FieldSpec): HTMLElement | undefined {
   if (row && reason) {
     row.classList.add('locked');
     const mark = el('span', 'locked-mark', '*');
-    mark.title = reason;
-    mark.setAttribute('aria-label', reason);
+    mark.setAttribute('aria-hidden', 'true');
     const label = row.querySelector('label');
     if (label) label.insertBefore(mark, label.querySelector('.info'));
     for (const c of row.querySelectorAll('input, select, button')) (c as HTMLInputElement).disabled = true;
+    row.append(el('span', 'locked-reason', `* ${reason}`));
   }
   return row;
 }
@@ -935,7 +934,7 @@ function missingDefaults(): Array<{ action: KeyAction; label: string; keys: stri
   const out: Array<{ action: KeyAction; label: string; keys: string[] }> = [];
   for (const g of KEY_ACTION_GROUPS) {
     for (const [action, label] of g.actions) {
-      if (bound.has(action)) continue;
+      if (bound.has(action) || values.keyWarningsIgnored.includes(action)) continue;
       const keys = acsKeysFor(action);
       if (keys.length) out.push({ action, label, keys });
     }
@@ -950,8 +949,20 @@ function restoreDefault(action: KeyAction, keys: string[]): void {
     else next[k] = action;
   }
   values.keymap = next;
+  unignoreWarning(action);
   dirty = true;
   render();
+}
+
+/** Ignore on a "no key for ..." warning: hidden until the function gets a key again or a .kmp is imported. */
+function ignoreWarning(action: KeyAction): void {
+  if (!values.keyWarningsIgnored.includes(action)) values.keyWarningsIgnored = [...values.keyWarningsIgnored, action];
+  dirty = true;
+  render();
+}
+
+function unignoreWarning(action: KeyAction): void {
+  if (values.keyWarningsIgnored.includes(action)) values.keyWarningsIgnored = values.keyWarningsIgnored.filter((a) => a !== action);
 }
 
 /** Binds `name` to the function being captured; a key taken from another function gets a notice with Undo. */
@@ -961,6 +972,7 @@ function assignKey(name: string): void {
   const previous = effectiveKeymap(values.keymap)[name];
   const before = values.keymap;
   values.keymap = { ...values.keymap, [name]: action };
+  unignoreWarning(action);
   capturing = undefined;
   capture.reset();
   dirty = true;
@@ -982,27 +994,46 @@ function assignKey(name: string): void {
 function renderKeyboard(): HTMLElement {
   const box = el('div', 'keyboard');
   const bar = el('div', 'kb-toolbar');
+  const search = el('input', 'search');
+  search.type = 'search';
+  search.placeholder = 'Find a key or function (e.g. F13, field exit, End)\u2026';
+  search.value = keySearch;
+  const tables = el('div', 'tables');
+  const fill = (): void => {
+    const nodes = renderKeyTables(keySearch);
+    tables.replaceChildren(...(nodes.length ? nodes : [el('p', 'note', 'No keys or functions match.')]));
+  };
+  search.oninput = () => {
+    keySearch = search.value;
+    fill();
+  };
   const imp = el('button', 'secondary', 'Import');
   imp.onclick = () => post({ type: 'importKmp', target: selected });
-  bar.append(
-    imp,
-    infoBubble('Import an IBM i Access Client Solutions keyboard map (.kmp) on top of the current keys. ACS keeps its maps in Documents\\IBM\\iAccessClient\\Emulator; the file picker opens there when that folder exists. Save afterwards to keep the imported keys.'),
-  );
   const reset = el('button', 'secondary', 'Reset');
   reset.onclick = () => {
     values.keymap = {};
+    values.keyWarningsIgnored = [];
     keyNotice = undefined;
     dirty = true;
     render();
   };
-  bar.append(reset, infoBubble('Put every key back to the ACS layout for this profile. Takes effect when you save; Revert undoes it before then.'));
+  bar.append(
+    search,
+    imp,
+    infoBubble('Import an IBM i Access Client Solutions keyboard map (.kmp) on top of the current keys. ACS keeps its maps in Documents\\IBM\\iAccessClient\\Emulator; the file picker opens there when that folder exists. Save afterwards to keep the imported keys.'),
+    reset,
+    infoBubble('Put every key back to the ACS layout for this profile. Takes effect when you save; Revert undoes it before then.'),
+  );
   box.append(bar);
   for (const miss of missingDefaults()) {
     const warn = el('div', 'kb-banner');
     warn.append(el('span', undefined, `No key for ${miss.label} (ACS default: ${miss.keys.join(', ')}).`));
     const b = el('button', 'link', 'Restore');
     b.onclick = () => restoreDefault(miss.action, miss.keys);
-    warn.append(b);
+    const ignore = el('button', 'link', 'Ignore');
+    ignore.title = 'Hide this warning until the function gets a key again or a keyboard map is imported.';
+    ignore.onclick = () => ignoreWarning(miss.action);
+    warn.append(b, ignore);
     box.append(warn);
   }
   if (keyNotice) {
@@ -1022,20 +1053,7 @@ function renderKeyboard(): HTMLElement {
     box.append(line);
   }
   box.append(el('p', 'note', 'Click Assign, then press the key or key combination (Esc cancels). A modifier on its own, like Right Ctrl, is taken when you release it. Changes apply to this profile only; sessions inherit the defaults.'));
-  const search = el('input', 'search');
-  search.type = 'search';
-  search.placeholder = 'Find a key or function (e.g. F13, field exit, End)\u2026';
-  search.value = keySearch;
-  const tables = el('div', 'tables');
-  const fill = (): void => {
-    const nodes = renderKeyTables(keySearch);
-    tables.replaceChildren(...(nodes.length ? nodes : [el('p', 'note', 'No keys or functions match.')]));
-  };
-  search.oninput = () => {
-    keySearch = search.value;
-    fill();
-  };
-  box.append(search, tables);
+  box.append(tables);
   fill();
   return box;
 }
@@ -1175,6 +1193,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
   if (ev.data.type === 'kmp') {
     const count = Object.keys(ev.data.keymap).length;
     values.keymap = { ...values.keymap, ...ev.data.keymap };
+    values.keyWarningsIgnored = [];
     dirty = true;
     keyNotice = { text: `Imported ${count} key assignment${count === 1 ? '' : 's'}${ev.data.skipped ? `, ${ev.data.skipped} skipped` : ''}. Save to keep them.` };
     render();
