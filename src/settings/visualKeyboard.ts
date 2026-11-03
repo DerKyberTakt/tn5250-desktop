@@ -27,8 +27,9 @@ export type KeyRow = Array<KeyCap | null>;
 
 const k = (code: string, label: string, width?: number): KeyCap => ({ code, label, width });
 
-/** The main block of a US ANSI keyboard, with the function row. */
+/** The main block of a US ANSI keyboard, with the function row and, above it, F13-F24 (Shift+F1 ... on most keyboards; real keys on some). */
 export const MAIN_ROWS: KeyRow[] = [
+  [null, null, k('F13', 'F13'), k('F14', 'F14'), k('F15', 'F15'), k('F16', 'F16'), null, k('F17', 'F17'), k('F18', 'F18'), k('F19', 'F19'), k('F20', 'F20'), null, k('F21', 'F21'), k('F22', 'F22'), k('F23', 'F23'), k('F24', 'F24')],
   [k('Escape', 'Esc'), null, k('F1', 'F1'), k('F2', 'F2'), k('F3', 'F3'), k('F4', 'F4'), null, k('F5', 'F5'), k('F6', 'F6'), k('F7', 'F7'), k('F8', 'F8'), null, k('F9', 'F9'), k('F10', 'F10'), k('F11', 'F11'), k('F12', 'F12')],
   [k('Backquote', '`'), k('Digit1', '1'), k('Digit2', '2'), k('Digit3', '3'), k('Digit4', '4'), k('Digit5', '5'), k('Digit6', '6'), k('Digit7', '7'), k('Digit8', '8'), k('Digit9', '9'), k('Digit0', '0'), k('Minus', '-'), k('Equal', '='), k('Backspace', 'Backspace', 2)],
   [k('Tab', 'Tab', 1.5), k('KeyQ', 'Q'), k('KeyW', 'W'), k('KeyE', 'E'), k('KeyR', 'R'), k('KeyT', 'T'), k('KeyY', 'Y'), k('KeyU', 'U'), k('KeyI', 'I'), k('KeyO', 'O'), k('KeyP', 'P'), k('BracketLeft', '['), k('BracketRight', ']'), k('Backslash', '\\', 1.5)],

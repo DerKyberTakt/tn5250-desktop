@@ -36,6 +36,8 @@ let openTabs: OpenTabInfo[] = [];
 let vkChord: ClickedChord = { mods: new Set() };
 /** Rebuilds the visual keyboard and its key bar in place (set while the Keyboard page is shown). */
 let vkRefresh: (() => void) | undefined;
+/** Rebuilds the keyboard, its bar and the key tables in place, leaving the search box alone. */
+let kbRefresh: (() => void) | undefined;
 
 /**
  * Shows a line in the key bar. One with Undo stays until the next action or Dismiss; one
@@ -54,14 +56,19 @@ function notify(text: string, opts: { undo?: () => void; sticky?: boolean } = {}
   }
 }
 
-/** Leaves Assign without a change. */
-function cancelCapture(): void {
-  if (!capturing) return;
+/** Ends Assign quietly (before Reset, Import or a session change). */
+function stopCapture(): void {
   capturing = undefined;
   capture.reset();
   vkChord = { mods: new Set() };
+}
+
+/** Leaves Assign without a change and says so. */
+function cancelCapture(): void {
+  if (!capturing) return;
+  stopCapture();
   notify('Assignment cancelled.');
-  render();
+  (kbRefresh ?? render)();
 }
 
 function post(msg: SettingsToHost): void {
@@ -1100,7 +1107,7 @@ function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLE
       }
       return b;
     };
-    wrap.append(block(MAIN_ROWS, 'main'), block(NAV_ROWS, 'nav'), block(NUMPAD_ROWS, 'numpad'));
+    wrap.append(block(MAIN_ROWS, 'vk-main'), block(NAV_ROWS, 'vk-nav'), block(NUMPAD_ROWS, 'vk-numpad'));
     return wrap;
   };
   // The key bar: while Assign is active [Cancel] readout [Save keybind]; otherwise the last notice.
@@ -1110,11 +1117,12 @@ function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLE
       const cancel = el('button', 'secondary', 'Cancel');
       cancel.onclick = cancelCapture;
       const name = chordName(vkChord);
+      const shiftOnLetter = vkChord.main !== undefined && /^Key[A-Z]$/.test(vkChord.main) && [...vkChord.mods].some((c) => c.startsWith('Shift'));
       const text = !name
         ? `Click the keys for ${actionLabel(capturing)}, or press them`
         : typesText(vkChord)
           ? `${name} types text; add Ctrl or Alt`
-          : `Assign ${name} to ${actionLabel(capturing)}`;
+          : `Assign ${name} to ${actionLabel(capturing)}${shiftOnLetter ? ' (Shift makes no difference on a letter)' : ''}`;
       const readout = el('span', 'vk-readout', text);
       const save = el('button', 'primary', 'Save keybind');
       save.disabled = !name || typesText(vkChord);
@@ -1169,12 +1177,21 @@ function renderKeyboard(): HTMLElement {
   };
   search.oninput = () => {
     keySearch = search.value;
+    if (capturing) cancelCapture();
     fill();
   };
+  // Typing in the search box is not a key to assign: clicking into it (or its clear x) ends Assign.
+  search.onfocus = () => {
+    if (capturing) cancelCapture();
+  };
   const imp = el('button', 'secondary', 'Import');
-  imp.onclick = () => post({ type: 'importKmp', target: selected });
+  imp.onclick = () => {
+    stopCapture();
+    post({ type: 'importKmp', target: selected });
+  };
   const reset = el('button', 'secondary', 'Reset');
   reset.onclick = () => {
+    stopCapture();
     values.keymap = {};
     values.keyWarningsIgnored = [];
     dirty = true;
@@ -1182,6 +1199,10 @@ function renderKeyboard(): HTMLElement {
     render();
   };
   box.append(renderVisualKeyboard(search, fill));
+  kbRefresh = () => {
+    vkRefresh?.();
+    fill();
+  };
   bar.append(
     search,
     imp,
@@ -1319,9 +1340,7 @@ function select(index: number): void {
   values = index < 0 ? { ...defaults, keymap: { ...defaults.keymap }, titleParts: [...defaults.titleParts] } : resolveSettings(defaults, sessions[index] ?? { host: '' });
   if (index >= 0) values.keymap = { ...(sessions[index]?.keymap ?? {}) };
   dirty = false;
-  capturing = undefined;
-  capture.reset();
-  vkChord = { mods: new Set() };
+  stopCapture();
   keyNotice = undefined;
   render();
 }

@@ -260,8 +260,14 @@ select {
 .vk-blocks {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 14px 18px;
+}
+
+/* The navigation cluster and keypad sit beside the main block's bottom rows, as on a keyboard. */
+.vk-block.vk-nav,
+.vk-block.vk-numpad {
+  margin-bottom: 0;
 }
 
 .vk-block {
