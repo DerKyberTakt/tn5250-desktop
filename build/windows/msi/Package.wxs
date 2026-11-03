@@ -27,7 +27,6 @@
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/DerKyberTakt/tn5250-desktop" />
     <Property Id="ARPHELPLINK" Value="https://github.com/DerKyberTakt/tn5250-desktop/issues" />
-    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="TN5250 Terminal" />

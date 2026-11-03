@@ -29,6 +29,8 @@ type App struct {
 	sockets *Sockets
 	ifsOnce sync.Once
 	ifsSt   *ifsState
+	sqlOnce sync.Once
+	sqlSt   *sqlState
 }
 
 func NewApp() *App {
