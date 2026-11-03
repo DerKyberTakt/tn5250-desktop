@@ -231,8 +231,13 @@ select {
   margin: 4px 0 12px;
 }
 
-.keyboard .kb-toolbar input.search {
+.keyboard .kb-toolbar .searchbox {
   flex: 1 1 240px;
+}
+
+.keyboard .kb-toolbar .searchbox input.search {
+  width: 100%;
+  max-width: none;
   margin: 0;
 }
 
@@ -279,6 +284,7 @@ select {
 .vk-row {
   display: flex;
   flex-wrap: nowrap;
+  align-items: flex-start;
   gap: 3px;
   height: 24px;
 }
@@ -326,6 +332,10 @@ select {
   border-color: var(--vscode-button-background);
   transform: translateY(1px);
   border-bottom-width: 1px;
+}
+
+.vk-key.tall {
+  height: 51px; /* two rows and the gap between them */
 }
 
 .vk-key.latched {
@@ -396,16 +406,51 @@ select {
   color: var(--vscode-foreground);
 }
 
-/* The clear (x) of the search boxes: red, so it can be seen. */
+/* The search boxes: our own clear (x), red and shown whenever there is text (the browser's only shows on hover). */
 input.search::-webkit-search-cancel-button {
+  display: none;
   -webkit-appearance: none;
   appearance: none;
+}
+
+.searchbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.searchbox input.search {
+  padding-right: 26px;
+}
+
+.searchbox .clear {
+  display: none;
+  position: absolute;
+  right: 8px;
+  top: 50%;
   width: 13px;
   height: 13px;
+  padding: 0;
+  border: none;
+  transform: translateY(-50%);
   cursor: pointer;
   background-color: var(--vscode-errorForeground, #f14c4c);
   -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M3 3l10 10M13 3L3 13' stroke='black' stroke-width='2.4' stroke-linecap='round'/></svg>") center / contain no-repeat;
   mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M3 3l10 10M13 3L3 13' stroke='black' stroke-width='2.4' stroke-linecap='round'/></svg>") center / contain no-repeat;
+}
+
+.searchbox.has-value .clear {
+  display: block;
+}
+
+.nav .searchbox {
+  display: flex;
+  margin: 4px 12px 8px;
+}
+
+.nav .searchbox input.search {
+  width: 100%;
+  margin: 0;
 }
 
 .kb-banner,

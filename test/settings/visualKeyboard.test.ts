@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ACS_KEYMAP, keyName } from '../../src/shared/keymap';
-import { MAIN_ROWS, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, blockWidth, chordName, isLatched, keyFromCode, keyTokens, mergePhysical, nameUsesCode, primaryAcsKey, toggleCap, typesText } from '../../src/settings/visualKeyboard';
+import { MAIN_ROWS, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, blockWidth, chordName, isLatched, keyFromCode, keyTokens, mergePhysical, modsPrefix, nameUsesCode, primaryAcsKey, toggleCap, typesText } from '../../src/settings/visualKeyboard';
 
 describe('visual keyboard', () => {
   it('names clicked chords exactly as typed ones', () => {
@@ -57,13 +57,22 @@ describe('visual keyboard', () => {
     expect(blockWidth(NUMPAD_ROWS)).toBe(4 * 27 + 3 * 3);
   });
 
+  it('prefixes latched modifiers in key-name order', () => {
+    expect(modsPrefix({ mods: new Set(['ShiftLeft', 'ControlRight']) })).toBe('Ctrl+Shift');
+    expect(modsPrefix({ mods: new Set(['AltLeft']) })).toBe('Alt');
+    expect(modsPrefix({ mods: new Set() })).toBe('');
+  });
+
   it('names a latched modifier on its own', () => {
     expect(chordName({ mods: new Set(['ControlRight']) })).toBe('ControlRight');
     expect(chordName({ mods: new Set() })).toBeUndefined();
   });
 
   it('knows what every key cap produces', () => {
-    for (const row of [...MAIN_ROWS, ...NAV_ROWS, ...NUMPAD_ROWS]) for (const cap of row) if (cap) expect(keyFromCode(cap.code)).toBeTruthy();
+    for (const row of [...MAIN_ROWS, ...NAV_ROWS, ...NUMPAD_ROWS]) for (const cap of row) if (cap?.code) expect(keyFromCode(cap.code)).toBeTruthy();
+    expect(MAIN_ROWS[1]?.[1]).toEqual({ code: '', label: '', width: 0.5 }); // half a key between Esc and F1
+    expect(NUMPAD_ROWS[1]?.[3]).toMatchObject({ code: 'NumpadAdd', tall: true });
+    expect(NUMPAD_ROWS[3]?.[3]).toMatchObject({ code: 'NumpadEnter', tall: true });
     expect(keyFromCode('KeyA')).toBe('A');
     expect(keyFromCode('Digit1', true)).toBe('!');
   });

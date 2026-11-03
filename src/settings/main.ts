@@ -1,7 +1,7 @@
 import type { KeyAction } from '../shared/keymap';
 import { ACS_KEYMAP } from '../shared/keymap';
 import { KeyCapture } from './keyCapture';
-import { MAIN_ROWS, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, blockWidth, capWidth, chordName, isLatched, mergePhysical, nameUsesCode, primaryAcsKey, toggleCap, typesText, type ClickedChord, type KeyRow } from './visualKeyboard';
+import { MAIN_ROWS, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, blockWidth, capWidth, chordName, isLatched, mergePhysical, modsPrefix, nameUsesCode, primaryAcsKey, toggleCap, typesText, type ClickedChord, type KeyRow } from './visualKeyboard';
 import {
   COLOR_KEYS,
   KEY_ACTION_GROUPS,
@@ -534,7 +534,7 @@ function renderNav(): HTMLElement {
     const main = document.getElementById('main');
     if (main) renderMain(main);
   };
-  nav.append(search);
+  nav.append(searchBox(search));
   const entries = el('div', 'entries');
   entries.append(el('h3', undefined, 'Profiles'));
   const mk = (label: string, index: number): void => {
@@ -1018,8 +1018,33 @@ function unignoreWarning(action: KeyAction): void {
   if (values.keyWarningsIgnored.includes(action)) values.keyWarningsIgnored = values.keyWarningsIgnored.filter((a) => a !== action);
 }
 
+/** A search box with a clear (x) that stays visible while there is text (the browser's own only shows on hover). */
+function searchBox(input: HTMLInputElement): HTMLElement {
+  const box = el('span', 'searchbox');
+  const clear = el('button', 'clear');
+  clear.type = 'button';
+  clear.title = 'Clear';
+  clear.tabIndex = -1;
+  const sync = (): void => {
+    box.classList.toggle('has-value', input.value.length > 0);
+  };
+  input.addEventListener('input', sync);
+  clear.onclick = () => {
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+  };
+  sync();
+  box.append(input, clear);
+  return box;
+}
+
+/** Why the saved name differs from the keys pressed, carried into the notice after the save. */
+function shiftOnLetterNote(name: string): string {
+  return `Shift makes no difference on a letter, so the key combination was saved as ${name}`;
+}
+
 /** Binds `name` to the function being captured; a key taken from another function gets a notice with Undo. */
-function assignKey(name: string): void {
+function assignKey(name: string, note?: string): void {
   if (!capturing) return;
   const action = capturing;
   const previous = effectiveKeymap(values.keymap)[name];
@@ -1030,8 +1055,9 @@ function assignKey(name: string): void {
   capture.reset();
   vkChord = { mods: new Set() };
   dirty = true;
+  const suffix = note ? ` (${note}.)` : '';
   if (previous && previous !== action) {
-    notify(`${name} moved from ${actionLabel(previous)} to ${actionLabel(action)}.`, {
+    notify(`${name} moved from ${actionLabel(previous)} to ${actionLabel(action)}.${suffix}`, {
       undo: () => {
         values.keymap = before;
         keyNotice = undefined;
@@ -1039,7 +1065,7 @@ function assignKey(name: string): void {
         render();
       },
     });
-  } else notify(`${name} assigned to ${actionLabel(action)}.`);
+  } else notify(`${name} assigned to ${actionLabel(action)}.${suffix}`);
   render();
 }
 
@@ -1074,12 +1100,15 @@ function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLE
       for (const row of rows) {
         const r = el('div', 'vk-row');
         for (const cap of row) {
-          if (!cap) {
-            r.append(el('span', 'vk-gap'));
+          if (!cap || !cap.code) {
+            const g = el('span', 'vk-gap');
+            if (cap) g.style.width = `${capWidth(cap)}px`;
+            r.append(g);
             continue;
           }
           const key = el('button', 'vk-key', cap.label);
           key.type = 'button';
+          if (cap.tall) key.classList.add('tall');
           key.tabIndex = -1;
           key.onmousedown = (e) => e.preventDefault(); // never takes focus, so no focus ring shows up after the next keypress
           key.dataset.code = cap.code;
@@ -1117,17 +1146,25 @@ function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLE
       const cancel = el('button', 'secondary', 'Cancel');
       cancel.onclick = cancelCapture;
       const name = chordName(vkChord);
+      const label = actionLabel(capturing);
       const shiftOnLetter = vkChord.main !== undefined && /^Key[A-Z]$/.test(vkChord.main) && [...vkChord.mods].some((c) => c.startsWith('Shift'));
-      const text = !name
-        ? `Click the keys for ${actionLabel(capturing)}, or press them`
-        : typesText(vkChord)
-          ? `${name} types text; add Ctrl or Alt`
-          : `Assign ${name} to ${actionLabel(capturing)}${shiftOnLetter ? ' (Shift makes no difference on a letter)' : ''}`;
+      const modsOnly = !vkChord.main && vkChord.mods.size > 0;
+      let text: string;
+      let canSave = !!name;
+      if (!name) text = `Click the keys for ${label}, or press them`;
+      else if (modsOnly && vkChord.mods.size > 1) {
+        text = `${modsPrefix(vkChord)}+…  click or press the key`;
+        canSave = false;
+      } else if (modsOnly) text = `Assign ${name} on its own to ${label}, or add a key`;
+      else if (typesText(vkChord)) {
+        text = `${name} types text; add Ctrl or Alt`;
+        canSave = false;
+      } else text = `Assign ${name} to ${label}${shiftOnLetter ? ' (Shift makes no difference on a letter)' : ''}`;
       const readout = el('span', 'vk-readout', text);
       const save = el('button', 'primary', 'Save keybind');
-      save.disabled = !name || typesText(vkChord);
+      save.disabled = !canSave;
       save.onclick = () => {
-        if (name) assignKey(name);
+        if (name && canSave) assignKey(name, shiftOnLetter ? shiftOnLetterNote(name) : undefined);
       };
       b.append(cancel, readout, save);
     } else if (keyNotice) {
@@ -1204,7 +1241,7 @@ function renderKeyboard(): HTMLElement {
     fill();
   };
   bar.append(
-    search,
+    searchBox(search),
     imp,
     infoBubble('Import an IBM i Access Client Solutions keyboard map (.kmp) on top of the current keys. ACS keeps its maps in Documents\\IBM\\iAccessClient\\Emulator; the file picker opens there when that folder exists. Save afterwards to keep the imported keys.'),
     reset,
@@ -1411,8 +1448,9 @@ window.addEventListener(
       }
       return;
     }
-    const name = capture.keydown(keyInfo(e));
-    if (name) assignKey(name);
+    const info = keyInfo(e);
+    const name = capture.keydown(info);
+    if (name) assignKey(name, info.shift && /^Key[A-Z]$/.test(info.code) ? shiftOnLetterNote(name) : undefined);
   },
   { capture: true },
 );
