@@ -158,6 +158,12 @@ func updateMode() (mode, reason string) {
 		if _, err := os.Stat(filepath.Join(dir, "uninstall.exe")); err == nil {
 			return "installer", ""
 		}
+		// The MSI installs for all users under Program Files; IT rolls out the next MSI.
+		for _, env := range []string{"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"} {
+			if pf := os.Getenv(env); pf != "" && strings.HasPrefix(strings.ToLower(exe), strings.ToLower(filepath.Clean(pf))+string(filepath.Separator)) {
+				return "manual", "This copy was installed for all users (MSI); install the next MSI, or download from the release page."
+			}
+		}
 		if !strings.EqualFold(filepath.Base(exe), exeName) {
 			return "manual", "This copy is not named " + exeName + "; download the update from the release page."
 		}
@@ -170,6 +176,8 @@ func updateMode() (mode, reason string) {
 			return "appimage", ""
 		}
 		return "manual", "Install updates with your package manager or from the release page."
+	case "darwin":
+		return "manual", "Download the new .dmg from the release page and replace the app in Applications."
 	default:
 		return "manual", "Download the update from the release page."
 	}

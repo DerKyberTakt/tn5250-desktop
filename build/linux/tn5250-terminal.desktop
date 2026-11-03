@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=TN5250 Terminal
+GenericName=5250 terminal emulator
+Comment=Connect to IBM i (AS/400) systems with the keyboard and look of IBM i Access Client Solutions
+Exec=tn5250-terminal
+Icon=tn5250-terminal
+Terminal=false
+Categories=Network;RemoteAccess;TerminalEmulator;
+Keywords=IBM i;AS400;5250;telnet;
+StartupWMClass=tn5250-terminal

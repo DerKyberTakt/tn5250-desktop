@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Linux and macOS builds: AppImage, .deb and tar.gz for x86_64 Linux (GTK 3 + WebKitGTK 4.1), a universal .dmg/.zip for macOS 11+ (Intel and Apple silicon, ad-hoc signed). The release workflow builds and smoke-tests every package on its own platform and publishes one SHA256SUMS; CI builds the app on all three.
+- Windows: a per-machine MSI (`tn5250-terminal-x64.msi`) for IT deployment next to the per-user setup and the portable zip. Check for Updates recognises an MSI copy and points at the release page instead of trying to update in place.
+
 ## 0.1.6 - 2026-11-03
 
 - Keyboard settings page: a visual keyboard (main block, navigation keys, keypad) above the search - live key feedback, a dot on bound keys with the list on hover, click to list a key's functions. While Assign is active, typing assigns at once; clicking the keys builds the combination in the key bar underneath (Save keybind / Cancel), text keys without Ctrl or Alt are refused, and the bar reports what just happened with Undo. The picture wraps and shrinks with the window. The "No key for ..." warning uses the function's primary ACS key (shared from tn5250-terminal). The connected-first session list and the History view of the extension are not in the desktop app yet.

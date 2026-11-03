@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Per-machine MSI for IT deployment (GPO, Intune, SCCM): installs to Program Files for all
+  users, one Start menu shortcut, uninstall through Programs and Features. Built by the
+  release workflow with WiX 5:  wix build -arch x64 -d Version=X.Y.Z ... Package.wxs
+  Silent install:   msiexec /i tn5250-terminal-x64.msi /qn
+  Silent uninstall: msiexec /x tn5250-terminal-x64.msi /qn
+  The per-user setup (tn5250-terminal-setup-x64.exe) is a separate, independent install.
+  A copy installed this way cannot update itself (Program Files is read-only for users);
+  roll out the next MSI instead.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="TN5250 Terminal"
+           Manufacturer="DerKyberTakt"
+           Version="$(var.Version)"
+           UpgradeCode="7d2b6a5e-1c3f-4b8e-9a61-5f0c2e7a3d10"
+           Language="1033"
+           Scope="perMachine"
+           InstallerVersion="500"
+           Compressed="yes">
+    <SummaryInformation Description="TN5250 Terminal for IBM i" Manufacturer="DerKyberTakt" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="..\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/DerKyberTakt/tn5250-desktop" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/DerKyberTakt/tn5250-desktop/issues" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="TN5250 Terminal" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="TN5250 Terminal" Level="1">
+      <Component Id="MainExe" Directory="INSTALLFOLDER" Guid="a3c1d2e4-5f60-4718-8b9c-0d1e2f3a4b5c">
+        <File Id="MainExe" Source="..\..\bin\tn5250-terminal.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="TN5250 Terminal"
+                    Description="5250 terminal emulator for IBM i" WorkingDirectory="INSTALLFOLDER"
+                    Icon="AppIcon" Advertise="yes" />
+        </File>
+      </Component>
+      <Component Id="LicenseFile" Directory="INSTALLFOLDER" Guid="b4d2e3f5-6071-4829-9cad-1e2f3a4b5c6d">
+        <File Id="LicenseFile" Source="..\..\..\LICENSE" Name="LICENSE.txt" KeyPath="yes" />
+      </Component>
+    </Feature>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+  </Package>
+</Wix>

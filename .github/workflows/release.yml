@@ -1,26 +1,56 @@
 name: Release
 
-# A tag vX.Y.Z (or vX.Y.Z.N for a desktop-only release) builds the Windows installer
-# and portable zip, smoke-tests the installer, and publishes them with SHA256SUMS on
-# the GitHub Release. The tag must match wails.json info.productVersion.
-# Run it by hand (workflow_dispatch) for a dry run: same build and tests, files kept as
-# workflow artifacts, nothing published.
+# A tag vX.Y.Z (or vX.Y.Z.N for a desktop-only release) builds the app for Windows,
+# Linux and macOS, smoke-tests each build, and publishes everything with one
+# SHA256SUMS on the GitHub Release. The tag must match wails.json info.productVersion.
+#
+# A push to a dry-run/** branch (or workflow_dispatch) runs the same jobs and keeps the
+# files as workflow artifacts; nothing is published.
 #
 # Asset names are fixed so releases/latest/download/<name> always works:
-#   tn5250-terminal-setup-x64.exe     per-user installer (no admin)
-#   tn5250-terminal-portable-x64.zip  single exe, run from anywhere
-#   SHA256SUMS                        sha256sum format, checked by Check for Updates
+#   tn5250-terminal-setup-x64.exe        Windows, per-user installer (no admin), silent /S
+#   tn5250-terminal-x64.msi              Windows, per-machine MSI for IT deployment (msiexec /i ... /qn)
+#   tn5250-terminal-portable-x64.zip     Windows, single exe, run from anywhere
+#   tn5250-terminal-x86_64.AppImage      Linux, run anywhere (updates in place)
+#   tn5250-terminal-linux-amd64.tar.gz   Linux, binary + desktop file + icon
+#   tn5250-terminal_<ver>_amd64.deb      Debian / Ubuntu package
+#   tn5250-terminal-macos-universal.dmg  macOS 11+, Intel and Apple silicon
+#   tn5250-terminal-macos-universal.zip  the same .app, zipped
+#   SHA256SUMS                           sha256sum format, checked by Check for Updates
 
 on:
   push:
     tags: ['v*']
+    branches: ['dry-run/**']
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  WAILS_VERSION: v2.17.0
+
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: v
+        shell: bash
+        run: |
+          v=$(node -p "require('./wails.json').info.productVersion")
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::wails.json productVersion '$v' is not X.Y.Z[.N]"; exit 1
+          fi
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "${{ github.ref_name }}" != "v$v" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match wails.json productVersion $v"; exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
   windows:
+    needs: version
     runs-on: windows-latest
     defaults:
       run:
@@ -35,46 +65,63 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Version
-        id: version
-        run: |
-          $v = (Get-Content wails.json -Raw | ConvertFrom-Json).info.productVersion
-          if ($v -notmatch '^\d+\.\d+\.\d+(\.\d+)?(-[0-9A-Za-z.-]+)?$') { throw "wails.json productVersion '$v' is not X.Y.Z[.N]" }
-          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$v") {
-            throw "Tag ${{ github.ref_name }} does not match wails.json productVersion $v"
-          }
-          "version=$v" >> $env:GITHUB_OUTPUT
-
       - run: npm ci
       - run: npm run check
-      # Go embeds dist/desktop, so the page is built before vet and tests.
       - run: npm run build -- --production
       - run: go vet . ./internal/... ./cmd/...
       - run: go test . ./internal/...
 
-      - name: Tools (Wails CLI, NSIS)
+      - name: Tools (Wails CLI, NSIS, WiX)
         run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.0
+          go install github.com/wailsapp/wails/v2/cmd/wails@$env:WAILS_VERSION
           if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
             if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) { choco install nsis -y --no-progress }
             'C:\Program Files (x86)\NSIS' >> $env:GITHUB_PATH
           }
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2
 
-      - name: Build
+      - name: Build (installer + exe)
         run: |
-          wails build -trimpath -s -platform windows/amd64 -nsis -installscope user
+          wails build -trimpath -s -platform windows/amd64 -nsis -installscope user 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error title=wails build windows::$(((Get-Content build.log | Select-Object -Last 40) -join ' | ').Substring(0, [Math]::Min(3800, ((Get-Content build.log | Select-Object -Last 40) -join ' | ').Length)))"
+            exit 1
+          }
           Get-ChildItem build/bin
+
+      - name: MSI (per-machine, for IT deployment)
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          # WixUI wants the license as RTF: wrap the MIT text.
+          $lines = Get-Content LICENSE | ForEach-Object { ($_ -replace '\\', '\\\\' -replace '\{', '\{' -replace '\}', '\}') + '\par' }
+          $rtf = '{\rtf1\ansi\deff0{\fonttbl{\f0 Consolas;}}\f0\fs18 ' + ($lines -join "`r`n") + '}'
+          [IO.File]::WriteAllText("$PWD/out/license.rtf", $rtf)
+          wix build -arch x64 -d Version=${{ needs.version.outputs.version }} -ext WixToolset.UI.wixext `
+            -bindvariable WixUILicenseRtf=out/license.rtf -o out/tn5250-terminal-x64.msi build/windows/msi/Package.wxs 2>&1 | Tee-Object -FilePath msi.log
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error title=wix build::$(((Get-Content msi.log | Select-Object -Last 40) -join ' | '))"
+            exit 1
+          }
+          Remove-Item out/license.rtf
 
       - name: Package
         run: |
-          New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item build/bin/tn5250-terminal-setup-x64.exe out/
           Compress-Archive -Path build/bin/tn5250-terminal.exe, LICENSE, README.md -DestinationPath out/tn5250-terminal-portable-x64.zip
-          $lines = Get-ChildItem out -File | Sort-Object Name | ForEach-Object {
-            '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
-          }
-          [IO.File]::WriteAllText("$PWD/out/SHA256SUMS", ($lines -join "`n") + "`n")
-          Get-Content out/SHA256SUMS
+          Get-ChildItem out
+
+      - name: Smoke test the MSI (silent install, exe present, uninstall)
+        run: |
+          $msi = (Resolve-Path out/tn5250-terminal-x64.msi).Path
+          $exe = 'C:\Program Files\TN5250 Terminal\tn5250-terminal.exe'
+          $c = (Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v msi-install.log" -Wait -PassThru).ExitCode
+          if ($c -ne 0) { Write-Host "::error title=msi install::exit $c; $((Get-Content msi-install.log | Select-String 'Error|error 1|return value 3' | Select-Object -Last 10) -join ' | ')"; exit 1 }
+          if (-not (Test-Path $exe)) { throw "MSI did not install $exe" }
+          $c = (Start-Process msiexec -ArgumentList "/x `"$msi`" /qn" -Wait -PassThru).ExitCode
+          if ($c -ne 0) { throw "msi uninstall exit code $c" }
+          if (Test-Path $exe) { throw 'MSI uninstall left the exe' }
+          Write-Host 'MSI smoke test passed'
 
       - name: Smoke test the installer (per-user, silent, locked exe, uninstall)
         run: |
@@ -87,7 +134,7 @@ jobs:
           if (($c = Run $setup '/S') -ne 0) { throw "install exit code $c" }
           if (-not (Test-Path $exe)) { throw "not installed to $dir" }
           $shown = (Get-ItemProperty $key).DisplayVersion
-          if ($shown -ne '${{ steps.version.outputs.version }}') { throw "uninstall key shows version '$shown'" }
+          if ($shown -ne '${{ needs.version.outputs.version }}') { throw "uninstall key shows version '$shown'" }
           $fileVersion = (Get-Item $exe).VersionInfo.ProductVersion
           Write-Host "installed $exe, product version $fileVersion"
 
@@ -113,16 +160,194 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: tn5250-terminal-${{ steps.version.outputs.version }}-windows
+          name: windows
           path: out/
 
+  linux:
+    needs: version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build dependencies (GTK 3, WebKitGTK 4.1, xvfb for the smoke test)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev xvfb dbus-x11
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build -- --production
+      - run: go vet . ./internal/... ./cmd/...
+      - run: go test . ./internal/...
+      - run: go install github.com/wailsapp/wails/v2/cmd/wails@$WAILS_VERSION
+
+      - name: Build
+        run: |
+          set -o pipefail
+          wails build -trimpath -s -platform linux/amd64 -tags webkit2_41 -o tn5250-terminal 2>&1 | tee build.log || {
+            echo "::error title=wails build linux::$(tail -n 40 build.log | tr '\n' '|' | cut -c1-3800)"; exit 1; }
+          ls -la build/bin
+          ldd build/bin/tn5250-terminal | grep -q webkit2gtk-4.1 || { echo "::error::binary is not linked against webkit2gtk-4.1"; exit 1; }
+
+      - name: Package (tar.gz, .deb, AppImage)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p out stage/tn5250-terminal
+          cp build/bin/tn5250-terminal build/linux/tn5250-terminal.desktop LICENSE README.md stage/tn5250-terminal/
+          cp build/appicon.png stage/tn5250-terminal/tn5250-terminal.png
+          cp build/linux/install.sh stage/tn5250-terminal/
+          chmod +x stage/tn5250-terminal/install.sh
+          tar -C stage -czf out/tn5250-terminal-linux-amd64.tar.gz tn5250-terminal
+
+          # .deb
+          deb=stage/deb
+          mkdir -p "$deb/DEBIAN" "$deb/usr/bin" "$deb/usr/share/applications" "$deb/usr/share/icons/hicolor/512x512/apps" "$deb/usr/share/doc/tn5250-terminal"
+          cp build/bin/tn5250-terminal "$deb/usr/bin/"
+          cp build/linux/tn5250-terminal.desktop "$deb/usr/share/applications/"
+          cp build/appicon.png "$deb/usr/share/icons/hicolor/512x512/apps/tn5250-terminal.png"
+          cp LICENSE "$deb/usr/share/doc/tn5250-terminal/copyright"
+          size=$(du -sk "$deb/usr" | cut -f1)
+          cat > "$deb/DEBIAN/control" <<EOF
+          Package: tn5250-terminal
+          Version: $VERSION
+          Section: net
+          Priority: optional
+          Architecture: amd64
+          Depends: libgtk-3-0, libwebkit2gtk-4.1-0
+          Installed-Size: $size
+          Maintainer: DerKyberTakt <DerKyberTakt@users.noreply.github.com>
+          Homepage: https://github.com/DerKyberTakt/tn5250-desktop
+          Description: 5250 terminal emulator for IBM i
+           TN5250 Terminal connects to IBM i (AS/400) systems over telnet or TLS with the
+           keyboard and look of IBM i Access Client Solutions, and browses the IFS.
+          EOF
+          sed -i 's/^          //' "$deb/DEBIAN/control"
+          dpkg-deb --build --root-owner-group "$deb" "out/tn5250-terminal_${VERSION}_amd64.deb"
+          dpkg-deb --info "out/tn5250-terminal_${VERSION}_amd64.deb"
+
+          # AppImage
+          appdir=stage/AppDir
+          mkdir -p "$appdir/usr/bin"
+          cp build/bin/tn5250-terminal "$appdir/usr/bin/"
+          cp build/linux/tn5250-terminal.desktop "$appdir/"
+          cp build/appicon.png "$appdir/tn5250-terminal.png"
+          ln -s usr/bin/tn5250-terminal "$appdir/AppRun"
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run "$appdir" out/tn5250-terminal-x86_64.AppImage 2>&1 | tee appimage.log || {
+            echo "::error title=appimagetool::$(tail -n 30 appimage.log | tr '\n' '|' | cut -c1-3800)"; exit 1; }
+          ls -la out
+
+      - name: Smoke test (the binary starts and stays up for 8 s under Xvfb)
+        run: |
+          set +e
+          dbus-run-session -- xvfb-run -a timeout 8 build/bin/tn5250-terminal --demo > smoke.log 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -ne 124 ]; then
+            echo "::error title=linux smoke test::exit $rc; $(tail -n 30 smoke.log | tr '\n' '|' | cut -c1-3500)"; exit 1
+          fi
+          echo "started and ran until the timeout (exit 124): ok"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: out/
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build -- --production
+      - run: go vet . ./internal/... ./cmd/...
+      - run: go test . ./internal/...
+      - run: go install github.com/wailsapp/wails/v2/cmd/wails@$WAILS_VERSION
+
+      - name: Build (universal .app)
+        run: |
+          set -o pipefail
+          wails build -trimpath -s -platform darwin/universal 2>&1 | tee build.log || {
+            echo "::error title=wails build darwin::$(tail -n 40 build.log | tr '\n' '|' | cut -c1-3800)"; exit 1; }
+          ls -la build/bin
+          app="build/bin/TN5250 Terminal.app"
+          lipo -archs "$app/Contents/MacOS/tn5250-terminal"
+          # Ad-hoc signature: the app is not notarized, but an ad-hoc signed binary runs after
+          # the user allows it (right-click > Open, or xattr -dr com.apple.quarantine).
+          codesign --force --deep --sign - "$app"
+          codesign --verify --verbose=2 "$app"
+
+      - name: Package (.dmg, .zip)
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          app="build/bin/TN5250 Terminal.app"
+          ditto -c -k --keepParent "$app" out/tn5250-terminal-macos-universal.zip
+          mkdir -p stage/dmg
+          cp -R "$app" stage/dmg/
+          ln -s /Applications stage/dmg/Applications
+          hdiutil create -volname "TN5250 Terminal" -srcfolder stage/dmg -ov -format UDZO out/tn5250-terminal-macos-universal.dmg
+          ls -la out
+
+      - name: Smoke test (the app starts and stays up for 8 s)
+        run: |
+          app="build/bin/TN5250 Terminal.app"
+          "$app/Contents/MacOS/tn5250-terminal" --demo > smoke.log 2>&1 &
+          pid=$!
+          sleep 8
+          if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"; echo "started and stayed up: ok"
+          else
+            echo "::error title=macos smoke test::the app exited early; $(tail -n 30 smoke.log | tr '\n' '|' | cut -c1-3500)"; exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: out/
+
+  publish:
+    needs: [version, windows, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: |
+          cd assets
+          sha256sum $(ls | sort) > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tn5250-terminal-${{ needs.version.outputs.version }}-all
+          path: assets/
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = '${{ github.ref_name }}'
-          $flags = @()
-          if ($tag -match '-') { $flags += '--prerelease' }
-          gh release create $tag out/tn5250-terminal-setup-x64.exe out/tn5250-terminal-portable-x64.zip out/SHA256SUMS `
-            --title "TN5250 Terminal $tag" --generate-notes @flags
+          tag='${{ github.ref_name }}'
+          flags=()
+          case "$tag" in *-*) flags+=(--prerelease);; esac
+          gh release create "$tag" assets/* --repo "$GITHUB_REPOSITORY" --title "TN5250 Terminal $tag" --generate-notes "${flags[@]}"

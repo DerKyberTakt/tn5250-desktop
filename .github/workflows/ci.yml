@@ -1,14 +1,30 @@
 name: CI
 
+# Every push to main (and to a ci/** branch, for trying changes without a release)
+# typechecks, lints and tests the page, vets and tests the Go host, and builds the
+# app on each supported platform so a build break shows up before a release.
+
 on:
   push:
-    branches: [main]
+    branches: [main, 'ci/**']
   pull_request:
 
 jobs:
   check:
-    # Windows: the Wails host builds there without a C toolchain.
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows/amd64
+            tags: ''
+          - os: ubuntu-22.04
+            platform: linux/amd64
+            tags: webkit2_41
+          - os: macos-latest
+            platform: darwin/universal
+            tags: ''
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -18,8 +34,31 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+
+      - name: Linux build dependencies (GTK 3, WebKitGTK 4.1)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
+
       - run: npm ci
       - run: npm run check
+      # Go embeds dist/desktop, so the page is built before vet and tests.
       - run: npm run build -- --production
       - run: go vet . ./internal/... ./cmd/...
       - run: go test . ./internal/...
+
+      - name: Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.0
+
+      - name: Build (${{ matrix.platform }})
+        shell: bash
+        run: |
+          set -o pipefail
+          tags=""
+          if [ -n "${{ matrix.tags }}" ]; then tags="-tags ${{ matrix.tags }}"; fi
+          wails build -trimpath -s -platform ${{ matrix.platform }} $tags 2>&1 | tee build.log || {
+            echo "::error title=wails build ${{ matrix.platform }}::$(tail -n 40 build.log | tr '\n' '|' | cut -c1-3800)"
+            exit 1
+          }
+          ls -la build/bin
