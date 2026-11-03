@@ -13,6 +13,14 @@ It shares its TN5250 engine and terminal UI with the
 - 24x80 and 27x132 sessions over telnet or TLS, auto-fit, ACS-style keyboard map,
   bypass sign-on, reconnect with a visible connection status.
 - Session tabs, quick connect, saved sessions, ACS-style menus and toolbar.
+- **Enhanced 5250 interface**: GUI windows with titles, scroll bars you can click and drag
+  (DDS `SFLEND(*SCRBAR)`), menu bars, pull-downs, radio buttons, check boxes, selection
+  lists and push buttons, continued entry fields, word wrap, cursor progression,
+  highlighted entry fields and programmable mouse buttons, as in ACS; an optional scroll
+  bar beside every subfile (More... / Bottom). The Enhanced style draws the widgets, the
+  Classic style shows the characters a character display shows.
+- **Host PC commands**: `STRPCCMD` from a host program opens http(s) links in your
+  browser; other commands ask first (or never run, by setting).
 - SEU syntax colouring for RPG/RPGLE, CL, DDS and DB2 SQL.
 - **Integrated File System browser** (Tools menu): browse, upload, download, rename,
   delete. It talks to the IBM i file server directly, like IBM i Access Client

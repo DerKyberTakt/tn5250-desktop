@@ -105,6 +105,45 @@ export class Field {
     const s = this.shift;
     return s === 'numericOnly' || s === 'digitsOnly' || s === 'signedNumeric';
   }
+
+  /** Continued entry field segment (FCW X'8601' first, X'8602' last, X'8603' middle). */
+  get continued(): 'first' | 'middle' | 'last' | undefined {
+    for (const w of this.fcws) {
+      if ((w & 0xff00) !== 0x8600) continue;
+      const k = w & 0x03;
+      if (k === 1) return 'first';
+      if (k === 2) return 'last';
+      if (k === 3) return 'middle';
+    }
+    return undefined;
+  }
+
+  /** Word wrap entry field (FCW X'8680'). */
+  get wordWrap(): boolean {
+    return this.fcws.includes(0x8680);
+  }
+
+  /** Cursor progression (FCW X'88nn'): the 1-based number of the field a forward exit goes to. */
+  get cursorProgression(): number | undefined {
+    const w = this.fcws.find((x) => (x & 0xff00) === 0x8800 && (x & 0xff) !== 0);
+    return w === undefined ? undefined : w & 0xff;
+  }
+
+  /**
+   * Highlighted entry field (FCW X'89nn'): the attribute shown in front of the field while
+   * the cursor is in it, and whether the cursor hides there. Monochrome-only FCWs are
+   * ignored (this is a colour display).
+   */
+  get highlight(): { attr: number; hideCursor: boolean } | undefined {
+    for (const w of this.fcws) {
+      if ((w & 0xff00) !== 0x8900) continue;
+      const n = w & 0xff;
+      const scope = (n >> 6) & 0x03;
+      if (scope === 1 || scope === 3) continue;
+      return { attr: 0x20 | (n & 0x1f), hideCursor: (n & 0x20) !== 0 };
+    }
+    return undefined;
+  }
 }
 
 /**
@@ -308,6 +347,33 @@ export class Screen {
     return this.fields.find((f) => f.contains(addr));
   }
 
+  /**
+   * The segments of the continued entry field `f` belongs to, first to last; a plain
+   * field is a set of one. The segments follow one another in the format table.
+   */
+  segmentsOf(f: Field): Field[] {
+    if (!f.continued) return [f];
+    const fields = this.fields;
+    let i = fields.indexOf(f);
+    if (i < 0) return [f];
+    while (i > 0 && fields[i]!.continued !== 'first' && fields[i - 1]!.continued !== undefined && fields[i - 1]!.continued !== 'last') i--;
+    const out: Field[] = [];
+    for (let k = i; k < fields.length; k++) {
+      const g = fields[k]!;
+      if (!g.continued || (k > i && g.continued === 'first')) break;
+      out.push(g);
+      if (g.continued === 'last') break;
+    }
+    return out.length > 0 ? out : [f];
+  }
+
+  /** The cells of a continued entry field set (or a plain field), in typing order. */
+  cellsOf(segments: Field[]): number[] {
+    const out: number[] = [];
+    for (const g of segments) for (let a = g.start; a < g.end; a++) out.push(a);
+    return out;
+  }
+
   addField(field: Field): void {
     // Fields are kept in screen order; a redefinition at the same start replaces.
     const idx = this.fields.findIndex((f) => f.start === field.start);
@@ -353,6 +419,18 @@ export class Screen {
         text += codePage.decode(b);
       }
     }
+    // Highlighted entry field: while the cursor is in it (any segment of a continued set),
+    // the leading attribute of every segment shows the FCW's attribute; the cursor may hide.
+    let cursorHidden = false;
+    const at = this.fieldAt(this.cursor);
+    if (at && !at.bypass) {
+      const segments = this.segmentsOf(at);
+      const hl = segments[0]?.highlight;
+      if (hl) {
+        for (const g of segments) if (g.start > 0) attrs[g.start - 1] = hl.attr;
+        cursorHidden = hl.hideCursor;
+      }
+    }
     return {
       rows: this.rows,
       cols: this.cols,
@@ -360,6 +438,7 @@ export class Screen {
       fields: this.fields.map((f) => ({ start: f.start, length: f.length, bypass: f.bypass })),
       attrs,
       cursor: { row: this.rowOf(this.cursor), col: this.colOf(this.cursor) },
+      cursorHidden: cursorHidden || undefined,
       gui: {
         windows: this.windows.map((w) => ({ row: w.row, col: w.col, rows: w.rows, cols: w.cols, title: w.title, footer: w.footer })),
         scrollBars: this.scrollBars.map((b) => ({

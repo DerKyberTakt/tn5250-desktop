@@ -275,8 +275,10 @@ export class DataStreamProcessor {
     const s = this.screen;
     const out: number[] = [s.rowOf(s.cursor) + 1, s.colOf(s.cursor) + 1, aid];
     type Entry = { addr: number; field?: Field; bar?: GuiScrollBar; sel?: GuiSelection };
+    // A continued entry field set goes out as one field: its first segment's SBA, then the
+    // data of every segment with no delimiters; the other segments are not listed.
     const entries: Entry[] = [
-      ...s.fields.filter((f) => !f.bypass).map((f) => ({ addr: f.start - 1, field: f })),
+      ...s.fields.filter((f) => !f.bypass && (!f.continued || f.continued === 'first' || s.segmentsOf(f)[0] === f)).map((f) => ({ addr: f.start - 1, field: f })),
       ...s.scrollBars.filter((b) => b.owner === undefined).map((b) => ({ addr: b.addr, bar: b })),
       ...s.selections.map((x) => ({ addr: x.addr, sel: x })),
     ].sort((a, b) => a.addr - b.addr);
@@ -307,12 +309,21 @@ export class DataStreamProcessor {
         continue;
       }
       if (!f) continue;
-      const bytes = s.fieldBytes(f);
+      const set = f.continued ? s.segmentsOf(f) : [f];
+      const wordWrap = set[0]!.wordWrap;
+      // The data of the whole set; a word wrap field drops its padding nulls (Read Input
+      // Fields still returns exactly the field length, padded with nulls at the end).
+      let bytes = Array.from(s.cellsOf(set), (a) => s.buffer[a] as number);
+      if (wordWrap) {
+        const n = bytes.length;
+        bytes = bytes.filter((b) => b !== 0);
+        if (kind === 'input') while (bytes.length < n) bytes.push(0);
+      }
       if (kind === 'input') {
         for (const b of bytes) out.push(b === 0 ? 0x40 : b);
         continue;
       }
-      if (!f.mdt) continue;
+      if (!set.some((g) => g.mdt)) continue;
       let end = bytes.length;
       while (end > 0 && bytes[end - 1] === 0) end -= 1;
       if (kind === 'mdt') {
@@ -778,7 +789,10 @@ export class DataStreamProcessor {
     };
     const nullFields = (mdtOnly: boolean): void => {
       for (const f of fields) {
-        if (f.bypass || (mdtOnly && !f.mdt)) continue;
+        if (f.bypass) continue;
+        // A continued entry field is nulled as a whole when any segment was modified.
+        const set = f.continued ? this.screen.segmentsOf(f) : [f];
+        if (mdtOnly && !set.some((g) => g.mdt)) continue;
         this.screen.buffer.fill(0, f.start, f.end);
       }
     };

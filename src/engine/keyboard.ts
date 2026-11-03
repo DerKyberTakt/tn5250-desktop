@@ -295,7 +295,10 @@ export class Keyboard {
    */
   private stops(): Stop[] {
     const s = this.screen;
-    const out: Stop[] = this.inputFields().map((f) => ({ start: f.start, field: f }));
+    // A continued entry field set is one stop, at its first segment.
+    const out: Stop[] = this.inputFields()
+      .filter((f) => !f.continued || s.segmentsOf(f)[0] === f)
+      .map((f) => ({ start: f.start, field: f }));
     for (const sel of s.selections) {
       const first = firstCursorChoice(sel);
       if (first < 0) continue;
@@ -314,7 +317,35 @@ export class Keyboard {
     return this.stops()[0];
   }
 
+  /**
+   * Every field the host numbers for cursor progression: entry fields in screen order,
+   * bypass ones included, a continued set and a selection field counting once.
+   */
+  private numberedStops(): Stop[] {
+    const s = this.screen;
+    const out: Stop[] = s.fields.filter((f) => !f.continued || s.segmentsOf(f)[0] === f).map((f) => ({ start: f.start, field: f }));
+    for (const sel of s.selections) {
+      const first = firstCursorChoice(sel);
+      if (first < 0) continue;
+      const c = sel.choices[first]!;
+      out.push({ start: s.addr(c.row, c.textCol), sel });
+    }
+    return out.sort((a, b) => a.start - b.start);
+  }
+
+  /** The stop a cursor progression FCW on the field the cursor leaves points at, if any. */
+  private progressionTarget(from: number): Stop | undefined {
+    const f = this.screen.fieldAt(from);
+    if (!f || f.bypass) return undefined;
+    const n = this.screen.segmentsOf(f)[0]?.cursorProgression;
+    if (!n) return undefined;
+    const target = this.numberedStops()[n - 1];
+    return target && (target.sel || !target.field?.bypass) ? target : undefined;
+  }
+
   private nextField(from: number): Stop | undefined {
+    const progression = this.progressionTarget(from);
+    if (progression) return progression;
     const stops = this.stops();
     const here = stops.find((st) => this.stopContains(st, from));
     const after = stops.find((st) => st.start > from && st !== here && !this.stopContains(st, from));
@@ -323,6 +354,12 @@ export class Keyboard {
 
   private prevField(from: number): Stop | undefined {
     const stops = this.stops();
+    // Backward out of a field that is the target of a cursor progression: back to its source.
+    const here = this.numberedStops().findIndex((st) => this.stopContains(st, from));
+    if (here >= 0) {
+      const source = this.screen.fields.find((f) => !f.bypass && this.screen.segmentsOf(f)[0] === f && f.cursorProgression === here + 1);
+      if (source) return { start: source.start, field: source };
+    }
     const before = [...stops].reverse().find((st) => st.start < from && !this.stopContains(st, from));
     return before ?? stops[stops.length - 1];
   }
@@ -388,12 +425,12 @@ export class Keyboard {
   }
 
   private beginningOfField(): void {
-    const f = this.currentField();
-    if (!f) {
+    const edit = this.editSet();
+    if (!edit) {
       this.error('0005');
       return;
     }
-    this.screen.cursor = f.start;
+    this.screen.cursor = edit.cells[0]!;
   }
 
   private backtab(): void {
@@ -416,15 +453,157 @@ export class Keyboard {
     }
   }
 
+  // ---- editing across a field or a continued entry field set ------------------
+
+  /**
+   * The field under the cursor as the operator edits it: a continued entry field set is
+   * one field whose cells run through its segments; a plain field is a set of one.
+   */
+  private editSet(): { f: Field; set: Field[]; cells: number[]; idx: number } | undefined {
+    const f = this.currentField();
+    if (!f) return undefined;
+    const set = this.screen.segmentsOf(f);
+    const cells = this.screen.cellsOf(set);
+    return { f: set[0]!, set, cells, idx: cells.indexOf(this.screen.cursor) };
+  }
+
+  private setMdt(set: Field[]): void {
+    for (const g of set) g.mdt = true;
+  }
+
+  /** Moves the cell contents right by one from `from` (the last cell is lost). */
+  private shiftRight(cells: number[], from: number): void {
+    const b = this.screen.buffer;
+    for (let i = cells.length - 1; i > from; i--) b[cells[i]!] = b[cells[i - 1]!] as number;
+  }
+
+  /** Moves the cell contents left by one from `from`; the last cell becomes null. */
+  private shiftLeft(cells: number[], from: number): void {
+    const b = this.screen.buffer;
+    for (let i = from; i < cells.length - 1; i++) b[cells[i]!] = b[cells[i + 1]!] as number;
+    if (cells.length > 0) b[cells[cells.length - 1]!] = EBCDIC_NULL;
+  }
+
+  private fillCells(cells: number[], from: number, byte: number): void {
+    for (let i = Math.max(0, from); i < cells.length; i++) this.screen.buffer[cells[i]!] = byte;
+  }
+
+  /**
+   * Word wrap: lays the words of the set out again so none is split between two lines
+   * or segments (padding the end of a line with nulls); when they do not fit that way,
+   * the text is written straight through. The cursor keeps its place in the text.
+   */
+  private reflow(set: Field[], cells: number[]): void {
+    if (!set[0]!.wordWrap) return;
+    const s = this.screen;
+    const b = s.buffer;
+    // Lines: segments, and within a segment one line per screen row.
+    const lines: number[][] = [];
+    for (const g of set) {
+      let line: number[] = [];
+      let row = -1;
+      for (let a = g.start; a < g.end; a++) {
+        const r = s.rowOf(a);
+        if (r !== row && line.length > 0) {
+          lines.push(line);
+          line = [];
+        }
+        row = r;
+        line.push(a);
+      }
+      if (line.length > 0) lines.push(line);
+    }
+    const idx = cells.indexOf(s.cursor);
+    let logical = 0;
+    for (let i = 0; i < idx && i < cells.length; i++) if (b[cells[i]!] !== EBCDIC_NULL) logical++;
+    const bytes = cells.map((a) => b[a] as number).filter((x) => x !== EBCDIC_NULL);
+    // Split into words (runs of non-blank) keeping single blanks between them.
+    const words: number[][] = [];
+    let cur: number[] = [];
+    for (const x of bytes) {
+      if (x === EBCDIC_BLANK) {
+        if (cur.length > 0) words.push(cur);
+        words.push([EBCDIC_BLANK]);
+        cur = [];
+      } else cur.push(x);
+    }
+    if (cur.length > 0) words.push(cur);
+    const placed: number[] = [];
+    let li = 0;
+    let pos = 0;
+    let fits = true;
+    for (const w of words) {
+      const line = lines[li];
+      if (!line) {
+        fits = false;
+        break;
+      }
+      if (w[0] === EBCDIC_BLANK) {
+        if (pos < line.length) {
+          placed.push(EBCDIC_BLANK);
+          pos++;
+        } else {
+          li++;
+          pos = 0;
+        }
+        continue;
+      }
+      if (w.length > line.length - pos && w.length <= line.length) {
+        // Pad the rest of this line with nulls and start the word on the next.
+        while (pos < line.length) {
+          placed.push(EBCDIC_NULL);
+          pos++;
+        }
+        li++;
+        pos = 0;
+        if (!lines[li]) {
+          fits = false;
+          break;
+        }
+      }
+      for (const x of w) {
+        const l = lines[li];
+        if (!l) {
+          fits = false;
+          break;
+        }
+        placed.push(x);
+        pos++;
+        if (pos >= l.length) {
+          li++;
+          pos = 0;
+        }
+      }
+      if (!fits) break;
+    }
+    const out = fits ? placed : bytes;
+    if (out.length > cells.length) return; // more than the field can hold: leave it as it is
+    cells.forEach((a, i) => (b[a] = i < out.length ? (out[i] as number) : EBCDIC_NULL));
+    // Cursor: the cell of the same logical character.
+    let seen = 0;
+    for (let i = 0; i < cells.length; i++) {
+      if (seen === logical && b[cells[i]!] !== EBCDIC_NULL) {
+        s.cursor = cells[i]!;
+        return;
+      }
+      if (b[cells[i]!] !== EBCDIC_NULL) seen++;
+      else if (seen === logical) {
+        s.cursor = cells[i]!;
+        return;
+      }
+    }
+  }
+
   private typeChar(ch: string): void {
     if (this.state.inputInhibited !== 'none') return;
     if (this.selectionType(ch)) return;
     const s = this.screen;
-    const f = this.currentField();
-    if (!f) {
+    const edit = this.editSet();
+    if (!edit) {
       this.error('0005');
       return;
     }
+    const { f, set, cells, idx } = edit;
     // The field is full and the cursor sits past its last position: the operator must
     // leave the field first (Field Exit, Tab, an arrow key).
     if (this.state.cursorPastEnd) {
@@ -437,19 +616,21 @@ export class Keyboard {
     const cursor = s.cursor;
     this.state.autoAdvanced = false;
     if (this.state.insert) {
-      const last = s.buffer[f.end - 1];
+      const last = s.buffer[cells[cells.length - 1]!];
       if (last !== EBCDIC_NULL && last !== EBCDIC_BLANK) {
         this.error('0012');
         return;
       }
-      s.buffer.copyWithin(cursor + 1, cursor, f.end - 1);
+      this.shiftRight(cells, idx);
     }
     s.buffer[cursor] = byte;
-    f.mdt = true;
-    if (cursor + 1 < f.end) {
-      s.cursor = cursor + 1;
+    this.setMdt(set);
+    if (idx + 1 < cells.length) {
+      s.cursor = cells[idx + 1]!;
+      this.reflow(set, cells);
       return;
     }
+    this.reflow(set, cells);
     if (f.autoEnter) {
       this.sendAid(AID_AUTO_ENTER);
       return;
@@ -459,27 +640,28 @@ export class Keyboard {
       this.state.cursorPastEnd = true;
       return;
     }
-    const next = this.nextField(f.end - 1);
+    const next = this.nextField(cells[cells.length - 1]!);
     if (next) this.state.autoAdvanced = true;
     this.moveToField(next);
   }
 
-  /** End of Field: the cursor goes just after the last typed character of the field. */
+  /** End of Field: the cursor goes just after the last typed character of the field (set). */
   private endOfField(): void {
     const s = this.screen;
-    const f = this.currentField();
-    if (!f) {
+    const edit = this.editSet();
+    if (!edit) {
       this.error('0005');
       return;
     }
-    let end = f.end;
-    while (end > f.start && (s.buffer[end - 1] === EBCDIC_NULL || s.buffer[end - 1] === EBCDIC_BLANK)) end -= 1;
-    if (end >= f.end) {
+    const { cells } = edit;
+    let end = cells.length;
+    while (end > 0 && (s.buffer[cells[end - 1]!] === EBCDIC_NULL || s.buffer[cells[end - 1]!] === EBCDIC_BLANK)) end -= 1;
+    if (end >= cells.length) {
       // Full: the last cell, past the end (a Field Exit now keeps the text).
-      s.cursor = f.end - 1;
+      s.cursor = cells[cells.length - 1]!;
       this.state.cursorPastEnd = true;
     } else {
-      s.cursor = end;
+      s.cursor = cells[end]!;
     }
   }
 
@@ -529,6 +711,25 @@ export class Keyboard {
     // Pasted text that exactly filled the previous field already moved here by itself;
     // the paste's own Field Exit must not wipe this field.
     if (kind === 'fieldExit' && this.autoAdvanced && s.cursor === f.start) return;
+    // A continued entry field set: nulled from the cursor to the end of the last segment,
+    // then on to the field after the set (Field Minus is not valid there).
+    if (f.continued) {
+      if (kind === 'fieldMinus') {
+        this.error('0016');
+        return;
+      }
+      const edit = this.editSet();
+      if (!edit) return;
+      this.fillCells(edit.cells, this.pastEnd ? edit.idx + 1 : edit.idx, EBCDIC_NULL);
+      this.setMdt(edit.set);
+      this.reflow(edit.set, edit.cells);
+      if (edit.f.autoEnter) {
+        this.sendAid(AID_AUTO_ENTER);
+        return;
+      }
+      this.moveToField(this.nextField(edit.cells[edit.cells.length - 1]!));
+      return;
+    }
     // Past the end of a full field the character under the cursor is kept.
     s.buffer.fill(EBCDIC_NULL, this.pastEnd ? s.cursor + 1 : s.cursor, f.end);
     const bytes = s.fieldBytes(f);
@@ -555,6 +756,7 @@ export class Keyboard {
     }
     f.mdt = true;
     if (this.state.inputInhibited === 'error') return;
+    this.reflow([f], s.cellsOf([f]));
     if (f.autoEnter) {
       this.sendAid(AID_AUTO_ENTER);
       return;
@@ -576,73 +778,76 @@ export class Keyboard {
 
   private backspace(): void {
     const s = this.screen;
-    const f = this.currentField();
+    const edit = this.editSet();
+    if (!edit) return;
+    const { set, cells, idx } = edit;
     // Past the end of a full field the cursor is after the last character: Backspace
     // removes that character (PC style, like everywhere else in the field).
-    if (f && this.pastEnd) {
-      s.buffer[f.end - 1] = EBCDIC_NULL;
-      f.mdt = true;
+    if (this.pastEnd) {
+      s.buffer[cells[cells.length - 1]!] = EBCDIC_NULL;
+      this.setMdt(set);
       return;
     }
-    if (f && s.cursor > f.start) {
-      s.cursor -= 1;
-      s.buffer.copyWithin(s.cursor, s.cursor + 1, f.end);
-      s.buffer[f.end - 1] = EBCDIC_NULL;
-      f.mdt = true;
+    if (idx > 0) {
+      s.cursor = cells[idx - 1]!;
+      this.shiftLeft(cells, idx - 1);
+      this.setMdt(set);
+      this.reflow(set, cells);
     }
     // At the start of a field, or outside any field, Backspace does nothing.
   }
 
   private deleteChar(): void {
-    const s = this.screen;
-    const f = this.currentField();
-    if (!f) {
+    const edit = this.editSet();
+    if (!edit) {
       this.error('0005');
       return;
     }
-    s.buffer.copyWithin(s.cursor, s.cursor + 1, f.end);
-    s.buffer[f.end - 1] = EBCDIC_NULL;
-    f.mdt = true;
+    this.shiftLeft(edit.cells, edit.idx);
+    this.setMdt(edit.set);
+    this.reflow(edit.set, edit.cells);
   }
 
   /** Delete Word: the word under the cursor and the blanks after it; the rest of the field shifts left. */
   private deleteWord(): void {
     const s = this.screen;
-    const f = this.currentField();
-    if (!f) {
+    const edit = this.editSet();
+    if (!edit) {
       this.error('0005');
       return;
     }
-    const blank = (p: number): boolean => s.buffer[p] === EBCDIC_NULL || s.buffer[p] === EBCDIC_BLANK;
-    let end = s.cursor;
-    while (end < f.end && !blank(end)) end += 1;
-    while (end < f.end && blank(end)) end += 1;
-    if (end === s.cursor) return;
-    s.buffer.copyWithin(s.cursor, end, f.end);
-    s.buffer.fill(EBCDIC_NULL, f.end - (end - s.cursor), f.end);
-    f.mdt = true;
+    const { set, cells, idx } = edit;
+    const blank = (i: number): boolean => s.buffer[cells[i]!] === EBCDIC_NULL || s.buffer[cells[i]!] === EBCDIC_BLANK;
+    let end = idx;
+    while (end < cells.length && !blank(end)) end += 1;
+    while (end < cells.length && blank(end)) end += 1;
+    if (end === idx) return;
+    for (let k = 0; k < end - idx; k++) this.shiftLeft(cells, idx);
+    this.setMdt(set);
+    this.reflow(set, cells);
   }
 
-  /** Erase Field: the whole current field, cursor back to its start. */
+  /** Erase Field: the whole current field (set), cursor back to its start. */
   private eraseField(): void {
-    const f = this.currentField();
-    if (!f) {
+    const edit = this.editSet();
+    if (!edit) {
       this.error('0005');
       return;
     }
-    this.screen.buffer.fill(EBCDIC_NULL, f.start, f.end);
-    f.mdt = true;
-    this.screen.cursor = f.start;
+    this.fillCells(edit.cells, 0, EBCDIC_NULL);
+    this.setMdt(edit.set);
+    this.screen.cursor = edit.cells[0]!;
   }
 
   private eraseEof(): void {
-    const f = this.currentField();
-    if (!f) {
+    const edit = this.editSet();
+    if (!edit) {
       this.error('0005');
       return;
     }
-    this.screen.buffer.fill(EBCDIC_NULL, this.pastEnd ? this.screen.cursor + 1 : this.screen.cursor, f.end);
-    f.mdt = true;
+    this.fillCells(edit.cells, this.pastEnd ? edit.idx + 1 : edit.idx, EBCDIC_NULL);
+    this.setMdt(edit.set);
+    this.reflow(edit.set, edit.cells);
   }
 
   private eraseInput(): void {
@@ -654,14 +859,14 @@ export class Keyboard {
   }
 
   private dup(): void {
-    const f = this.currentField();
-    if (!f || !f.dupEnable) {
+    const edit = this.editSet();
+    if (!edit || !edit.f.dupEnable) {
       this.error('0019');
       return;
     }
-    this.screen.buffer.fill(EBCDIC_DUP, this.pastEnd ? this.screen.cursor + 1 : this.screen.cursor, f.end);
-    f.mdt = true;
-    this.moveToField(this.nextField(f.end - 1));
+    this.fillCells(edit.cells, this.pastEnd ? edit.idx + 1 : edit.idx, EBCDIC_DUP);
+    this.setMdt(edit.set);
+    this.moveToField(this.nextField(edit.cells[edit.cells.length - 1]!));
   }
 
   private fieldMark(): void {

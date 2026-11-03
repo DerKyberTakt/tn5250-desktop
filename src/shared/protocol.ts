@@ -84,6 +84,8 @@ export interface ScreenSnapshot {
    */
   attrs: number[];
   cursor: { row: number; col: number };
+  /** The cursor is in a highlighted entry field that hides it. */
+  cursorHidden?: boolean;
   /** Enhanced 5250 constructs drawn by the terminal (absent on demo screens). */
   gui?: {
     windows: SnapshotWindow[];

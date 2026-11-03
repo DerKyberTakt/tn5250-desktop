@@ -607,7 +607,7 @@ export class Renderer {
 
     // Cursor. Never reveal nondisplay data under a block cursor.
     const { row, col } = s.cursor;
-    if (row >= 0 && row < rows && col >= 0 && col < cols && (this.blinkOn || !this.options.cursorBlink)) {
+    if (!s.cursorHidden && row >= 0 && row < rows && col >= 0 && col < cols && (this.blinkOn || !this.options.cursorBlink)) {
       const x = this.x(col);
       const y = this.y(row);
       ctx.fillStyle = this.theme.cursor;
