@@ -1,5 +1,7 @@
 # TN5250 Terminal (desktop)
 
+[![Release](https://img.shields.io/github/v/release/DerKyberTakt/tn5250-desktop?label=release)](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest) [![Downloads](https://img.shields.io/github/downloads/DerKyberTakt/tn5250-desktop/total)](https://github.com/DerKyberTakt/tn5250-desktop/releases) [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest) [![CI](https://github.com/DerKyberTakt/tn5250-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/DerKyberTakt/tn5250-desktop/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A free, open-source 5250 terminal emulator for IBM i, as a native desktop app for
 Windows (Linux next). Nothing else to install: no Java, no .NET, no browser runtime.
 
