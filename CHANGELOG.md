@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Keyboard settings page: a visual keyboard above the search - live key feedback, a dot on bound keys with the list on hover, click to list a key's functions, and chords composed by clicks while Assign is active (shared from tn5250-terminal). The connected-first session list and the History view of the extension are not in the desktop app yet.
+
 ## 0.1.5 - 2026-11-03
 
 - Keyboard settings page: Assign takes Ctrl combinations and a bare modifier on release (Esc cancels); a key taken from another function says so with Undo; a function whose ACS key is gone is flagged with Restore; Import and Reset at the top with explanations; the .kmp picker opens in Documents\IBM\iAccessClient\Emulator and the import lands in the form until saved (shared from tn5250-terminal).

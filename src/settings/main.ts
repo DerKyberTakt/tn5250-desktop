@@ -1,6 +1,7 @@
 import type { KeyAction } from '../shared/keymap';
 import { ACS_KEYMAP } from '../shared/keymap';
 import { KeyCapture } from './keyCapture';
+import { MAIN_ROWS, MODIFIER_CODES, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, chordName, nameUsesCode, type ClickedChord, type KeyRow } from './visualKeyboard';
 import {
   COLOR_KEYS,
   KEY_ACTION_GROUPS,
@@ -30,6 +31,9 @@ const capture = new KeyCapture();
 let keyNotice: { text: string; undo?: () => void } | undefined;
 /** The open terminal tabs, so the page can warn before a save that would reload one. */
 let openTabs: OpenTabInfo[] = [];
+/** A chord composed by clicking the visual keyboard while Assign is active. */
+let vkChord: ClickedChord = { mods: new Set() };
+let vkNumpad = false;
 
 function post(msg: SettingsToHost): void {
   vscode.postMessage(msg);
@@ -872,9 +876,13 @@ function renderKeyTables(query: string): HTMLElement[] {
   const q = query.trim().toLowerCase();
   const map = effectiveKeymap(values.keymap);
   const keysFor = (action: KeyAction): string[] => Object.entries(map).filter(([, a]) => a === action).map(([k]) => k);
+  // "key:F1" (a click on the visual keyboard) keeps the functions bound to that key cap, not every name containing "f1".
+  const code = query.trim().startsWith('key:') ? query.trim().slice(4) : undefined;
   const out: HTMLElement[] = [];
   for (const group of KEY_ACTION_GROUPS) {
-    const rows = group.actions.filter(([action, label]) => !q || [action, label, ...keysFor(action)].join(' ').toLowerCase().includes(q));
+    const rows = group.actions.filter(([action, label]) =>
+      code !== undefined ? keysFor(action).some((k) => nameUsesCode(k, code)) : !q || [action, label, ...keysFor(action)].join(' ').toLowerCase().includes(q),
+    );
     if (!rows.length) continue;
     out.push(el('h4', undefined, group.title));
     const table = el('table');
@@ -908,6 +916,7 @@ function renderKeyTables(query: string): HTMLElement[] {
       const b = el('button', undefined, capturing === action ? 'Press a key… (Esc cancels)' : 'Assign');
       b.onclick = () => {
         capturing = action;
+        vkChord = { mods: new Set() };
         render();
       };
       act.append(b);
@@ -991,6 +1000,92 @@ function assignKey(name: string): void {
   render();
 }
 
+/** Toggles the pressed look of a key cap while a physical key is down (live feedback). */
+function setKeyDown(code: string, down: boolean): void {
+  for (const key of document.querySelectorAll<HTMLElement>(`.vk-key[data-code="${code}"]`)) key.classList.toggle('down', down);
+}
+
+/**
+ * The visual keyboard: live feedback of pressed keys, a dot on key caps that have a
+ * binding (hover lists them), click = filter the list by that key cap, and while Assign
+ * is active click = compose the chord, saved with the button at the bottom right.
+ */
+function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLElement {
+  const vk = el('div', 'vk');
+  const map = effectiveKeymap(values.keymap);
+  let keyboard: HTMLElement;
+  const refresh = (): void => {
+    const next = build();
+    keyboard.replaceWith(next);
+    keyboard = next;
+  };
+  const build = (): HTMLElement => {
+    const wrap = el('div', 'vk-blocks');
+    const block = (rows: KeyRow[], cls: string): HTMLElement => {
+      const b = el('div', `vk-block ${cls}`);
+      for (const row of rows) {
+        const r = el('div', 'vk-row');
+        for (const cap of row) {
+          if (!cap) {
+            r.append(el('span', 'vk-gap'));
+            continue;
+          }
+          const key = el('button', 'vk-key', cap.label);
+          key.type = 'button';
+          key.dataset.code = cap.code;
+          key.style.width = `${(cap.width ?? 1) * 30 - 3}px`;
+          const bound = bindingsForCode(map, cap.code);
+          if (bound.length) {
+            key.classList.add('bound');
+            key.title = bound.join('\n');
+          } else key.title = capturing ? 'Click to add to the key combination' : 'Click to list what is bound to this key';
+          if (capturing && (vkChord.mods.has(cap.code) || vkChord.main === cap.code)) key.classList.add('latched');
+          key.onclick = () => {
+            if (capturing) {
+              if (MODIFIER_CODES.has(cap.code)) {
+                if (vkChord.mods.has(cap.code)) vkChord.mods.delete(cap.code);
+                else vkChord.mods.add(cap.code);
+              } else vkChord.main = vkChord.main === cap.code ? undefined : cap.code;
+              refresh();
+              return;
+            }
+            search.value = `key:${cap.code}`;
+            keySearch = search.value;
+            fill();
+          };
+          r.append(key);
+        }
+        b.append(r);
+      }
+      return b;
+    };
+    wrap.append(block(MAIN_ROWS, 'main'), block(NAV_ROWS, 'nav'));
+    if (vkNumpad) wrap.append(block(NUMPAD_ROWS, 'numpad'));
+    const foot = el('div', 'vk-foot');
+    const numpad = el('button', 'link', vkNumpad ? 'Hide numpad' : 'Show numpad');
+    numpad.onclick = () => {
+      vkNumpad = !vkNumpad;
+      refresh();
+    };
+    foot.append(numpad);
+    if (capturing) {
+      const name = chordName(vkChord);
+      const readout = el('span', 'vk-readout', name ? `Assign ${name} to ${actionLabel(capturing)}` : `Click the keys for ${actionLabel(capturing)}, or press them`);
+      const save = el('button', 'primary', 'Save keybind');
+      save.disabled = !name;
+      save.onclick = () => {
+        if (name) assignKey(name);
+      };
+      foot.append(readout, save);
+    }
+    wrap.append(foot);
+    return wrap;
+  };
+  keyboard = build();
+  vk.append(keyboard);
+  return vk;
+}
+
 function renderKeyboard(): HTMLElement {
   const box = el('div', 'keyboard');
   const bar = el('div', 'kb-toolbar');
@@ -1017,6 +1112,7 @@ function renderKeyboard(): HTMLElement {
     dirty = true;
     render();
   };
+  box.append(renderVisualKeyboard(search, fill));
   bar.append(
     search,
     imp,
@@ -1217,10 +1313,15 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
 });
 
 // Assign: chords are taken on the keydown of their main key, a modifier on its own on its keyup.
+// The visual keyboard lights the key cap of every key while it is down.
 const keyInfo = (e: KeyboardEvent) => ({ key: e.key, code: e.code, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey });
+window.addEventListener('blur', () => {
+  for (const key of document.querySelectorAll<HTMLElement>('.vk-key.down')) key.classList.remove('down');
+});
 window.addEventListener(
   'keydown',
   (e) => {
+    setKeyDown(e.code, true);
     if (!capturing) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1238,6 +1339,7 @@ window.addEventListener(
 window.addEventListener(
   'keyup',
   (e) => {
+    setKeyDown(e.code, false);
     if (!capturing) return;
     e.preventDefault();
     e.stopPropagation();
