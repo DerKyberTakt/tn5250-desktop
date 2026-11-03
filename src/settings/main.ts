@@ -1080,7 +1080,7 @@ function setKeyDown(code: string, down: boolean): void {
  * is active click = compose the chord, saved from the key bar underneath. The key bar
  * also shows what just happened (assigned, moved, cancelled) when nothing is captured.
  */
-function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLElement {
+function renderVisualKeyboard(search: HTMLInputElement): HTMLElement {
   const vk = el('div', 'vk');
   const map = effectiveKeymap(values.keymap);
   let keyboard: HTMLElement;
@@ -1234,7 +1234,7 @@ function renderKeyboard(): HTMLElement {
     notify('All keys reset to the ACS layout. Save to keep it, Revert to go back.', { sticky: true });
     render();
   };
-  box.append(renderVisualKeyboard(search, fill));
+  box.append(renderVisualKeyboard(search));
   kbRefresh = () => {
     vkRefresh?.();
     fill();
