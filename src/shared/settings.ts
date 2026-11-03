@@ -1,5 +1,6 @@
 import type { KeyAction, Keymap } from './keymap';
 import { ACS_KEYMAP } from './keymap';
+import type { PcCommandPolicy } from './pcCommand';
 
 export type ScreenSize = '24x80' | '27x132';
 export type CursorStyle = 'block' | 'underline';
@@ -146,6 +147,8 @@ export interface TerminalSettings {
   typeAhead: boolean;
   alarm: boolean;
   keyClick: boolean;
+  /** What to do with PC commands the host sends through STRPCCMD (PC Organizer). */
+  pcCommands: PcCommandPolicy;
 
   /** Key name -> action overrides on top of the ACS layout; null unbinds a key. */
   keymap: Record<string, KeyAction | null>;
@@ -268,6 +271,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   typeAhead: true,
   alarm: true,
   keyClick: false,
+  pcCommands: 'links',
 
   keymap: {},
   keyWarningsIgnored: [],

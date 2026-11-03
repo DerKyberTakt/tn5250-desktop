@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -282,4 +283,29 @@ func (a *App) OpenURL(url string) {
 	if strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") {
 		wruntime.BrowserOpenURL(a.ctx, url)
 	}
+}
+
+// RunPcCommand runs a PC Organizer command (STRPCCMD on the host) through the user's
+// shell, as PC Organizer and tn5250j do. The policy that allowed it (open links only, ask,
+// run everything) lives in the front end; wait=true (PAUSE(*YES)) returns when the command
+// has exited, otherwise as soon as it started.
+func (a *App) RunPcCommand(command string, wait bool) error {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return errors.New("empty PC command")
+	}
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd.exe", "/d", "/s", "/c", command)
+	} else {
+		cmd = exec.Command("/bin/sh", "-c", command)
+	}
+	if wait {
+		return cmd.Run()
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }

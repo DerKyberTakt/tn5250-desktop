@@ -2,9 +2,11 @@ import { buildDemoScreen } from '../engine/demoScreen';
 import { SessionController } from '../extension/sessionController';
 import { expandDeviceName } from '../shared/deviceName';
 import type { KeyAction } from '../shared/keymap';
+import type { PcCommandKind } from '../shared/pcCommand';
 import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type WebviewToHost } from '../shared/protocol';
 import { buildTitle, type TerminalSettings } from '../shared/settings';
 import { errorText, goApp, type SystemInfo } from './bridge';
+import { confirmDialog } from './dialogs';
 import { GoTransport } from './goTransport';
 import type { Credentials } from './credentials';
 import type { Store } from './store';
@@ -101,10 +103,27 @@ export class TerminalTab {
           signon: () => this.liveSettings(),
           password: async () => (await host.credentials.find(this.liveSettings().signonUser, profile.host, profile.name)) || undefined,
           log: (message) => host.log(`[${label}] ${message}`),
+          pcCommandPolicy: () => this.liveSettings().pcCommands,
+          pcCommand: (kind, decision, wait) => this.handlePcCommand(kind, decision, wait),
         },
         (events) => new GoTransport(events),
       );
     }
+  }
+
+  /** STRPCCMD from the host: open the link or run the command, asking first when the policy says so. */
+  private async handlePcCommand(kind: PcCommandKind, decision: 'open' | 'run' | 'ask', wait: boolean): Promise<void> {
+    if (kind.kind === 'link') {
+      if (decision === 'ask' && !(await confirmDialog('Open link', `${this.title}: the host wants to open\n${kind.url}`, 'Open'))) return;
+      await goApp().OpenURL(kind.url);
+      this.host.notify(`Opened ${kind.url}`);
+      return;
+    }
+    if (decision === 'ask' && !(await confirmDialog('PC command from host', `${this.title}: the host wants to run this command on your PC:\n${kind.command}`, 'Run'))) {
+      this.host.log(`[${this.title}] PC command not run: ${kind.command}`);
+      return;
+    }
+    await goApp().RunPcCommand(kind.command, wait);
   }
 
   get connected(): boolean {

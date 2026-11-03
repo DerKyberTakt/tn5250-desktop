@@ -3,6 +3,7 @@ import type { ScreenSnapshot } from '../shared/protocol';
 import { decoratedFieldCells, fieldRanges, keyLabelsIn, markedFieldRanges, rowText, urlsIn, type FieldRange } from '../shared/screenText';
 import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
 import { highlightScreen, Tok } from '../shared/sourceHighlight';
+import { fitFont } from './fit';
 
 /** Enhanced mode draws no box around input fields longer than this (characters). */
 const BOX_MAX_FIELD_LENGTH = 60;
@@ -122,8 +123,6 @@ export interface RendererOptions {
 }
 
 const NULL = '\u0000';
-const LINE_HEIGHT = 1.2;
-const MIN_FONT_PX = 6;
 const FALLBACK_FONT = 'Consolas, "Courier New", monospace';
 
 /** Draws a ScreenSnapshot on a canvas as a fixed character grid. */
@@ -302,34 +301,20 @@ export class Renderer {
     if (!this.screen || this.viewportW <= 0 || this.viewportH <= 0) return;
     const { rows, cols } = this.screen;
     this.pad = this.options.uiMode === 'enhanced' ? this.theme.enhanced.padding : 0;
-    const availW = this.viewportW - this.pad * 2;
-    const availH = this.viewportH - this.pad * 2;
+    const m = fitFont({
+      boxW: this.viewportW,
+      boxH: this.viewportH,
+      pad: this.pad,
+      rows,
+      cols,
+      autoFit: this.options.autoFit,
+      fontSize: this.options.fontSize,
+      zoom: this.options.zoom,
+      crisp: this.options.textRendering === 'crisp',
+      measure: (px) => this.measureCharWidth(px),
+    });
 
-    let px: number;
-    if (this.options.autoFit) {
-      px = availH / rows / LINE_HEIGHT;
-      const cw = this.measureCharWidth(px);
-      if (cols * cw > availW) px = px * (availW / (cols * cw));
-    } else {
-      px = this.options.fontSize;
-    }
-    px = Math.max(MIN_FONT_PX, Math.floor(px * this.options.zoom));
-
-    const measure = (size: number): { cellW: number; cellH: number; cssW: number; cssH: number } => {
-      let cellW = this.measureCharWidth(size);
-      if (this.options.textRendering === 'crisp') cellW = Math.max(1, Math.floor(cellW));
-      const cellH = Math.round(size * LINE_HEIGHT);
-      return { cellW, cellH, cssW: Math.ceil(cols * cellW) + this.pad * 2, cssH: rows * cellH + this.pad * 2 };
-    };
-    let m = measure(px);
-    // Auto-fit must really fit: rounding the line height can overshoot by a pixel or two, which
-    // brings up a scrollbar, narrows the viewport, shrinks the screen, drops the scrollbar and so
-    // on, so the screen keeps resizing itself. Step the font down until it fits.
-    if (this.options.autoFit && this.options.zoom <= 1) {
-      while (px > MIN_FONT_PX && (m.cssW > this.viewportW || m.cssH > this.viewportH)) m = measure(--px);
-    }
-
-    this.fontPx = px;
+    this.fontPx = m.px;
     this.cellW = m.cellW;
     this.cellH = m.cellH;
     const { cssW, cssH } = m;
@@ -339,6 +324,9 @@ export class Renderer {
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, this.pad, this.pad);
+    // Only a zoomed-in screen may scroll. A fitted one never shows scrollbars, so they can
+    // never narrow the box and start the resize loop again.
+    this.canvas.parentElement?.classList.toggle('overflow', cssW > this.viewportW || cssH > this.viewportH);
   }
 
   private x(col: number): number {

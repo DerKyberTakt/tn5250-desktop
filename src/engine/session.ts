@@ -8,6 +8,7 @@ import {
   parseRecord,
 } from './gds';
 import { Keyboard } from './keyboard';
+import { detectPcCommand, type PcCommandRequest } from './pco';
 import { Screen } from './screen';
 import { TerminalState } from './state';
 import { TelnetSession } from './telnet';
@@ -42,6 +43,12 @@ export interface SessionEvents {
   trace?(line: string): void;
   /** A protocol error; the session should be closed. */
   error?(err: Error): void;
+  /**
+   * The host wrote a PC Organizer request (STRPCCMD) and waits for Enter. Return true to
+   * take it over: the screen is then not published, and the host must `press('enter')`
+   * once the command was run (or refused). False shows the host's fallback screen.
+   */
+  pcCommand?(request: PcCommandRequest): boolean;
 }
 
 /**
@@ -60,6 +67,8 @@ export class Session5250 {
   deviceName = '';
   typeAhead: boolean;
   private queue: QueuedKey[] = [];
+  /** A PC Organizer request is being handled: nothing is published until the host writes again. */
+  private quiet = false;
 
   constructor(
     options: SessionOptions,
@@ -105,7 +114,7 @@ export class Session5250 {
     if (action === 'reset') this.queue = [];
     if (!IMMEDIATE_ACTIONS.has(action) && this.enqueue({ kind: 'press', action })) return;
     this.keyboard.press(action);
-    this.events.update?.();
+    this.notify();
   }
 
   /** Moves the cursor (mouse click); also leaves an operator error state. */
@@ -115,7 +124,7 @@ export class Session5250 {
       this.screen.cursor = this.screen.addr(row, col);
       this.state.cursorPastEnd = false;
       this.state.autoAdvanced = false;
-      this.events.update?.();
+      this.notify();
     }
   }
 
@@ -123,7 +132,11 @@ export class Session5250 {
   type(text: string): void {
     if (this.enqueue({ kind: 'type', text })) return;
     this.keyboard.type(text);
-    this.events.update?.();
+    this.notify();
+  }
+
+  private notify(): void {
+    if (!this.quiet) this.events.update?.();
   }
 
   /** Number of keys waiting for the host to unlock the keyboard. */
@@ -135,7 +148,7 @@ export class Session5250 {
   private enqueue(key: QueuedKey): boolean {
     if (!this.typeAhead || this.state.inputInhibited !== 'system') return false;
     if (this.queue.length < TYPE_AHEAD_LIMIT) this.queue.push(key);
-    this.events.update?.();
+    this.notify();
     return true;
   }
 
@@ -195,9 +208,20 @@ export class Session5250 {
       default:
         break;
     }
+    this.quiet = false;
     if (record.data.length > 0) {
       for (const response of this.processor.process(record.data)) {
         this.sendRecord(response.opcode, 0, response.data);
+      }
+    }
+    // STRPCCMD: the host wrote a PC command and reads the screen. When the host side takes
+    // it, the screen stays as it was (no flash of the fallback text) and type-ahead waits for
+    // the next real screen; the host side presses Enter to let the host program resume.
+    if (this.state.pendingRead && this.events.pcCommand) {
+      const request = detectPcCommand(this.screen, this.codePage);
+      if (request && this.events.pcCommand(request)) {
+        this.quiet = true;
+        return;
       }
     }
     this.drainQueue();

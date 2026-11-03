@@ -13,3 +13,5 @@ build/windows/installer/tmp/
 
 # session traces are never committed
 tn5250-trace-*.json
+# local traces and stack dumps for debugging
+debug/

@@ -25,12 +25,22 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* A fitted screen never scrolls; the renderer adds .overflow when it is zoomed in. */
+  overflow: hidden;
+}
+
+#viewport.overflow {
   overflow: auto;
+  /* Scrolling starts at the top-left of a zoomed screen rather than at its centre. */
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 
 #screen {
   display: block;
   flex: none;
+  /* Centred while it fits; a zoomed-in screen keeps its top-left corner reachable. */
+  margin: auto;
 }
 
 #oia {

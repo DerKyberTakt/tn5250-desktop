@@ -202,6 +202,8 @@ const HELP: Partial<Record<Key, string>> = {
   typeAhead:
     'Keys pressed while the keyboard is locked (X SYSTEM) are kept and replayed when the host unlocks it, so you can type the next screen before it appears. An error message or Reset discards them.',
   mouseWheelPaging: 'The mouse wheel presses Page Up and Page Down (Roll). Ctrl+wheel always zooms.',
+  pcCommands:
+    'Host programs can ask the PC to run a command (STRPCCMD, PC Organizer), usually START with a web address. Open links: http(s) links open in the browser at once, anything else asks first. Always ask: every command asks. Run everything: nothing asks. Off: the host shows its "PCO.EXE is not active" screen instead.',
 };
 
 const YESNO = (key: Key, label: string, note?: string): FieldSpec => ({ kind: 'bool', key, label, note });
@@ -455,7 +457,21 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     id: 'behavior',
     title: 'Behavior',
     group: 'Preferences',
-    fields: [YESNO('mouseWheelPaging', 'Mouse Wheel = Page Up / Down'), YESNO('typeAhead', 'Type-ahead (buffer keys while locked)')],
+    fields: [
+      YESNO('mouseWheelPaging', 'Mouse Wheel = Page Up / Down'),
+      YESNO('typeAhead', 'Type-ahead (buffer keys while locked)'),
+      {
+        kind: 'select',
+        key: 'pcCommands',
+        label: 'PC commands from the host (STRPCCMD)',
+        options: [
+          ['links', 'Open links, ask for other commands'],
+          ['ask', 'Always ask'],
+          ['all', 'Run everything without asking'],
+          ['off', 'Off (show the host screen)'],
+        ],
+      },
+    ],
   },
 ];
 

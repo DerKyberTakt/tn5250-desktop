@@ -143,6 +143,8 @@ interface GoApp {
   ClipboardSet(text: string): Promise<void>;
   ClipboardGet(): Promise<string>;
   OpenURL(url: string): Promise<void>;
+  /** STRPCCMD: runs a command through the user's shell; wait = resolve when it exits. */
+  RunPcCommand(command: string, wait: boolean): Promise<void>;
   IfsConnect(request: IfsConnectRequest): Promise<string>;
   IfsClose(id: string): Promise<void>;
   IfsList(id: string, dir: string): Promise<IfsEntry[]>;

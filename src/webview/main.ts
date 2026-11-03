@@ -240,9 +240,37 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
 // terminal, so typing works at once instead of after a click.
 window.addEventListener('focus', () => terminal.focus());
 
+/**
+ * The box the screen has to fit in. Measured from the border box minus the CSS padding,
+ * so a scrollbar (zoomed-in screen) never changes the answer; clientWidth/Height would
+ * shrink when a scrollbar appears and the screen would resize itself back and forth.
+ */
+function viewportBox(): { w: number; h: number } {
+  const rect = viewport.getBoundingClientRect();
+  const cs = getComputedStyle(viewport);
+  const w = rect.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const h = rect.height - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+  return { w: Math.floor(w), h: Math.floor(h) };
+}
+
+let lastBox = { w: 0, h: 0 };
+let resizePending = false;
+function fitToViewport(): void {
+  const box = viewportBox();
+  if (box.w === lastBox.w && box.h === lastBox.h) return;
+  lastBox = box;
+  renderer.resize(box.w, box.h);
+}
 new ResizeObserver(() => {
-  renderer.resize(viewport.clientWidth, viewport.clientHeight);
+  // Several observations per frame (a side panel animating open) collapse into one layout.
+  if (resizePending) return;
+  resizePending = true;
+  requestAnimationFrame(() => {
+    resizePending = false;
+    fitToViewport();
+  });
 }).observe(viewport);
+fitToViewport();
 
 let audio: AudioContext | undefined;
 function beep(freq: number, seconds: number): void {

@@ -1,6 +1,8 @@
+import type { PcCommandRequest } from '../engine/pco';
 import { Session5250 } from '../engine/session';
 import type { KeyAction } from '../shared/keymap';
 import { friendlyNetError } from '../shared/netErrors';
+import { classifyPcCommand, decidePcCommand, type PcCommandDecision, type PcCommandKind, type PcCommandPolicy } from '../shared/pcCommand';
 import type { ConnectionInfo, ConnectionStatus, OiaState, ScreenSnapshot } from '../shared/protocol';
 import type { TerminalSettings } from '../shared/settings';
 import type { Transport, TransportFactory } from './connection';
@@ -10,6 +12,14 @@ export interface SessionControllerEvents {
   status(status: ConnectionStatus, detail: string, info: ConnectionInfo): void;
   alarm(): void;
   log(message: string): void;
+  /**
+   * STRPCCMD: run (or open) what the host asked for. `decision` already applied the
+   * policy: 'open' a link, 'run' a command, or 'ask' the user first. Resolve when done
+   * (after the command exits when `wait` is set); the controller then presses Enter.
+   */
+  pcCommand?(kind: PcCommandKind, decision: Exclude<PcCommandDecision, 'ignore'>, wait: boolean): Promise<void>;
+  /** The live PC command policy (settings page); the opening profile is used without it. */
+  pcCommandPolicy?(): PcCommandPolicy;
   /** Password for bypass sign-on, if one is stored. */
   password?(): Promise<string | undefined>;
   /**
@@ -92,8 +102,30 @@ export class SessionController {
           this.events.log(`protocol error: ${err.message}`);
           this.disconnect();
         },
+        pcCommand: (request) => this.onPcCommand(request),
       },
     );
+  }
+
+  /**
+   * STRPCCMD / PC Organizer: the host wrote a PC command and waits. The policy decides
+   * whether it opens, runs, asks or is ignored; whatever happens, Enter goes back to the
+   * host so its program resumes (a declined command just does nothing on the PC).
+   */
+  private onPcCommand(request: PcCommandRequest): boolean {
+    const policy = this.events.pcCommandPolicy?.() ?? this.profile.pcCommands;
+    const kind = classifyPcCommand(request.command);
+    const decision = decidePcCommand(policy, kind);
+    this.events.log(`PC command from host (${decision}): ${request.command}`);
+    if (decision === 'ignore' || !this.events.pcCommand) return false;
+    const session = this.session;
+    void this.events
+      .pcCommand(kind, decision, request.wait)
+      .catch((err: unknown) => this.events.log(`PC command failed: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => {
+        if (this.session === session && this.connected) session.press('enter');
+      });
+    return true;
   }
 
   get connected(): boolean {
