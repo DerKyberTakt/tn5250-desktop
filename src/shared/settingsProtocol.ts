@@ -1,3 +1,4 @@
+import type { KeyAction } from './keymap';
 import type { ConnectionField, SessionOverrides, TerminalSettings } from './settings';
 
 /** Preview material of one profile, loaded by the host (files the page cannot read itself). */
@@ -8,11 +9,22 @@ export interface SettingsAssets {
   fontFace?: { family: string; url: string };
 }
 
+/** An open terminal tab, as the page needs it to tell which tabs a save would reload. */
+export interface OpenTabInfo {
+  title: string;
+  profile: TerminalSettings;
+  deviceTemplate: string;
+}
+
 /** Messages between the extension host and the settings webview. */
 export type HostToSettings =
   | HostToSettingsData
   /** Answer to { type: 'select' }: the preview material of the profile now shown. */
-  | ({ type: 'assets'; select: number } & SettingsAssets);
+  | ({ type: 'assets'; select: number } & SettingsAssets)
+  /** The open terminal tabs with a session; sent with the data and whenever tabs change. */
+  | { type: 'openTabs'; tabs: OpenTabInfo[] }
+  /** Answer to { type: 'importKmp' }: key assignments to merge into the form (not saved yet). */
+  | { type: 'kmp'; keymap: Record<string, KeyAction>; skipped: number };
 
 export type HostToSettingsData = {
   type: 'data';

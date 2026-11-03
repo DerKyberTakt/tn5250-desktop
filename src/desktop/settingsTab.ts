@@ -11,9 +11,11 @@ export interface SettingsHost {
   readonly credentials: Credentials;
   openSession(profile: TerminalSettings): void;
   /** The open terminal tabs that have a session (not the demo screen). */
-  openTerminals(): Array<{ tab: { reload(profile: TerminalSettings): void }; profile: TerminalSettings; deviceTemplate: string }>;
+  openTerminals(): Array<{ tab: { readonly title: string; reload(profile: TerminalSettings): void }; profile: TerminalSettings; deviceTemplate: string }>;
   notify(text: string): void;
 }
+
+const ORIGIN = location.origin && location.origin !== 'null' ? location.origin : '*';
 
 /** The ACS-style settings page (the unchanged settings bundle) in a frame. */
 export class SettingsTab {
@@ -47,7 +49,20 @@ export class SettingsTab {
   }
 
   push(patch?: Partial<TerminalSettings>): void {
-    void this.buildData(patch).then((msg) => this.frame.contentWindow?.postMessage(msg, location.origin && location.origin !== 'null' ? location.origin : '*'));
+    void this.buildData(patch).then((msg) => {
+      this.send(msg);
+      this.sendOpenTabs();
+    });
+  }
+
+  private send(msg: HostToSettings): void {
+    this.frame.contentWindow?.postMessage(msg, ORIGIN);
+  }
+
+  /** The open terminal tabs with a session, so the page can warn which ones a save would reload. */
+  sendOpenTabs(): void {
+    const tabs = this.host.openTerminals().map((t) => ({ title: t.tab.title, profile: t.profile, deviceTemplate: t.deviceTemplate }));
+    this.send({ type: 'openTabs', tabs });
   }
 
   private async buildData(patch?: Partial<TerminalSettings>): Promise<HostToSettings> {
@@ -95,11 +110,14 @@ export class SettingsTab {
           if (plan.length) {
             const before = msg.target < 0 ? store.readDefaults() : resolveSettings(store.readDefaults(), sessions[msg.target] ?? { host: '' });
             const pick = await listDialog(
-              'These changes need a new connection',
-              `${plan.length === 1 ? '1 open tab uses' : `${plan.length} open tabs use`} these settings. Save & Reload reconnects them now; Save & Close keeps them as they are until they reconnect.`,
-              changes.map((k) => describeChange(k, before, msg.values)),
+              plan.length === 1 ? 'Reload the open tab?' : `Reload the ${plan.length} open tabs?`,
+              'Save & Reload reconnects the tabs below now. Apply & Continue saves and leaves them running until they reconnect.',
+              [
+                ...changes.map((k) => `Change: ${describeChange(k, before, msg.values)}`),
+                ...plan.map(({ tab, profile }) => `Tab: ${tab.title} (${profile.name || profile.host})`),
+              ],
               [],
-              ['Save & Reload', 'Save & Close'],
+              ['Save & Reload', 'Apply & Continue'],
             );
             if (!pick) break; // Close: nothing saved, the page stays dirty
             reload = pick.action === 'Save & Reload';
@@ -109,7 +127,7 @@ export class SettingsTab {
           this.select = msg.target;
           this.push();
           if (reload) for (const { tab, profile } of plan) tab.reload(profile);
-          this.host.notify(reload ? 'Settings saved, tabs reloaded' : 'Settings saved');
+          this.host.notify(reload ? 'Settings saved, tabs reloaded' : plan.length ? 'Settings applied' : 'Settings saved');
           break;
         }
         case 'select': {
@@ -117,8 +135,7 @@ export class SettingsTab {
           this.select = msg.index;
           const defaults = store.readDefaults();
           const current = msg.index < 0 ? defaults : resolveSettings(defaults, store.readSessions()[msg.index] ?? { host: '' });
-          const reply: HostToSettings = { type: 'assets', select: msg.index, watermarkImageData: await this.watermarkData(current) };
-          this.frame.contentWindow?.postMessage(reply, location.origin && location.origin !== 'null' ? location.origin : '*');
+          this.send({ type: 'assets', select: msg.index, watermarkImageData: await this.watermarkData(current) });
           break;
         }
         case 'copySession': {
@@ -187,27 +204,15 @@ export class SettingsTab {
           break;
         }
         case 'importKmp': {
-          const file = await app.PickFile('Import ACS keyboard map', [{ name: 'ACS keyboard map', patterns: '*.kmp' }, { name: 'All files', patterns: '*.*' }]);
+          // The page merges the keys into its unsaved edits; nothing is written until Save.
+          const file = await app.PickFileIn('Import ACS keyboard map', [{ name: 'ACS keyboard map', patterns: '*.kmp' }, { name: 'All files', patterns: '*.*' }], '~/Documents/IBM/iAccessClient/Emulator');
           if (!file) break;
           const result = importKmp(await app.ReadTextFile(file));
-          const count = Object.keys(result.keymap).length;
-          if (!count) {
+          if (!Object.keys(result.keymap).length) {
             this.host.notify('No usable key assignments found in that file');
             break;
           }
-          if (msg.target < 0) {
-            const d = store.readDefaults();
-            await store.writeDefaults({ ...d, keymap: { ...d.keymap, ...result.keymap } });
-          } else {
-            const sessions = store.readSessions();
-            const s = sessions[msg.target];
-            if (!s) break;
-            s.keymap = { ...(s.keymap ?? {}), ...result.keymap };
-            await store.writeSessions(sessions);
-          }
-          this.select = msg.target;
-          this.push();
-          this.host.notify(`Imported ${count} key assignment(s)${result.skipped.length ? `, ${result.skipped.length} skipped` : ''}`);
+          this.send({ type: 'kmp', keymap: result.keymap, skipped: result.skipped.length });
           break;
         }
         case 'browseFile': {

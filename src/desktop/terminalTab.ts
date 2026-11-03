@@ -215,7 +215,7 @@ export class TerminalTab {
       }
     }
     void this.loadWatermark(settings).then((watermarkImageData) => {
-      this.post({ type: 'config', config: { settings, keyOverlay: this.keyOverlay, watermarkImageData } });
+      this.post({ type: 'config', config: { settings, keyOverlay: this.keyOverlay, host: 'desktop', watermarkImageData } });
     });
   }
 

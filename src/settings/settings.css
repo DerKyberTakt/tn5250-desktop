@@ -136,6 +136,7 @@ select {
   left: 230px;
   right: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   padding: 10px 28px;
@@ -220,6 +221,90 @@ select {
 
 .keyboard button.secondary {
   margin-top: 16px;
+}
+
+.keyboard .kb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px 6px;
+  margin-bottom: 10px;
+}
+
+.keyboard .kb-toolbar button.secondary {
+  margin: 0;
+  padding: 4px 14px;
+}
+
+.keyboard .kb-toolbar .info {
+  margin-right: 12px;
+}
+
+.kb-banner,
+.kb-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.kb-banner {
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+  background: var(--vscode-inputValidation-warningBackground, rgba(204, 153, 0, 0.18));
+  border: 1px solid var(--vscode-inputValidation-warningBorder, #b89500);
+}
+
+.kb-notice {
+  color: var(--vscode-inputValidation-infoForeground, var(--vscode-foreground));
+  background: var(--vscode-inputValidation-infoBackground, rgba(0, 122, 204, 0.15));
+  border: 1px solid var(--vscode-inputValidation-infoBorder, #007acc);
+}
+
+.kb-banner button.link,
+.kb-notice button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.chip.ghost {
+  background: transparent;
+  border: 1px dashed var(--vscode-descriptionForeground, #888);
+  color: var(--vscode-descriptionForeground, #aaa);
+  padding-right: 8px;
+}
+
+.reload-warn {
+  flex-basis: 100%;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+  background: var(--vscode-inputValidation-warningBackground, rgba(204, 153, 0, 0.18));
+  border: 1px solid var(--vscode-inputValidation-warningBorder, #b89500);
+}
+
+.row.locked {
+  opacity: 0.55;
+}
+
+.row.locked input,
+.row.locked select,
+.row.locked button {
+  cursor: not-allowed;
+}
+
+.row label .locked-mark {
+  margin: 0 4px 0 2px;
+  color: var(--vscode-errorForeground, #f14c4c);
+  font-weight: bold;
+  cursor: help;
 }
 
 .chip {

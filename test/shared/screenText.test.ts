@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decoratedFieldCells, expandTabs, fieldRanges, hotspotAt, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, wordAt } from '../../src/shared/screenText';
+import { decoratedFieldCells, expandTabs, fieldRanges, hotspotAt, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, wordAt, doubleClickRange } from '../../src/shared/screenText';
 import { SETTINGS_DEFAULTS, buildTitle, copySessionAt, diffSettings, resolveSettings } from '../../src/shared/settings';
 
 describe('fieldRanges', () => {
@@ -93,6 +93,25 @@ describe('hotspots and urls', () => {
       [24, 'pf12'],
     ]);
     expect(wordAt('ab cd', 3)).toEqual({ text: 'cd', start: 3 });
+  });
+});
+
+describe('doubleClickRange', () => {
+  const line = 'Opt  CHOC CHIP COOKIES   12 oz'; // cols 0-29; field = cols 5-24 (20 bytes)
+  const field = { col: 5, length: 20 };
+  it('selects the word under the pointer, inside or outside a field', () => {
+    expect(doubleClickRange(line, 11, field)).toEqual({ start: 10, end: 13 }); // CHIP
+    expect(doubleClickRange(line, 1)).toEqual({ start: 0, end: 2 }); // Opt, no field
+    expect(doubleClickRange(line, 26)).toEqual({ start: 25, end: 26 }); // 12, outside the field
+  });
+  it('clips a word to the field it starts in', () => {
+    expect(doubleClickRange('ABCDEFGH', 2, { col: 0, length: 4 })).toEqual({ start: 0, end: 3 });
+    expect(doubleClickRange('ABCDEFGH', 6, { col: 4, length: 4 })).toEqual({ start: 4, end: 7 });
+  });
+  it('selects the whole field run on a blank inside a field, nothing on a blank elsewhere', () => {
+    expect(doubleClickRange(line, 9, field)).toEqual({ start: 5, end: 24 });
+    expect(doubleClickRange(line, 4)).toBeUndefined();
+    expect(doubleClickRange(line, 40)).toBeUndefined();
   });
 });
 

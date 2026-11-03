@@ -56,6 +56,10 @@ describe('settings', () => {
     expect(plan.every((p) => p.profile.screenSize === '27x132')).toBe(true);
     // A defaults change on a field nobody uses differently still reloads only the tabs it reaches.
     expect(reloadPlan(-1, { ...defaults, codePage: 500 }, sessions, tabs, ['codePage']).map((p) => p.tab).sort()).toEqual(['adhoc', 'dev', 'wide']);
+    // The plan hands back the tab object itself, so a host can show its title.
+    const tabObject = { title: 'A - DEV01' };
+    const objPlan = reloadPlan(0, devWide, sessions, [{ tab: tabObject, profile: { ...dev, deviceName: 'DEV01' }, deviceTemplate: 'DEV*' }], ['screenSize']);
+    expect(objPlan[0]?.tab).toBe(tabObject);
   });
 
   it('session keymaps merge with default keymaps', () => {

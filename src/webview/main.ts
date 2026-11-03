@@ -1,9 +1,9 @@
 import type { ConnectionStatus, HostToWebview, OiaState, TerminalConfig, WebviewToHost } from '../shared/protocol';
 import { DEFAULT_OIA } from '../shared/protocol';
 import { classifyKey, keyName, type Keymap } from '../shared/keymap';
-import { expandTabs, fieldRanges, hotspotAt, urlAt, wordAt } from '../shared/screenText';
+import { doubleClickRange, expandTabs, fieldRanges, hotspotAt, urlAt } from '../shared/screenText';
 import { SETTINGS_DEFAULTS, effectiveKeymap } from '../shared/settings';
-import { describeKey, isBareModifier, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
+import { isBareModifier, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
 import { ConnectionOverlay } from './connectionOverlay';
 import { Renderer } from './renderer';
 
@@ -26,7 +26,7 @@ const overlay = new ConnectionOverlay(viewport, {
   reconnect: () => post({ type: 'reconnect' }),
   cancel: () => post({ type: 'cancelReconnect' }),
 });
-let config: TerminalConfig = { settings: SETTINGS_DEFAULTS, keyOverlay: false };
+let config: TerminalConfig = { settings: SETTINGS_DEFAULTS, keyOverlay: false, host: 'vscode' };
 let oia: OiaState = DEFAULT_OIA;
 let status: ConnectionStatus = 'idle';
 let statusDetail = '';
@@ -284,11 +284,13 @@ function extendKeyboardSelection(key: string): void {
 
 // Key-ups of keys the terminal takes are cancelled too: an unhandled F10 key-up
 // puts the window (Windows, or VS Code) into menu mode, and the next key press is
-// spent leaving it — F10 had to be pressed twice.
+// spent leaving it — F10 had to be pressed twice. The same goes for a bare Alt: the
+// terminal takes Alt+arrow chords, so the host must not see the Alt press and release
+// on their own (VS Code's menu bar would take the focus).
 window.addEventListener(
   'keyup',
   (e) => {
-    if (isPassThrough(toKeyEventInfo(e), keymap)) return;
+    if (isPassThrough(toKeyEventInfo(e), keymap, config.host)) return;
     e.preventDefault();
     e.stopPropagation();
   },
@@ -310,8 +312,8 @@ window.addEventListener(
       keyAnchor = undefined;
       keyEnd = undefined;
     }
-    if (isPassThrough(info, keymap)) {
-      logKey(`${describeKey(info)}  [${info.code}]  -> VS Code`);
+    if (isPassThrough(info, keymap, config.host)) {
+      logKey(`${keyName(info)}  [${info.code}]  -> ${config.host === 'desktop' ? 'app' : 'VS Code'}`);
       return;
     }
     e.preventDefault();
@@ -323,7 +325,7 @@ window.addEventListener(
       const current = renderer.zoom;
       const next = zoom === 'reset' ? 1 : zoom === 'in' ? Math.min(4, current * 1.1) : Math.max(0.3, current / 1.1);
       renderer.setOptions({ zoom: next });
-      logKey(`${describeKey(info)}  -> zoom ${next.toFixed(2)}`);
+      logKey(`${keyName(info)}  -> zoom ${next.toFixed(2)}`);
       return;
     }
     if (config.keyOverlay) post({ type: 'key', event: info });
@@ -347,7 +349,7 @@ window.addEventListener(
       return;
     }
     if (result.kind === 'text') {
-      logKey(`${describeKey(info)}  -> text`);
+      logKey(`${keyName(info)}  -> text`);
       post({ type: 'text', text: result.text });
     } else if (result.kind === 'action' && result.action === 'printScreen') {
       post({ type: 'printScreen' });
@@ -411,20 +413,18 @@ function handleHotspot(cell: { row: number; col: number }): boolean {
 
 let lastScreen: { rows: number; cols: number; fields: Array<{ start: number; length: number; bypass: boolean }> } | undefined;
 
-/** Double-click selects the word under the pointer, or the whole input field when inside one. */
+/**
+ * Double-click: on a word, the word (kept inside the input field when there is one); on a
+ * blank inside an input field, that field's run on the row (a PDM or SEU line, a 30-byte
+ * description); on a blank elsewhere, nothing.
+ */
 canvas.addEventListener('dblclick', (e) => {
   e.preventDefault();
   const cell = cellFromMouse(e);
   if (!cell || !lastScreen) return;
   const field = fieldRanges(lastScreen).find((r) => r.row === cell.row && !r.bypass && cell.col >= r.col && cell.col < r.col + r.length);
-  if (field) {
-    renderer.selectRange(cell.row, field.col, field.col + field.length - 1);
-    return;
-  }
-  const line = renderer.rowText(cell.row);
-  const w = wordAt(line, cell.col);
-  if (!w.text) return;
-  renderer.selectRange(cell.row, w.start, w.start + w.text.length - 1);
+  const range = doubleClickRange(renderer.rowText(cell.row), cell.col, field && { col: field.col, length: field.length });
+  if (range) renderer.selectRange(cell.row, range.start, range.end);
 });
 
 let dragging = false;

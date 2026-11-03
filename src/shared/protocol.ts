@@ -47,9 +47,13 @@ export interface OiaState {
   queuedKeys?: number;
 }
 
+/** Which application hosts the terminal page; decides what unmapped chords do. */
+export type TerminalHost = 'vscode' | 'desktop';
+
 export interface TerminalConfig {
   settings: TerminalSettings;
   keyOverlay: boolean;
+  host: TerminalHost;
   /** Watermark image as a data URL, loaded by the host from settings.watermarkImage. */
   watermarkImageData?: string;
   /** An imported font to register with @font-face before use. */

@@ -1,5 +1,6 @@
 import type { KeyAction } from '../shared/keymap';
-import { keyName } from '../shared/keymap';
+import { ACS_KEYMAP } from '../shared/keymap';
+import { KeyCapture } from './keyCapture';
 import {
   COLOR_KEYS,
   KEY_ACTION_GROUPS,
@@ -9,8 +10,8 @@ import {
   resolveSettings,
   type SessionOverrides,
   type TerminalSettings,
-  type TitlePart, connectionChanges, isConnectionField,} from '../shared/settings';
-import type { HostToSettings, SettingsToHost } from '../shared/settingsProtocol';
+  type TitlePart, connectionChanges, isConnectionField, reloadPlan,} from '../shared/settings';
+import type { HostToSettings, OpenTabInfo, SettingsToHost } from '../shared/settingsProtocol';
 import { buildDemoScreen } from '../engine/demoScreen';
 import { Renderer } from '../webview/renderer';
 
@@ -24,13 +25,19 @@ let values: TerminalSettings = { ...SETTINGS_DEFAULTS };
 let page = 'connection';
 let dirty = false;
 let capturing: KeyAction | undefined;
+const capture = new KeyCapture();
+/** A line shown on the Keyboard page after an assignment or import, with an optional Undo. */
+let keyNotice: { text: string; undo?: () => void } | undefined;
+/** The open terminal tabs, so the page can warn before a save that would reload one. */
+let openTabs: OpenTabInfo[] = [];
 
 function post(msg: SettingsToHost): void {
   vscode.postMessage(msg);
 }
 
 type Key = keyof TerminalSettings;
-type FieldSpec = { showIf?: Key; hideIf?: Key; showWhen?: [Key, string[]] } & (
+/** lockedWhen: the field is shown greyed out, with the returned text as the reason, when it has no effect. */
+type FieldSpec = { showIf?: Key; hideIf?: Key; showWhen?: [Key, string[]]; lockedWhen?: (v: TerminalSettings) => string | undefined } & (
   | { kind: 'text'; key: Key; label: string; placeholder?: string }
   | { kind: 'number'; key: Key; label: string; min?: number; max?: number; step?: number }
   | { kind: 'range'; key: Key; label: string; min: number; max: number; step: number }
@@ -174,6 +181,10 @@ const CODEPAGES: Array<[string, string]> = [
   ['1149', '1149 Iceland (euro)'],
 ];
 
+const whenEnhanced = (v: TerminalSettings): string | undefined =>
+  v.uiMode === 'enhanced' ? 'Not used while the screen style is Enhanced: the field box, active field and transparent status line on the Enhanced UI page replace it.' : undefined;
+const whenClassic = (v: TerminalSettings): string | undefined => (v.uiMode === 'classic' ? 'Not used while the screen style is Classic. Switch the screen style to Enhanced to use it.' : undefined);
+
 const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec[] }> = [
   {
     id: 'connection',
@@ -293,11 +304,11 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'color', key: 'colorOiaInfo', label: 'Information indicators' },
       { kind: 'color', key: 'colorOiaAttention', label: 'Attention indicators' },
       { kind: 'color', key: 'colorOiaError', label: 'Error indicators' },
-      { kind: 'color', key: 'colorOiaBackground', label: 'OIA background' },
+      { kind: 'color', key: 'colorOiaBackground', label: 'OIA background', lockedWhen: whenEnhanced },
       { kind: 'heading', label: 'Other' },
       { kind: 'color', key: 'colorBackground', label: 'Screen background' },
       { kind: 'color', key: 'colorCursor', label: 'Cursor' },
-      { kind: 'color', key: 'colorActiveField', label: 'Active field' },
+      { kind: 'color', key: 'colorActiveField', label: 'Active field', lockedWhen: whenEnhanced },
       { kind: 'color', key: 'colorRuleLine', label: 'Crosshair ruler' },
       { kind: 'text', key: 'colorColumnSeparator', label: 'Column separator', placeholder: 'blank = field colour, or #rrggbb' },
       { kind: 'button', label: '', text: 'Export…', message: 'exportColors' },
@@ -312,24 +323,24 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     group: 'Appearance',
     fields: [
       { kind: 'select', key: 'uiMode', label: 'Screen style', options: [['classic', 'Classic (ACS-like)'], ['enhanced', 'Enhanced (modern)']] },
-      { kind: 'color', key: 'enhancedGradientStart', label: 'Gradient start' },
-      { kind: 'color', key: 'enhancedGradientEnd', label: 'Gradient end' },
-      { kind: 'number', key: 'enhancedGradientAngle', label: 'Gradient angle (degrees)', min: 0, max: 360 },
-      { kind: 'color', key: 'enhancedFieldBorder', label: 'Field border' },
-      { kind: 'text', key: 'enhancedFieldFill', label: 'Field fill', placeholder: '#rrggbbaa (aa = transparency)' },
-      { kind: 'color', key: 'enhancedActiveField', label: 'Active field' },
-      { kind: 'number', key: 'enhancedCornerRadius', label: 'Corner radius', min: 0, max: 16 },
-      YESNO('enhancedTextGlow', 'Text glow'),
-      { kind: 'range', key: 'enhancedGlowStrength', label: 'Glow strength', min: 0, max: 20, step: 1, showIf: 'enhancedTextGlow' },
-      { kind: 'color', key: 'enhancedGlowColor', label: 'Glow colour', showIf: 'enhancedTextGlow' },
+      { kind: 'color', key: 'enhancedGradientStart', label: 'Gradient start', lockedWhen: whenClassic },
+      { kind: 'color', key: 'enhancedGradientEnd', label: 'Gradient end', lockedWhen: whenClassic },
+      { kind: 'number', key: 'enhancedGradientAngle', label: 'Gradient angle (degrees)', min: 0, max: 360, lockedWhen: whenClassic },
+      { kind: 'color', key: 'enhancedFieldBorder', label: 'Field border', lockedWhen: whenClassic },
+      { kind: 'text', key: 'enhancedFieldFill', label: 'Field fill', placeholder: '#rrggbbaa (aa = transparency)', lockedWhen: whenClassic },
+      { kind: 'color', key: 'enhancedActiveField', label: 'Active field', lockedWhen: whenClassic },
+      { kind: 'number', key: 'enhancedCornerRadius', label: 'Corner radius', min: 0, max: 16, lockedWhen: whenClassic },
+      { ...YESNO('enhancedTextGlow', 'Text glow'), lockedWhen: whenClassic },
+      { kind: 'range', key: 'enhancedGlowStrength', label: 'Glow strength', min: 0, max: 20, step: 1, showIf: 'enhancedTextGlow', lockedWhen: whenClassic },
+      { kind: 'color', key: 'enhancedGlowColor', label: 'Glow colour', showIf: 'enhancedTextGlow', lockedWhen: whenClassic },
       { kind: 'heading', label: 'Highlight (mouse selection)' },
-      { kind: 'color', key: 'enhancedSelectionStart', label: 'Gradient start' },
-      { kind: 'color', key: 'enhancedSelectionEnd', label: 'Gradient end' },
-      { kind: 'text', key: 'enhancedSelectionText', label: 'Text colour', placeholder: 'auto = black or white for contrast, or #rrggbb' },
-      { kind: 'range', key: 'enhancedSelectionOpacity', label: 'Opacity', min: 0, max: 1, step: 0.05 },
+      { kind: 'color', key: 'enhancedSelectionStart', label: 'Gradient start', lockedWhen: whenClassic },
+      { kind: 'color', key: 'enhancedSelectionEnd', label: 'Gradient end', lockedWhen: whenClassic },
+      { kind: 'text', key: 'enhancedSelectionText', label: 'Text colour', placeholder: 'auto = black or white for contrast, or #rrggbb', lockedWhen: whenClassic },
+      { kind: 'range', key: 'enhancedSelectionOpacity', label: 'Opacity', min: 0, max: 1, step: 0.05, lockedWhen: whenClassic },
       { kind: 'heading', label: 'Effects' },
-      YESNO('enhancedScanlines', 'Scanlines'),
-      { kind: 'number', key: 'enhancedPadding', label: 'Padding around the screen', min: 0, max: 120 },
+      { ...YESNO('enhancedScanlines', 'Scanlines'), lockedWhen: whenClassic },
+      { kind: 'number', key: 'enhancedPadding', label: 'Padding around the screen', min: 0, max: 120, lockedWhen: whenClassic },
       { kind: 'preview' },
     ],
   },
@@ -628,7 +639,23 @@ function updatePreview(): void {
   r.setScreen(demo);
 }
 
+/** A field row; a locked one (lockedWhen) is greyed out, its controls disabled and a red * carries the reason. */
 function renderField(f: FieldSpec): HTMLElement | undefined {
+  const row = renderFieldInner(f);
+  const reason = row ? f.lockedWhen?.(values) : undefined;
+  if (row && reason) {
+    row.classList.add('locked');
+    const mark = el('span', 'locked-mark', '*');
+    mark.title = reason;
+    mark.setAttribute('aria-label', reason);
+    const label = row.querySelector('label');
+    if (label) label.insertBefore(mark, label.querySelector('.info'));
+    for (const c of row.querySelectorAll('input, select, button')) (c as HTMLInputElement).disabled = true;
+  }
+  return row;
+}
+
+function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
   if (f.showIf && !values[f.showIf]) return undefined;
   if (f.showWhen && !f.showWhen[1].includes(String(values[f.showWhen[0]]))) return undefined;
   if (f.hideIf && values[f.hideIf]) return undefined;
@@ -856,7 +883,16 @@ function renderKeyTables(query: string): HTMLElement[] {
       const tr = el('tr');
       tr.append(el('td', 'fn', label));
       const td = el('td', 'keys');
-      for (const k of keysFor(action)) {
+      const keys = keysFor(action);
+      if (!keys.length) {
+        const acs = acsKeysFor(action);
+        if (acs.length) {
+          const ghost = el('span', 'chip ghost', `ACS: ${acs.join(', ')}`);
+          ghost.title = 'The ACS default for this function; not assigned in this profile.';
+          td.append(ghost);
+        }
+      }
+      for (const k of keys) {
         const chip = el('span', 'chip', k);
         const x = el('button', 'x', '×');
         x.title = 'Unassign';
@@ -870,7 +906,7 @@ function renderKeyTables(query: string): HTMLElement[] {
       }
       tr.append(td);
       const act = el('td', 'assign');
-      const b = el('button', undefined, capturing === action ? 'Press a key…' : 'Assign');
+      const b = el('button', undefined, capturing === action ? 'Press a key… (Esc cancels)' : 'Assign');
       b.onclick = () => {
         capturing = action;
         render();
@@ -884,9 +920,108 @@ function renderKeyTables(query: string): HTMLElement[] {
   return out;
 }
 
+function acsKeysFor(action: KeyAction): string[] {
+  return Object.entries(ACS_KEYMAP).filter(([, a]) => a === action).map(([k]) => k);
+}
+
+function actionLabel(action: KeyAction): string {
+  for (const g of KEY_ACTION_GROUPS) for (const [a, label] of g.actions) if (a === action) return label;
+  return action;
+}
+
+/** Functions that have an ACS key by default but none in this profile (unassigned, or the key was given to another function). */
+function missingDefaults(): Array<{ action: KeyAction; label: string; keys: string[] }> {
+  const bound = new Set(Object.values(effectiveKeymap(values.keymap)));
+  const out: Array<{ action: KeyAction; label: string; keys: string[] }> = [];
+  for (const g of KEY_ACTION_GROUPS) {
+    for (const [action, label] of g.actions) {
+      if (bound.has(action)) continue;
+      const keys = acsKeysFor(action);
+      if (keys.length) out.push({ action, label, keys });
+    }
+  }
+  return out;
+}
+
+function restoreDefault(action: KeyAction, keys: string[]): void {
+  const next = { ...values.keymap };
+  for (const k of keys) {
+    if (next[k] === null) delete next[k];
+    else next[k] = action;
+  }
+  values.keymap = next;
+  dirty = true;
+  render();
+}
+
+/** Binds `name` to the function being captured; a key taken from another function gets a notice with Undo. */
+function assignKey(name: string): void {
+  if (!capturing) return;
+  const action = capturing;
+  const previous = effectiveKeymap(values.keymap)[name];
+  const before = values.keymap;
+  values.keymap = { ...values.keymap, [name]: action };
+  capturing = undefined;
+  capture.reset();
+  dirty = true;
+  keyNotice =
+    previous && previous !== action
+      ? {
+          text: `${name} moved from ${actionLabel(previous)} to ${actionLabel(action)}.`,
+          undo: () => {
+            values.keymap = before;
+            keyNotice = undefined;
+            dirty = true;
+            render();
+          },
+        }
+      : undefined;
+  render();
+}
+
 function renderKeyboard(): HTMLElement {
   const box = el('div', 'keyboard');
-  box.append(el('p', 'note', 'Click Assign, then press the key combination. Changes apply to this profile only; sessions inherit the defaults.'));
+  const bar = el('div', 'kb-toolbar');
+  const imp = el('button', 'secondary', 'Import');
+  imp.onclick = () => post({ type: 'importKmp', target: selected });
+  bar.append(
+    imp,
+    infoBubble('Import an IBM i Access Client Solutions keyboard map (.kmp) on top of the current keys. ACS keeps its maps in Documents\\IBM\\iAccessClient\\Emulator; the file picker opens there when that folder exists. Save afterwards to keep the imported keys.'),
+  );
+  const reset = el('button', 'secondary', 'Reset');
+  reset.onclick = () => {
+    values.keymap = {};
+    keyNotice = undefined;
+    dirty = true;
+    render();
+  };
+  bar.append(reset, infoBubble('Put every key back to the ACS layout for this profile. Takes effect when you save; Revert undoes it before then.'));
+  box.append(bar);
+  for (const miss of missingDefaults()) {
+    const warn = el('div', 'kb-banner');
+    warn.append(el('span', undefined, `No key for ${miss.label} (ACS default: ${miss.keys.join(', ')}).`));
+    const b = el('button', 'link', 'Restore');
+    b.onclick = () => restoreDefault(miss.action, miss.keys);
+    warn.append(b);
+    box.append(warn);
+  }
+  if (keyNotice) {
+    const line = el('div', 'kb-notice');
+    line.append(el('span', undefined, keyNotice.text));
+    if (keyNotice.undo) {
+      const u = el('button', 'link', 'Undo');
+      u.onclick = keyNotice.undo;
+      line.append(u);
+    }
+    const x = el('button', 'link', 'Dismiss');
+    x.onclick = () => {
+      keyNotice = undefined;
+      render();
+    };
+    line.append(x);
+    box.append(line);
+  }
+  box.append(el('p', 'note', 'Click Assign, then press the key or key combination (Esc cancels). A modifier on its own, like Right Ctrl, is taken when you release it. Changes apply to this profile only; sessions inherit the defaults.'));
   const search = el('input', 'search');
   search.type = 'search';
   search.placeholder = 'Find a key or function (e.g. F13, field exit, End)\u2026';
@@ -902,23 +1037,30 @@ function renderKeyboard(): HTMLElement {
   };
   box.append(search, tables);
   fill();
-  const imp = el('button', 'secondary', 'Import ACS keyboard map (.kmp)…');
-  imp.onclick = () => post({ type: 'importKmp', target: selected });
-  box.append(imp);
-  const reset = el('button', 'secondary', 'Reset all keys to the ACS layout');
-  reset.onclick = () => {
-    values.keymap = {};
-    dirty = true;
-    render();
-  };
-  box.append(reset);
   return box;
+}
+
+/** Titles of the open tabs that a save of the current edits would offer to reload. */
+function pendingReloads(): string[] {
+  if (!openTabs.length) return [];
+  const original = selected < 0 ? defaults : resolveSettings(defaults, sessions[selected] ?? { host: '' });
+  const changes = connectionChanges(original, values);
+  if (!changes.length) return [];
+  const tabs = openTabs.map((t) => ({ tab: t.title, profile: t.profile, deviceTemplate: t.deviceTemplate }));
+  return reloadPlan(selected, values, sessions, tabs, changes).map((p) => p.tab);
 }
 
 function renderButtons(): void {
   const bar = document.getElementById('buttons');
   if (!bar) return;
   bar.replaceChildren();
+  const pending = pendingReloads();
+  if (pending.length) {
+    const warn = el('div', 'reload-warn');
+    const shown = pending.slice(0, 3).join(', ') + (pending.length > 3 ? ` and ${pending.length - 3} more` : '');
+    warn.textContent = `\u26a0 Open tab${pending.length > 1 ? 's' : ''} ${shown} use${pending.length > 1 ? '' : 's'} this profile. The connection changes you made here take effect after Save & Reload, or in new tabs opened after saving.`;
+    bar.append(warn);
+  }
   const save = el('button', 'primary', selected < 0 ? 'Save Defaults' : 'Save Session');
   save.disabled = !dirty;
   save.onclick = () => {
@@ -1011,6 +1153,8 @@ function select(index: number): void {
   if (index >= 0) values.keymap = { ...(sessions[index]?.keymap ?? {}) };
   dirty = false;
   capturing = undefined;
+  capture.reset();
+  keyNotice = undefined;
   render();
 }
 
@@ -1021,6 +1165,19 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
     fontFace = ev.data.fontFace;
     applyFontFace();
     updatePreview();
+    return;
+  }
+  if (ev.data.type === 'openTabs') {
+    openTabs = ev.data.tabs;
+    renderButtons();
+    return;
+  }
+  if (ev.data.type === 'kmp') {
+    const count = Object.keys(ev.data.keymap).length;
+    values.keymap = { ...values.keymap, ...ev.data.keymap };
+    dirty = true;
+    keyNotice = { text: `Imported ${count} key assignment${count === 1 ? '' : 's'}${ev.data.skipped ? `, ${ev.data.skipped} skipped` : ''}. Save to keep them.` };
+    render();
     return;
   }
   if (ev.data.type !== 'data') return;
@@ -1040,18 +1197,33 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
   select(Math.min(ev.data.select, sessions.length - 1));
 });
 
+// Assign: chords are taken on the keydown of their main key, a modifier on its own on its keyup.
+const keyInfo = (e: KeyboardEvent) => ({ key: e.key, code: e.code, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey });
 window.addEventListener(
   'keydown',
   (e) => {
     if (!capturing) return;
-    const info = { key: e.key, code: e.code, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey };
-    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key) && !(e.code === 'ControlLeft' || e.code === 'ControlRight')) return;
     e.preventDefault();
     e.stopPropagation();
-    values.keymap = { ...values.keymap, [keyName(info)]: capturing };
-    capturing = undefined;
-    dirty = true;
-    render();
+    if (e.key === 'Escape') {
+      capturing = undefined;
+      capture.reset();
+      render();
+      return;
+    }
+    const name = capture.keydown(keyInfo(e));
+    if (name) assignKey(name);
+  },
+  { capture: true },
+);
+window.addEventListener(
+  'keyup',
+  (e) => {
+    if (!capturing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const name = capture.keyup(keyInfo(e));
+    if (name) assignKey(name);
   },
   { capture: true },
 );

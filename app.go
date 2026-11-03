@@ -209,6 +209,19 @@ func (a *App) PickFile(title string, filters []FileFilter) (string, error) {
 	return wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{Title: title, Filters: toWailsFilters(filters)})
 }
 
+// PickFileIn is PickFile opening in dir when that folder exists ("~/..." = under the home directory).
+func (a *App) PickFileIn(title string, filters []FileFilter, dir string) (string, error) {
+	if strings.HasPrefix(dir, "~") {
+		if home, err := os.UserHomeDir(); err == nil {
+			dir = filepath.Join(home, strings.TrimPrefix(dir, "~"))
+		}
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		dir = ""
+	}
+	return wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{Title: title, DefaultDirectory: dir, Filters: toWailsFilters(filters)})
+}
+
 // SaveTextFile asks where to save and writes the text; false when cancelled.
 func (a *App) SaveTextFile(title, defaultName, text string, filters []FileFilter) (bool, error) {
 	p, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{Title: title, DefaultFilename: defaultName, Filters: toWailsFilters(filters)})

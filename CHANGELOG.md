@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Keyboard settings page: Assign takes Ctrl combinations and a bare modifier on release (Esc cancels); a key taken from another function says so with Undo; a function whose ACS key is gone is flagged with Restore; Import and Reset at the top with explanations; the .kmp picker opens in Documents\IBM\iAccessClient\Emulator and the import lands in the form until saved (shared from tn5250-terminal).
+- A bare Alt press is the terminal's (no menu focus on release); unmapped Ctrl/Alt chords are consumed in the desktop app so the browser engine's own shortcuts never fire; the key overlay names bare modifiers by their key.
+- Double-click on a word inside an input field selects the word; a blank inside a field selects the field; a blank elsewhere nothing.
+- Save & Reload dialog lists the tabs it reloads; the second button is Apply & Continue; the settings page warns above Save which open tabs a connection change will not reach.
+- Colours the Enhanced screen style does not use are greyed out with a red * while that style is on, and the Enhanced UI colours while it is Classic.
 - Keyboard: the ACS cursor and edit functions that were missing - Fast Cursor Up/Down/Left/Right (3 rows or columns, Ctrl+arrows), Tab Word / Backtab Word (Alt+Right / Alt+Left), Beginning of Field, Delete Word (Ctrl+Delete), Erase Field, Test Request (Ctrl+F12), Rule line on/off (Ctrl+Home). Copy and Paste are keymap actions now, so Dup can be assigned to any key (unassigned by default, as in ACS). The .kmp import knows the standard ACS/HOD function names (shared from tn5250-terminal).
 - Settings that only take effect on a new connection are marked on the settings page; saving one while a tab that uses it is open asks Save & Reload (the tab reconnects with the new values) or Save & Close. Before, a screen-size change needed a new tab.
 

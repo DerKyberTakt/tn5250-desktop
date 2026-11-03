@@ -101,6 +101,25 @@ export function wordAt(line: string, col: number): { text: string; start: number
   return { text: line.slice(a, b), start: a };
 }
 
+/**
+ * What a double-click at `col` selects on a row (inclusive columns): the word under the
+ * pointer, clipped to the input field it sits in; a blank inside an input field selects
+ * the field's run on that row; a blank anywhere else selects nothing.
+ */
+export function doubleClickRange(line: string, col: number, field?: { col: number; length: number }): { start: number; end: number } | undefined {
+  if (line.charAt(col) !== ' ' && col < line.length) {
+    const w = wordAt(line, col);
+    let start = w.start;
+    let end = w.start + w.text.length - 1;
+    if (field) {
+      start = Math.max(start, field.col);
+      end = Math.min(end, field.col + field.length - 1);
+    }
+    return { start, end };
+  }
+  return field ? { start: field.col, end: field.col + field.length - 1 } : undefined;
+}
+
 export interface UrlHit {
   url: string;
   start: number;

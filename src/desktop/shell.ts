@@ -215,6 +215,12 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     const entry = this.entries.find((e) => e.tab === tab);
     if (entry) this.renderTabButton(entry);
     if (this.active?.tab === tab) this.refresh();
+    else this.syncSettingsTabs();
+  }
+
+  /** Settings pages show which open tabs a save would reload; tell them about every tab change. */
+  private syncSettingsTabs(): void {
+    for (const e of this.entries) if (e.kind === 'settings') e.tab.sendOpenTabs();
   }
 
   notify(text: string): void {
@@ -456,6 +462,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
 
   private addEntry(entry: Entry, activate: boolean): void {
     this.entries.push(entry);
+    this.syncSettingsTabs();
     entry.button.className = 'tab';
     entry.button.setAttribute('role', 'tab');
     entry.button.addEventListener('mousedown', (ev) => {
@@ -566,6 +573,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     this.updateToolbar();
     const n = this.terminals().filter((x) => x.connected).length;
     this.statusRight.textContent = n ? `${n} connected` : '';
+    this.syncSettingsTabs();
   }
 
   private savedProfile(tab: TerminalTab): TerminalSettings | undefined {

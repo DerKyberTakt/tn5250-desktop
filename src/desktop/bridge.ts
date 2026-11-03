@@ -135,6 +135,8 @@ interface GoApp {
   SecretSet(key: string, value: string): Promise<void>;
   SecretDelete(key: string): Promise<void>;
   PickFile(title: string, filters: FileFilter[]): Promise<string>;
+  /** PickFile opening in a folder when it exists; '~/...' is under the home directory. */
+  PickFileIn(title: string, filters: FileFilter[], dir: string): Promise<string>;
   SaveTextFile(title: string, defaultName: string, text: string, filters: FileFilter[]): Promise<boolean>;
   ReadTextFile(path: string): Promise<string>;
   ImageDataURL(path: string): Promise<string>;
