@@ -1,5 +1,19 @@
-import { keyName, type Keymap } from '../shared/keymap';
+import { ACS_KEYMAP, keyName, type KeyAction, type Keymap } from '../shared/keymap';
 import type { KeyEventInfo } from '../shared/protocol';
+
+/** Key cap geometry in px: one key unit, and the gap between caps (a gap cell is one unit minus a gap). */
+export const KEY_UNIT = 30;
+export const KEY_GAP = 3;
+
+/** The width in px of a key cap. */
+export function capWidth(cap: KeyCap): number {
+  return (cap.width ?? 1) * KEY_UNIT - KEY_GAP;
+}
+
+/** The natural width in px of a block of rows (its widest row), to know when the picture must shrink. */
+export function blockWidth(rows: KeyRow[]): number {
+  return Math.max(...rows.map((row) => row.reduce((w, cap) => w + (cap ? capWidth(cap) : KEY_UNIT - KEY_GAP), 0) + (row.length - 1) * KEY_GAP));
+}
 
 /** One key cap: physical code, what is printed on it, and its width in key units. */
 export interface KeyCap {
@@ -93,6 +107,42 @@ export interface ClickedChord {
   mods: Set<string>;
   /** The main key's code, or undefined when only modifiers are latched. */
   main?: string;
+}
+
+/** Whether anything is latched on the picture. */
+export function isLatched(c: ClickedChord): boolean {
+  return c.mods.size > 0 || c.main !== undefined;
+}
+
+/** A click on a key cap: a modifier toggles its latch, a main key replaces (or clears) the main key. */
+export function toggleCap(c: ClickedChord, code: string): ClickedChord {
+  const mods = new Set(c.mods);
+  if (MODIFIER_CODES.has(code)) {
+    if (mods.has(code)) mods.delete(code);
+    else mods.add(code);
+    return { mods, main: c.main };
+  }
+  return { mods, main: c.main === code ? undefined : code };
+}
+
+/** A physical keydown while something is latched edits the latch instead of assigning. */
+export function mergePhysical(c: ClickedChord, k: KeyEventInfo): ClickedChord {
+  if (MODIFIER_CODES.has(k.code)) return toggleCap(c, k.code);
+  return { mods: new Set(c.mods), main: k.code };
+}
+
+/** True when the chord is a character the terminal would type (a letter, digit, symbol or Space without Ctrl, Alt or Meta). */
+export function typesText(c: ClickedChord): boolean {
+  if (!c.main) return false;
+  if ([...c.mods].some((code) => MOD_KEY[code] !== 'Shift')) return false;
+  if (c.main.startsWith('Numpad')) return false; // keypad keys are bound by code (ACS: NumpadAdd = Field +)
+  return c.main in CHARS || /^(Key[A-Z]|Digit\d|Space)$/.test(c.main);
+}
+
+/** The first key ACS gives a function (Shift+F1 for pf13; the F13 key is only an alias), or undefined. */
+export function primaryAcsKey(action: KeyAction): string | undefined {
+  for (const [key, a] of Object.entries(ACS_KEYMAP)) if (a === action) return key;
+  return undefined;
 }
 
 /**

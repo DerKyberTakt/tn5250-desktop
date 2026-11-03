@@ -1,7 +1,7 @@
 import type { KeyAction } from '../shared/keymap';
 import { ACS_KEYMAP } from '../shared/keymap';
 import { KeyCapture } from './keyCapture';
-import { MAIN_ROWS, MODIFIER_CODES, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, chordName, nameUsesCode, type ClickedChord, type KeyRow } from './visualKeyboard';
+import { MAIN_ROWS, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, blockWidth, capWidth, chordName, isLatched, mergePhysical, nameUsesCode, primaryAcsKey, toggleCap, typesText, type ClickedChord, type KeyRow } from './visualKeyboard';
 import {
   COLOR_KEYS,
   KEY_ACTION_GROUPS,
@@ -27,13 +27,42 @@ let page = 'connection';
 let dirty = false;
 let capturing: KeyAction | undefined;
 const capture = new KeyCapture();
-/** A line shown on the Keyboard page after an assignment or import, with an optional Undo. */
+/** What just happened on the Keyboard page (assigned, moved, cancelled ...), shown in the key bar under the picture. */
 let keyNotice: { text: string; undo?: () => void } | undefined;
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 /** The open terminal tabs, so the page can warn before a save that would reload one. */
 let openTabs: OpenTabInfo[] = [];
-/** A chord composed by clicking the visual keyboard while Assign is active. */
+/** The chord latched on the visual keyboard while Assign is active (clicks, or keys pressed once something is latched). */
 let vkChord: ClickedChord = { mods: new Set() };
-let vkNumpad = false;
+/** Rebuilds the visual keyboard and its key bar in place (set while the Keyboard page is shown). */
+let vkRefresh: (() => void) | undefined;
+
+/**
+ * Shows a line in the key bar. One with Undo stays until the next action or Dismiss; one
+ * without (or sticky) fades after a few seconds.
+ */
+function notify(text: string, opts: { undo?: () => void; sticky?: boolean } = {}): void {
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = undefined;
+  keyNotice = { text, undo: opts.undo };
+  if (!opts.undo && !opts.sticky) {
+    noticeTimer = setTimeout(() => {
+      noticeTimer = undefined;
+      keyNotice = undefined;
+      vkRefresh?.();
+    }, 6000);
+  }
+}
+
+/** Leaves Assign without a change. */
+function cancelCapture(): void {
+  if (!capturing) return;
+  capturing = undefined;
+  capture.reset();
+  vkChord = { mods: new Set() };
+  notify('Assignment cancelled.');
+  render();
+}
 
 function post(msg: SettingsToHost): void {
   vscode.postMessage(msg);
@@ -906,6 +935,7 @@ function renderKeyTables(query: string): HTMLElement[] {
         x.onclick = () => {
           values.keymap = { ...values.keymap, [k]: null };
           dirty = true;
+          notify(`${k} unassigned from ${actionLabel(action)}.`);
           render();
         };
         chip.append(x);
@@ -937,15 +967,20 @@ function actionLabel(action: KeyAction): string {
   return action;
 }
 
-/** Functions that have an ACS key by default but none in this profile (unassigned, or the key was given to another function). */
+/**
+ * Functions whose ACS key was taken away in this profile (unassigned, or given to another
+ * function) and that got no other key here. An alias in the ACS layout (the F13 key for
+ * pf13) does not count as a key the user has.
+ */
 function missingDefaults(): Array<{ action: KeyAction; label: string; keys: string[] }> {
-  const bound = new Set(Object.values(effectiveKeymap(values.keymap)));
+  const effective = effectiveKeymap(values.keymap);
+  const overridden = new Set(Object.values(values.keymap));
   const out: Array<{ action: KeyAction; label: string; keys: string[] }> = [];
   for (const g of KEY_ACTION_GROUPS) {
     for (const [action, label] of g.actions) {
-      if (bound.has(action) || values.keyWarningsIgnored.includes(action)) continue;
-      const keys = acsKeysFor(action);
-      if (keys.length) out.push({ action, label, keys });
+      if (values.keyWarningsIgnored.includes(action) || overridden.has(action)) continue;
+      const primary = primaryAcsKey(action);
+      if (primary && effective[primary] !== action) out.push({ action, label, keys: [primary] });
     }
   }
   return out;
@@ -960,6 +995,7 @@ function restoreDefault(action: KeyAction, keys: string[]): void {
   values.keymap = next;
   unignoreWarning(action);
   dirty = true;
+  notify(`${actionLabel(action)} restored to ${keys.join(', ')}.`);
   render();
 }
 
@@ -967,6 +1003,7 @@ function restoreDefault(action: KeyAction, keys: string[]): void {
 function ignoreWarning(action: KeyAction): void {
   if (!values.keyWarningsIgnored.includes(action)) values.keyWarningsIgnored = [...values.keyWarningsIgnored, action];
   dirty = true;
+  notify(`Warning for ${actionLabel(action)} hidden.`);
   render();
 }
 
@@ -984,19 +1021,18 @@ function assignKey(name: string): void {
   unignoreWarning(action);
   capturing = undefined;
   capture.reset();
+  vkChord = { mods: new Set() };
   dirty = true;
-  keyNotice =
-    previous && previous !== action
-      ? {
-          text: `${name} moved from ${actionLabel(previous)} to ${actionLabel(action)}.`,
-          undo: () => {
-            values.keymap = before;
-            keyNotice = undefined;
-            dirty = true;
-            render();
-          },
-        }
-      : undefined;
+  if (previous && previous !== action) {
+    notify(`${name} moved from ${actionLabel(previous)} to ${actionLabel(action)}.`, {
+      undo: () => {
+        values.keymap = before;
+        keyNotice = undefined;
+        dirty = true;
+        render();
+      },
+    });
+  } else notify(`${name} assigned to ${actionLabel(action)}.`);
   render();
 }
 
@@ -1008,16 +1044,21 @@ function setKeyDown(code: string, down: boolean): void {
 /**
  * The visual keyboard: live feedback of pressed keys, a dot on key caps that have a
  * binding (hover lists them), click = filter the list by that key cap, and while Assign
- * is active click = compose the chord, saved with the button at the bottom right.
+ * is active click = compose the chord, saved from the key bar underneath. The key bar
+ * also shows what just happened (assigned, moved, cancelled) when nothing is captured.
  */
 function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLElement {
   const vk = el('div', 'vk');
   const map = effectiveKeymap(values.keymap);
   let keyboard: HTMLElement;
+  let bar: HTMLElement;
   const refresh = (): void => {
-    const next = build();
-    keyboard.replaceWith(next);
-    keyboard = next;
+    const nextKeyboard = build();
+    keyboard.replaceWith(nextKeyboard);
+    keyboard = nextKeyboard;
+    const nextBar = buildBar();
+    bar.replaceWith(nextBar);
+    bar = nextBar;
   };
   const build = (): HTMLElement => {
     const wrap = el('div', 'vk-blocks');
@@ -1032,8 +1073,10 @@ function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLE
           }
           const key = el('button', 'vk-key', cap.label);
           key.type = 'button';
+          key.tabIndex = -1;
+          key.onmousedown = (e) => e.preventDefault(); // never takes focus, so no focus ring shows up after the next keypress
           key.dataset.code = cap.code;
-          key.style.width = `${(cap.width ?? 1) * 30 - 3}px`;
+          key.style.width = `${capWidth(cap)}px`;
           const bound = bindingsForCode(map, cap.code);
           if (bound.length) {
             key.classList.add('bound');
@@ -1042,10 +1085,8 @@ function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLE
           if (capturing && (vkChord.mods.has(cap.code) || vkChord.main === cap.code)) key.classList.add('latched');
           key.onclick = () => {
             if (capturing) {
-              if (MODIFIER_CODES.has(cap.code)) {
-                if (vkChord.mods.has(cap.code)) vkChord.mods.delete(cap.code);
-                else vkChord.mods.add(cap.code);
-              } else vkChord.main = vkChord.main === cap.code ? undefined : cap.code;
+              // The Esc cap clears the latch and stays in Assign (physical Esc leaves it).
+              vkChord = cap.code === 'Escape' ? { mods: new Set() } : toggleCap(vkChord, cap.code);
               refresh();
               return;
             }
@@ -1059,30 +1100,58 @@ function renderVisualKeyboard(search: HTMLInputElement, fill: () => void): HTMLE
       }
       return b;
     };
-    wrap.append(block(MAIN_ROWS, 'main'), block(NAV_ROWS, 'nav'));
-    if (vkNumpad) wrap.append(block(NUMPAD_ROWS, 'numpad'));
-    const foot = el('div', 'vk-foot');
-    const numpad = el('button', 'link', vkNumpad ? 'Hide numpad' : 'Show numpad');
-    numpad.onclick = () => {
-      vkNumpad = !vkNumpad;
-      refresh();
-    };
-    foot.append(numpad);
+    wrap.append(block(MAIN_ROWS, 'main'), block(NAV_ROWS, 'nav'), block(NUMPAD_ROWS, 'numpad'));
+    return wrap;
+  };
+  // The key bar: while Assign is active [Cancel] readout [Save keybind]; otherwise the last notice.
+  const buildBar = (): HTMLElement => {
+    const b = el('div', 'vk-bar');
     if (capturing) {
+      const cancel = el('button', 'secondary', 'Cancel');
+      cancel.onclick = cancelCapture;
       const name = chordName(vkChord);
-      const readout = el('span', 'vk-readout', name ? `Assign ${name} to ${actionLabel(capturing)}` : `Click the keys for ${actionLabel(capturing)}, or press them`);
+      const text = !name
+        ? `Click the keys for ${actionLabel(capturing)}, or press them`
+        : typesText(vkChord)
+          ? `${name} types text; add Ctrl or Alt`
+          : `Assign ${name} to ${actionLabel(capturing)}`;
+      const readout = el('span', 'vk-readout', text);
       const save = el('button', 'primary', 'Save keybind');
-      save.disabled = !name;
+      save.disabled = !name || typesText(vkChord);
       save.onclick = () => {
         if (name) assignKey(name);
       };
-      foot.append(readout, save);
+      b.append(cancel, readout, save);
+    } else if (keyNotice) {
+      b.classList.add('notice');
+      b.append(el('span', 'vk-readout', keyNotice.text));
+      if (keyNotice.undo) {
+        const u = el('button', 'link', 'Undo');
+        u.onclick = keyNotice.undo;
+        b.append(u);
+      }
+      const x = el('button', 'link', 'Dismiss');
+      x.onclick = () => {
+        keyNotice = undefined;
+        refresh();
+      };
+      b.append(x);
     }
-    wrap.append(foot);
-    return wrap;
+    return b;
   };
   keyboard = build();
-  vk.append(keyboard);
+  bar = buildBar();
+  vk.append(keyboard, bar);
+  vkRefresh = refresh;
+  // Narrow page: nav and numpad wrap under the main block first (flex-wrap); when even the
+  // main block does not fit, the whole picture is zoomed down so the caps keep their proportions.
+  const mainWidth = blockWidth(MAIN_ROWS);
+  new ResizeObserver(() => {
+    const avail = vk.clientWidth;
+    if (!avail) return;
+    const zoom = Math.min(1, avail / mainWidth);
+    keyboard.style.setProperty('zoom', zoom < 1 ? zoom.toFixed(3) : '');
+  }).observe(vk);
   return vk;
 }
 
@@ -1108,8 +1177,8 @@ function renderKeyboard(): HTMLElement {
   reset.onclick = () => {
     values.keymap = {};
     values.keyWarningsIgnored = [];
-    keyNotice = undefined;
     dirty = true;
+    notify('All keys reset to the ACS layout. Save to keep it, Revert to go back.', { sticky: true });
     render();
   };
   box.append(renderVisualKeyboard(search, fill));
@@ -1132,23 +1201,7 @@ function renderKeyboard(): HTMLElement {
     warn.append(b, ignore);
     box.append(warn);
   }
-  if (keyNotice) {
-    const line = el('div', 'kb-notice');
-    line.append(el('span', undefined, keyNotice.text));
-    if (keyNotice.undo) {
-      const u = el('button', 'link', 'Undo');
-      u.onclick = keyNotice.undo;
-      line.append(u);
-    }
-    const x = el('button', 'link', 'Dismiss');
-    x.onclick = () => {
-      keyNotice = undefined;
-      render();
-    };
-    line.append(x);
-    box.append(line);
-  }
-  box.append(el('p', 'note', 'Click Assign, then press the key or key combination (Esc cancels). A modifier on its own, like Right Ctrl, is taken when you release it. Changes apply to this profile only; sessions inherit the defaults.'));
+  box.append(el('p', 'note', 'Click Assign, then type the key or key combination to assign it at once (a modifier on its own, like Right Ctrl, is taken when you release it). Or click the keys on the picture to build it and press Save keybind; keys you type then add to the picture. Esc or Cancel leaves Assign. Changes apply to this profile only; sessions inherit the defaults.'));
   box.append(tables);
   fill();
   return box;
@@ -1268,6 +1321,7 @@ function select(index: number): void {
   dirty = false;
   capturing = undefined;
   capture.reset();
+  vkChord = { mods: new Set() };
   keyNotice = undefined;
   render();
 }
@@ -1291,7 +1345,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
     values.keymap = { ...values.keymap, ...ev.data.keymap };
     values.keyWarningsIgnored = [];
     dirty = true;
-    keyNotice = { text: `Imported ${count} key assignment${count === 1 ? '' : 's'}${ev.data.skipped ? `, ${ev.data.skipped} skipped` : ''}. Save to keep them.` };
+    notify(`Imported ${count} key assignment${count === 1 ? '' : 's'}${ev.data.skipped ? `, ${ev.data.skipped} skipped` : ''}. Save to keep them.`, { sticky: true });
     render();
     return;
   }
@@ -1312,7 +1366,9 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
   select(Math.min(ev.data.select, sessions.length - 1));
 });
 
-// Assign: chords are taken on the keydown of their main key, a modifier on its own on its keyup.
+// Assign: with nothing latched on the picture, a typed chord is taken on the keydown of its
+// main key and a modifier on its own on its keyup (KeyCapture). Once something is latched,
+// typed keys only edit the latch; Save keybind assigns. Esc leaves Assign either way.
 // The visual keyboard lights the key cap of every key while it is down.
 const keyInfo = (e: KeyboardEvent) => ({ key: e.key, code: e.code, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey });
 window.addEventListener('blur', () => {
@@ -1326,9 +1382,14 @@ window.addEventListener(
     e.preventDefault();
     e.stopPropagation();
     if (e.key === 'Escape') {
-      capturing = undefined;
-      capture.reset();
-      render();
+      cancelCapture();
+      return;
+    }
+    if (isLatched(vkChord)) {
+      if (!e.repeat) {
+        vkChord = mergePhysical(vkChord, keyInfo(e));
+        vkRefresh?.();
+      }
       return;
     }
     const name = capture.keydown(keyInfo(e));
@@ -1343,6 +1404,7 @@ window.addEventListener(
     if (!capturing) return;
     e.preventDefault();
     e.stopPropagation();
+    if (isLatched(vkChord)) return;
     const name = capture.keyup(keyInfo(e));
     if (name) assignKey(name);
   },

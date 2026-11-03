@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Keyboard settings page: a visual keyboard above the search - live key feedback, a dot on bound keys with the list on hover, click to list a key's functions, and chords composed by clicks while Assign is active (shared from tn5250-terminal). The connected-first session list and the History view of the extension are not in the desktop app yet.
+- Keyboard settings page: a visual keyboard (main block, navigation keys, keypad) above the search - live key feedback, a dot on bound keys with the list on hover, click to list a key's functions. While Assign is active, typing assigns at once; clicking the keys builds the combination in the key bar underneath (Save keybind / Cancel), text keys without Ctrl or Alt are refused, and the bar reports what just happened with Undo. The picture wraps and shrinks with the window. The "No key for ..." warning uses the function's primary ACS key (shared from tn5250-terminal). The connected-first session list and the History view of the extension are not in the desktop app yet.
 
 ## 0.1.5 - 2026-11-03
 

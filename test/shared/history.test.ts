@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeEntry, formatDuration, pushHistory, signonUser, type HistoryEntry } from '../../src/shared/history';
+import { closeOrphans, describeEntry, formatDuration, pushHistory, signonUser, touchEntries, type HistoryEntry } from '../../src/shared/history';
 
 const entry = (id: string, start = 1_000): HistoryEntry => ({
   id,
@@ -41,6 +41,20 @@ describe('history', () => {
     expect(text.endsWith(' · 12m')).toBe(true);
     expect(describeEntry({ ...entry('b', 0), user: '', deviceName: '', end: 30_000 })).toMatch(/^\S.* · 30s$/);
     expect(describeEntry(entry('c', Date.now() - 5_000))).toMatch(/, open$/);
+  });
+
+  it('marks open entries alive and closes the ones a dead process left open', () => {
+    const list = [entry('open'), { ...entry('done'), end: 2_000 }, entry('stale')];
+    const touched = touchEntries(list, ['open'], 9_000);
+    expect(touched[0]?.seen).toBe(9_000);
+    expect(touched[1]?.seen).toBeUndefined();
+    expect(touched[2]?.seen).toBeUndefined();
+    const closed = closeOrphans(touched);
+    expect(closed[0]).toMatchObject({ end: 9_000, endedBy: 'closed' });
+    expect(closed[1]).toMatchObject({ end: 2_000 });
+    expect(closed[1]?.endedBy).toBeUndefined();
+    expect(closed[2]).toMatchObject({ end: 1_000, endedBy: 'closed' });
+    expect(closeOrphans(closed)).toEqual(closed);
   });
 
   it('reads the user from a sign-on screen on Enter', () => {

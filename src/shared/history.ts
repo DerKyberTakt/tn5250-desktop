@@ -16,6 +16,19 @@ export interface HistoryEntry {
   start: number;
   end?: number;
   endedBy?: 'user' | 'host' | 'error' | 'reload' | 'closed';
+  /** Epoch ms of the last heartbeat while open; the end time if the process died with the tab open. */
+  seen?: number;
+}
+
+/** Entries still open from a process that is gone are closed at the time they were last seen alive. */
+export function closeOrphans(list: HistoryEntry[]): HistoryEntry[] {
+  return list.map((e) => (e.end ? e : { ...e, end: e.seen ?? e.start, endedBy: 'closed' as const }));
+}
+
+/** Marks the open entries with these ids as alive now. */
+export function touchEntries(list: HistoryEntry[], ids: Iterable<string>, now = Date.now()): HistoryEntry[] {
+  const open = new Set(ids);
+  return list.map((e) => (!e.end && open.has(e.id) ? { ...e, seen: now } : e));
 }
 
 /** Adds (or replaces, by id) an entry at the front and keeps at most `cap` entries. */
