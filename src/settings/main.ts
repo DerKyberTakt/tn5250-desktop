@@ -9,8 +9,7 @@ import {
   resolveSettings,
   type SessionOverrides,
   type TerminalSettings,
-  type TitlePart,
-} from '../shared/settings';
+  type TitlePart, connectionChanges, isConnectionField,} from '../shared/settings';
 import type { HostToSettings, SettingsToHost } from '../shared/settingsProtocol';
 import { buildDemoScreen } from '../engine/demoScreen';
 import { Renderer } from '../webview/renderer';
@@ -671,6 +670,11 @@ function renderField(f: FieldSpec): HTMLElement | undefined {
   }
   const row = el('div', 'row');
   const label = el('label', undefined, f.label);
+  if ('key' in f && isConnectionField(f.key)) {
+    const mark = el('span', 'next-connection', '\u21bb');
+    mark.title = 'Takes effect on the next connection. Saving while a tab is open offers to reload it.';
+    label.append(mark);
+  }
   const helpText = 'key' in f ? HELP[f.key] : f.kind === 'button' && f.message === 'setPassword' ? 'Kept in the secret store (VS Code secret storage, or the Windows Credential Manager / keyring in the desktop app), never in settings or files.' : f.kind === 'titleParts' ? 'Parts of the tab title, in this order. The session ID is a letter A, B, C per open tab, like ACS.' : undefined;
   if (helpText) label.append(infoBubble(helpText));
   row.append(label);
@@ -917,7 +921,10 @@ function renderButtons(): void {
   bar.replaceChildren();
   const save = el('button', 'primary', selected < 0 ? 'Save Defaults' : 'Save Session');
   save.disabled = !dirty;
-  save.onclick = () => post({ type: 'save', target: selected, values });
+  save.onclick = () => {
+    const original = selected < 0 ? defaults : resolveSettings(defaults, sessions[selected] ?? { host: '' });
+    post({ type: 'save', target: selected, values, connectionChanges: connectionChanges(original, values) });
+  };
   bar.append(save);
   const cancel = el('button', 'secondary', 'Revert');
   cancel.disabled = !dirty;

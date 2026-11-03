@@ -52,7 +52,8 @@ export class TerminalTab {
   title: string;
 
   private readonly controller: SessionController | undefined;
-  private readonly deviceTemplate: string;
+  /** The Workstation ID template this tab was opened with ('' = assigned by the host). */
+  deviceTemplate: string;
   private rows = 24;
   private cols = 80;
   private keyOverlay = false;
@@ -120,6 +121,24 @@ export class TerminalTab {
 
   disconnect(): void {
     this.controller?.disconnect();
+  }
+
+  /**
+   * Connection settings saved while the tab is open (Save & Reload): the tab takes the new
+   * values and reconnects. The controller shares the profile object, so assigning onto it is
+   * enough; the workstation name is expanded again only when its template changed.
+   */
+  reload(profile: TerminalSettings): void {
+    if (!this.profile || !this.controller) return;
+    const template = profile.deviceName.trim();
+    const deviceName = template === this.deviceTemplate ? this.profile.deviceName : template ? expandDevice(template, this.host.system) : '';
+    this.deviceTemplate = template;
+    Object.assign(this.profile, { ...profile, deviceName });
+    this.rows = this.profile.screenSize === '27x132' ? 27 : 24;
+    this.cols = this.profile.screenSize === '27x132' ? 132 : 80;
+    this.disconnect();
+    this.pushConfig();
+    this.connect();
   }
 
   press(action: KeyAction): void {

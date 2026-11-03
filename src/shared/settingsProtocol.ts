@@ -1,4 +1,4 @@
-import type { SessionOverrides, TerminalSettings } from './settings';
+import type { ConnectionField, SessionOverrides, TerminalSettings } from './settings';
 
 /** Preview material of one profile, loaded by the host (files the page cannot read itself). */
 export interface SettingsAssets {
@@ -34,7 +34,8 @@ export type SettingsToHost =
   | { type: 'ready' }
   /** The page switched profiles (-1 = defaults); the host answers with its assets. */
   | { type: 'select'; index: number }
-  | { type: 'save'; target: number; values: TerminalSettings }
+  /** connectionChanges: fields that only take effect on a new connection and differ from the saved values. */
+  | { type: 'save'; target: number; values: TerminalSettings; connectionChanges?: ConnectionField[] }
   | { type: 'addSession' }
   /** Copy Session: duplicate a session with all its customizations. */
   | { type: 'copySession'; index: number }

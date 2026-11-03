@@ -543,6 +543,11 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     return this.entries.flatMap((e) => (e.kind === 'terminal' ? [e.tab] : []));
   }
 
+  /** SettingsHost: the open terminal tabs with a session, for Save & Reload. */
+  openTerminals(): Array<{ tab: TerminalTab; profile: TerminalSettings; deviceTemplate: string }> {
+    return this.terminals().flatMap((tab) => (tab.profile ? [{ tab, profile: tab.profile, deviceTemplate: tab.deviceTemplate }] : []));
+  }
+
   private refresh(): void {
     this.empty.hidden = this.entries.length > 0;
     // One tab needs no tab bar (the window title names it); it appears with the second tab.

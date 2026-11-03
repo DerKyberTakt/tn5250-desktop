@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Keyboard: the ACS cursor and edit functions that were missing - Fast Cursor Up/Down/Left/Right (3 rows or columns, Ctrl+arrows), Tab Word / Backtab Word (Alt+Right / Alt+Left), Beginning of Field, Delete Word (Ctrl+Delete), Erase Field, Test Request (Ctrl+F12), Rule line on/off (Ctrl+Home). Copy and Paste are keymap actions now, so Dup can be assigned to any key (unassigned by default, as in ACS). The .kmp import knows the standard ACS/HOD function names (shared from tn5250-terminal).
+- Settings that only take effect on a new connection are marked on the settings page; saving one while a tab that uses it is open asks Save & Reload (the tab reconnects with the new values) or Save & Close. Before, a screen-size change needed a new tab.
+
 ## 0.1.4 - 2026-11-02
 
 - Right Ctrl = Enter and Left Ctrl = Reset work (default ACS layout), and a Control key assigned on the Keyboard page fires; a bare modifier press was dropped before the keymap was consulted (shared from tn5250-terminal). View > Key Overlay shows what each key does.

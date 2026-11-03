@@ -328,6 +328,107 @@ export function diffSettings(defaults: TerminalSettings, values: TerminalSetting
   return out as SessionOverrides;
 }
 
+/** Settings a session reads when it connects: a change takes effect on the next connection only. */
+export const CONNECTION_FIELDS = [
+  'host',
+  'port',
+  'tls',
+  'verifyCertificate',
+  'tlsClientAuth',
+  'tlsClientCert',
+  'tlsClientKey',
+  'deviceName',
+  'screenSize',
+  'codePage',
+  'connectTimeoutSeconds',
+  'keepAlive',
+  'typeAhead',
+  'autoReconnect',
+  'inactivityTimeoutMinutes',
+  'alarm',
+] as const satisfies readonly (keyof TerminalSettings)[];
+
+export type ConnectionField = (typeof CONNECTION_FIELDS)[number];
+
+export const CONNECTION_FIELD_LABELS: Record<ConnectionField, string> = {
+  host: 'Destination Address',
+  port: 'Destination Port',
+  tls: 'Protocol',
+  verifyCertificate: 'Server Authentication',
+  tlsClientAuth: 'Send a Certificate',
+  tlsClientCert: 'Certificate file',
+  tlsClientKey: 'Private key file',
+  deviceName: 'Workstation ID',
+  screenSize: 'Screen Size',
+  codePage: 'Host Code Page',
+  connectTimeoutSeconds: 'Connection Timeout',
+  keepAlive: 'Keep-Alive',
+  typeAhead: 'Type-ahead',
+  autoReconnect: 'Auto-Reconnect',
+  inactivityTimeoutMinutes: 'Inactivity Timeout',
+  alarm: 'Sound alarm',
+};
+
+export function isConnectionField(key: keyof TerminalSettings): key is ConnectionField {
+  return (CONNECTION_FIELDS as readonly string[]).includes(key);
+}
+
+/** The connection fields whose value differs between two profiles. */
+export function connectionChanges(before: TerminalSettings, after: TerminalSettings): ConnectionField[] {
+  return CONNECTION_FIELDS.filter((k) => !same(before[k], after[k]));
+}
+
+function showValue(key: ConnectionField, v: unknown): string {
+  if (key === 'tls') return v ? 'Telnet over TLS' : 'Telnet';
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  const s = String(v ?? '');
+  return s === '' ? '(blank)' : s;
+}
+
+/** "Screen Size: 24x80 -> 27x132" for a dialog row. */
+export function describeChange(key: ConnectionField, before: TerminalSettings, after: TerminalSettings): string {
+  return `${CONNECTION_FIELD_LABELS[key]}: ${showValue(key, before[key])} -> ${showValue(key, after[key])}`;
+}
+
+/** An open terminal tab as the reload planner sees it. */
+export interface OpenTab<T> {
+  tab: T;
+  /** The values the tab connected with (deviceName expanded from the template). */
+  profile: TerminalSettings;
+  /** The Workstation ID template the tab was opened with ('' = assigned by the host). */
+  deviceTemplate: string;
+}
+
+/**
+ * Which open tabs a save would leave behind, and the profile each should reconnect with.
+ * `target` and `values` are what the settings page is saving (-1 = defaults); `sessions`
+ * are the saved sessions BEFORE the save (a renamed session is matched by its old name).
+ * A tab is affected when its new profile differs from the one it connected with on any of
+ * `changes`. A defaults save skips tabs whose session overrides the changed key.
+ */
+export function reloadPlan<T>(
+  target: number,
+  values: TerminalSettings,
+  sessions: SessionOverrides[],
+  tabs: Array<OpenTab<T>>,
+  changes: ConnectionField[],
+): Array<{ tab: T; profile: TerminalSettings }> {
+  const out: Array<{ tab: T; profile: TerminalSettings }> = [];
+  for (const t of tabs) {
+    const session = sessions.find((s) => s.name === t.profile.name && s.host === t.profile.host);
+    let next: TerminalSettings | undefined;
+    if (target >= 0) {
+      if (session && session === sessions[target]) next = values;
+    } else {
+      next = session ? resolveSettings(values, session) : resolveSettings(values, { host: t.profile.host, port: t.profile.port, tls: t.profile.tls, name: '' });
+    }
+    if (!next) continue;
+    const current = { ...t.profile, deviceName: t.deviceTemplate };
+    if (connectionChanges(current, next).some((k) => changes.includes(k))) out.push({ tab: t.tab, profile: next });
+  }
+  return out;
+}
+
 /** The effective keymap: ACS layout with the session's overrides applied. */
 export function effectiveKeymap(overrides: Record<string, KeyAction | null>): Keymap {
   const map: Keymap = { ...ACS_KEYMAP };

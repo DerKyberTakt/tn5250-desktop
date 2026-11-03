@@ -1,8 +1,8 @@
 import { importKmp } from '../shared/kmpImport';
-import { COLOR_KEYS, copySessionAt, resolveSettings, type TerminalSettings } from '../shared/settings';
+import { COLOR_KEYS, copySessionAt, describeChange, reloadPlan, resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { HostToSettings, SettingsToHost } from '../shared/settingsProtocol';
 import { errorText, goApp } from './bridge';
-import { confirmDialog, formDialog, promptDialog } from './dialogs';
+import { confirmDialog, formDialog, listDialog, promptDialog } from './dialogs';
 import type { Credentials } from './credentials';
 import { certPassphraseKey, type Store } from './store';
 
@@ -10,6 +10,8 @@ export interface SettingsHost {
   readonly store: Store;
   readonly credentials: Credentials;
   openSession(profile: TerminalSettings): void;
+  /** The open terminal tabs that have a session (not the demo screen). */
+  openTerminals(): Array<{ tab: { reload(profile: TerminalSettings): void }; profile: TerminalSettings; deviceTemplate: string }>;
   notify(text: string): void;
 }
 
@@ -84,13 +86,32 @@ export class SettingsTab {
         case 'ready':
           this.push();
           break;
-        case 'save':
+        case 'save': {
+          // Changes that only apply on a new connection: offer to reconnect the open tabs that use them.
+          const changes = msg.connectionChanges ?? [];
+          const sessions = store.readSessions();
+          const plan = changes.length ? reloadPlan(msg.target, msg.values, sessions, this.host.openTerminals(), changes) : [];
+          let reload = false;
+          if (plan.length) {
+            const before = msg.target < 0 ? store.readDefaults() : resolveSettings(store.readDefaults(), sessions[msg.target] ?? { host: '' });
+            const pick = await listDialog(
+              'These changes need a new connection',
+              `${plan.length === 1 ? '1 open tab uses' : `${plan.length} open tabs use`} these settings. Save & Reload reconnects them now; Save & Close keeps them as they are until they reconnect.`,
+              changes.map((k) => describeChange(k, before, msg.values)),
+              [],
+              ['Save & Reload', 'Save & Close'],
+            );
+            if (!pick) break; // Close: nothing saved, the page stays dirty
+            reload = pick.action === 'Save & Reload';
+          }
           if (msg.target < 0) await store.writeDefaults(msg.values);
           else await store.saveSession(msg.target, msg.values);
           this.select = msg.target;
           this.push();
-          this.host.notify('Settings saved');
+          if (reload) for (const { tab, profile } of plan) tab.reload(profile);
+          this.host.notify(reload ? 'Settings saved, tabs reloaded' : 'Settings saved');
           break;
+        }
         case 'select': {
           // The page switched profiles: send that profile's watermark image for the preview.
           this.select = msg.index;

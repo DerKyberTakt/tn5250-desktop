@@ -352,6 +352,12 @@ h4.heading {
   gap: 6px;
 }
 
+.row label .next-connection {
+  font-size: 11px;
+  opacity: 0.55;
+  cursor: help;
+}
+
 .info {
   position: relative;
   display: inline-block;
