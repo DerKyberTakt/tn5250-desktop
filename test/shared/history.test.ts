@@ -9,7 +9,7 @@ const entry = (id: string, start = 1_000): HistoryEntry => ({
   tls: false,
   screenSize: '24x80',
   deviceName: 'DEV01',
-  user: 'KYLE',
+  user: 'JSMITH',
   tabTitle: 'A - Dev',
   start,
 });
@@ -37,7 +37,7 @@ describe('history', () => {
   it('describes an entry', () => {
     const e = { ...entry('a', Date.parse('2026-11-03T09:14:00')), end: Date.parse('2026-11-03T09:26:00') };
     const text = describeEntry(e);
-    expect(text.startsWith('KYLE@DEV01 · ')).toBe(true);
+    expect(text.startsWith('JSMITH@DEV01 · ')).toBe(true);
     expect(text.endsWith(' · 12m')).toBe(true);
     expect(describeEntry({ ...entry('b', 0), user: '', deviceName: '', end: 30_000 })).toMatch(/^\S.* · 30s$/);
     expect(describeEntry(entry('c', Date.now() - 5_000))).toMatch(/, open$/);
@@ -64,12 +64,12 @@ describe('history', () => {
       '                                            Subsystem . . . . :   QINTER',
       '                                            Display . . . . . :   QPADEV0001',
       '',
-      '     User  . . . . . . . . . . . . . . :   kyle',
+      '     User  . . . . . . . . . . . . . . :   jsmith',
       '     Password  . . . . . . . . . . . . :',
       '     Program/procedure . . . . . . . . :',
     ].join('\n');
-    expect(signonUser(screen)).toBe('KYLE');
-    expect(signonUser(screen.replace('kyle', ''))).toBe('');
-    expect(signonUser('     Main Menu\n     User  . . . :   KYLE')).toBe('');
+    expect(signonUser(screen)).toBe('JSMITH');
+    expect(signonUser(screen.replace('jsmith', ''))).toBe('');
+    expect(signonUser('     Main Menu\n     User  . . . :   JSMITH')).toBe('');
   });
 });

@@ -49,7 +49,7 @@ export function formatDuration(ms: number): string {
   return `${d}d ${h % 24}h`;
 }
 
-/** The one-line summary under an entry: "KYLE@DEV01 · 11/03 09:14 · 12m". */
+/** The one-line summary under an entry: "JSMITH@DEV01 · 11/03 09:14 · 12m". */
 export function describeEntry(e: HistoryEntry, now = Date.now()): string {
   const who = [e.user, e.deviceName].filter(Boolean).join('@');
   const when = new Date(e.start).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
