@@ -23,7 +23,7 @@
                   DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <Icon Id="AppIcon" SourceFile="..\icon.ico" />
+    <Icon Id="AppIcon" SourceFile="build\windows\icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/DerKyberTakt/tn5250-desktop" />
     <Property Id="ARPHELPLINK" Value="https://github.com/DerKyberTakt/tn5250-desktop/issues" />
@@ -35,14 +35,14 @@
 
     <Feature Id="Main" Title="TN5250 Terminal" Level="1">
       <Component Id="MainExe" Directory="INSTALLFOLDER" Guid="a3c1d2e4-5f60-4718-8b9c-0d1e2f3a4b5c">
-        <File Id="MainExe" Source="..\..\bin\tn5250-terminal.exe" KeyPath="yes">
+        <File Id="MainExe" Source="build\bin\tn5250-terminal.exe" KeyPath="yes">
           <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="TN5250 Terminal"
                     Description="5250 terminal emulator for IBM i" WorkingDirectory="INSTALLFOLDER"
                     Icon="AppIcon" Advertise="yes" />
         </File>
       </Component>
       <Component Id="LicenseFile" Directory="INSTALLFOLDER" Guid="b4d2e3f5-6071-4829-9cad-1e2f3a4b5c6d">
-        <File Id="LicenseFile" Source="..\..\..\LICENSE" Name="LICENSE.txt" KeyPath="yes" />
+        <File Id="LicenseFile" Source="LICENSE" Name="LICENSE.txt" KeyPath="yes" />
       </Component>
     </Feature>
 
