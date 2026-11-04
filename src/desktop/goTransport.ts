@@ -1,5 +1,9 @@
 import type { ConnectionEvents, ConnectOptions, Transport } from '../extension/connection';
+import { CertificateError } from '../shared/tlsTrust';
 import { base64ToBytes, bytesToBase64, errorText, goApp, wailsRuntime } from './bridge';
+
+/** net.go reports a refused host certificate as "TLS_CERT_REFUSED <fingerprint> <reason>". */
+const CERT_REFUSED = /TLS_CERT_REFUSED ([0-9A-F]*) ?(.*)$/s;
 
 /** Live transports by id; one runtime listener per event fans out to them. */
 const transports = new Map<string, GoTransport>();
@@ -41,6 +45,8 @@ export class GoTransport implements Transport {
         port: options.port,
         tls: options.tls,
         trustAnyCertificate: options.trustAnyCertificate ?? false,
+        pinnedFingerprint: options.pinnedFingerprint ?? '',
+        caFile: options.caFile ?? '',
         timeoutMs: options.timeoutMs ?? 15000,
         keepAlive: options.keepAlive ?? true,
       });
@@ -52,7 +58,13 @@ export class GoTransport implements Transport {
       this.isOpen = true;
     } catch (err) {
       transports.delete(this.id);
-      throw new Error(errorText(err), { cause: err });
+      const text = errorText(err);
+      const refused = CERT_REFUSED.exec(text);
+      if (refused) {
+        const reason = (refused[2] ?? '').trim() || 'the certificate could not be verified';
+        throw new CertificateError(`certificate of ${options.host} not accepted: ${reason}`, refused[1] ?? '', reason);
+      }
+      throw new Error(text, { cause: err });
     }
   }
 

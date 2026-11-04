@@ -157,9 +157,20 @@ export class SettingsTab {
         case 'removeSession': {
           const name = store.readSessions()[msg.index]?.name ?? 'this session';
           if (await confirmDialog('Remove session', `Remove "${name}"?`, 'Remove')) {
+            const removed = store.readSessions()[msg.index];
             await store.removeSessionAt(msg.index);
             this.select = -1;
             this.push();
+            // The removed session's password goes too, unless another session still signs
+            // on with the same user at the same host (one credential per USER@host).
+            if (removed) {
+              const gone = resolveSettings(store.readDefaults(), removed);
+              const user = gone.signonUser.trim().toUpperCase();
+              const sameUserHost = (s: TerminalSettings): boolean => s.signonUser.trim().toUpperCase() === user && s.host.trim().toLowerCase() === gone.host.trim().toLowerCase();
+              const stillUsed = user !== '' && store.readSessions().some((s) => sameUserHost(resolveSettings(store.readDefaults(), s)));
+              if (user && !stillUsed) await this.host.credentials.remove(gone.signonUser, gone.host, gone.name);
+              await app.SecretDelete(certPassphraseKey(gone.name, gone.host)).catch(() => undefined);
+            }
           }
           break;
         }
@@ -217,9 +228,12 @@ export class SettingsTab {
         }
         case 'browseFile': {
           const pem = msg.key === 'tlsClientKey';
-          const file = await app.PickFile(pem ? 'Client private key (PEM)' : 'Client certificate (PKCS#12 or PEM)', pem
-            ? [{ name: 'PEM key', patterns: '*.pem;*.key' }, { name: 'All files', patterns: '*.*' }]
-            : [{ name: 'Certificates', patterns: '*.pfx;*.p12;*.pem;*.crt;*.cer' }, { name: 'All files', patterns: '*.*' }]);
+          const ca = msg.key === 'tlsCaFile';
+          const file = await app.PickFile(ca ? 'CA certificate (PEM)' : pem ? 'Client private key (PEM)' : 'Client certificate (PKCS#12 or PEM)', ca
+            ? [{ name: 'PEM certificate', patterns: '*.pem;*.crt;*.cer' }, { name: 'All files', patterns: '*.*' }]
+            : pem
+              ? [{ name: 'PEM key', patterns: '*.pem;*.key' }, { name: 'All files', patterns: '*.*' }]
+              : [{ name: 'Certificates', patterns: '*.pfx;*.p12;*.pem;*.crt;*.cer' }, { name: 'All files', patterns: '*.*' }]);
           if (file) this.push({ [msg.key]: file } as Partial<TerminalSettings>);
           break;
         }

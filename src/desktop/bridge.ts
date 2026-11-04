@@ -9,6 +9,8 @@ export interface ConnectOptionsDto {
   port: number;
   tls: boolean;
   trustAnyCertificate: boolean;
+  pinnedFingerprint: string;
+  caFile: string;
   timeoutMs: number;
   keepAlive: boolean;
 }

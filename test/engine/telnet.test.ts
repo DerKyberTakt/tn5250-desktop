@@ -62,6 +62,28 @@ describe('TelnetSession', () => {
     expect(text).toContain('CHARSET\u0001697');
   });
 
+  it('KBDTYPE and CHARSET follow the code page (IBM keyboard type table); a keyboard type override wins', () => {
+    const latin = (h: ReturnType<typeof harness>): string => Buffer.from(h.sent[0] as string, 'hex').toString('latin1');
+    const de = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 1141 } as never);
+    de.telnet.feed(hexToBytes('fffa2701fff0'));
+    expect(latin(de)).toContain('KBDTYPEAGB');
+    expect(latin(de)).toContain('CODEPAGE1141');
+    expect(latin(de)).toContain('CHARSET695');
+    const uk = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 500, keyboardType: 'ukb' } as never);
+    uk.telnet.feed(hexToBytes('fffa2701fff0'));
+    expect(latin(uk)).toContain('KBDTYPEUKB');
+    expect(latin(uk)).toContain('CHARSET697');
+  });
+
+  it('a code page the table does not know sends DEVNAME only (RFC 4777: the host then uses its system values)', () => {
+    const h = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 9999 } as never);
+    h.telnet.feed(hexToBytes('fffa2701fff0'));
+    const text = Buffer.from(h.sent[0] as string, 'hex').toString('latin1');
+    expect(text).toContain('DEVNAMEMYDEV');
+    expect(text).not.toContain('KBDTYPE');
+    expect(text).not.toContain('CHARSET');
+  });
+
   it('parses NEW-ENVIRON IS payloads', () => {
     const bytes = Array.from(Buffer.from('\u0003DEVNAME\u0001QPADEV0001\u0000USER\u0001ALEX', 'latin1'));
     const vars = parseEnvironment(bytes);

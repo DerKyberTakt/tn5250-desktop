@@ -4,7 +4,7 @@ import { expandDeviceName } from '../shared/deviceName';
 import type { KeyAction } from '../shared/keymap';
 import type { PcCommandKind } from '../shared/pcCommand';
 import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type WebviewToHost } from '../shared/protocol';
-import { buildTitle, type TerminalSettings } from '../shared/settings';
+import { buildTitle, resolveSettings, type TerminalSettings } from '../shared/settings';
 import { errorText, goApp, type SystemInfo } from './bridge';
 import { confirmDialog } from './dialogs';
 import { GoTransport } from './goTransport';
@@ -105,10 +105,37 @@ export class TerminalTab {
           log: (message) => host.log(`[${label}] ${message}`),
           pcCommandPolicy: () => this.liveSettings().pcCommands,
           pcCommand: (kind, decision, wait) => this.handlePcCommand(kind, decision, wait),
+          certificateRejected: (fingerprint, reason) => void this.offerTrust(fingerprint, reason),
         },
         (events) => new GoTransport(events),
       );
     }
+  }
+
+  /**
+   * The host certificate was refused: offer to pin its fingerprint on this session
+   * ("trust this certificate"), then connect again. Sessions that are not saved get the
+   * pin for this tab only.
+   */
+  private async offerTrust(fingerprint: string, reason: string): Promise<void> {
+    const profile = this.profile;
+    if (!profile || !this.controller) return;
+    const pretty = fingerprint.replace(/[^0-9a-f]/gi, '').toUpperCase().replace(/(..)(?=.)/g, '$1:');
+    const ok = await confirmDialog(
+      'Certificate not accepted',
+      `${profile.host}: ${reason}.\n\nSHA-256 fingerprint:\n${pretty}\n\nTrust it only if this fingerprint matches what the system administrator shows for this host.`,
+      'Trust this certificate',
+    );
+    if (!ok) return;
+    profile.tlsPinnedCertificate = fingerprint;
+    const store = this.host.store;
+    const index = store.readSessions().findIndex((s) => s.name === profile.name && s.host === profile.host);
+    if (index >= 0) {
+      const saved = store.readSessions()[index];
+      if (saved) await store.saveSession(index, { ...resolveSettings(store.readDefaults(), saved), tlsPinnedCertificate: fingerprint });
+    }
+    this.host.log(`[${this.title}] certificate ${pretty} trusted for this session`);
+    this.controller.reconnectNow();
   }
 
   /** STRPCCMD from the host: open the link or run the command, asking first when the policy says so. */

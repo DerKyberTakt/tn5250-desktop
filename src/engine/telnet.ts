@@ -1,3 +1,5 @@
+import { hostNls } from './nls';
+
 /**
  * Telnet layer for TN5250 (RFC 1205 / RFC 2877): option negotiation, IAC
  * escaping and END-OF-RECORD framing. Pure: bytes in, bytes out via callbacks.
@@ -33,10 +35,13 @@ export interface TelnetOptions {
   deviceName?: string;
   /** Sent as the CODEPAGE user variable when a device name is requested. */
   codePage?: number;
+  /** KBDTYPE override (3 letters); empty = the one for the code page. */
+  keyboardType?: string;
 }
 
 export interface TelnetCallbacks {
-  send(bytes: Uint8Array): void;
+  /** `forTrace`: the same frame with secrets blanked, when the record held any. */
+  send(bytes: Uint8Array, forTrace?: Uint8Array): void;
   record(record: Uint8Array): void;
   /** Variables the host reports back through NEW-ENVIRON (e.g. DEVNAME). */
   environment?(vars: Map<string, string>): void;
@@ -64,15 +69,18 @@ export class TelnetSession {
     this.parse();
   }
 
-  /** Sends one 5250 record: escapes IAC and appends IAC EOR. */
-  sendRecord(record: Uint8Array): void {
-    const out: number[] = [];
-    for (const b of record) {
-      out.push(b);
-      if (b === IAC) out.push(IAC);
-    }
-    out.push(IAC, EOR_CMD);
-    this.callbacks.send(Uint8Array.from(out));
+  /** Sends one 5250 record: escapes IAC and appends IAC EOR. `forTrace` is framed the same way. */
+  sendRecord(record: Uint8Array, forTrace?: Uint8Array): void {
+    const frame = (bytes: Uint8Array): Uint8Array => {
+      const out: number[] = [];
+      for (const b of bytes) {
+        out.push(b);
+        if (b === IAC) out.push(IAC);
+      }
+      out.push(IAC, EOR_CMD);
+      return Uint8Array.from(out);
+    };
+    this.callbacks.send(frame(record), forTrace ? frame(forTrace) : undefined);
   }
 
   private reply(...bytes: number[]): void {
@@ -151,10 +159,13 @@ export class TelnetSession {
     const name = (this.options.deviceName ?? '').trim().toUpperCase();
     if (!name) return [];
     const out = [NE_USERVAR, ...ascii('DEVNAME'), NE_VALUE, ...ascii(name)];
-    out.push(NE_USERVAR, ...ascii('KBDTYPE'), NE_VALUE, ...ascii('USB'));
-    if (this.options.codePage) {
+    // KBDTYPE, CODEPAGE and CHARSET belong together (RFC 4777); a code page the table
+    // does not know sends none of them and the host uses its system values.
+    const nls = this.options.codePage ? hostNls(this.options.codePage, this.options.keyboardType) : undefined;
+    if (nls) {
+      out.push(NE_USERVAR, ...ascii('KBDTYPE'), NE_VALUE, ...ascii(nls.kbdType));
       out.push(NE_USERVAR, ...ascii('CODEPAGE'), NE_VALUE, ...ascii(String(this.options.codePage)));
-      out.push(NE_USERVAR, ...ascii('CHARSET'), NE_VALUE, ...ascii('697'));
+      out.push(NE_USERVAR, ...ascii('CHARSET'), NE_VALUE, ...ascii(nls.charset));
     }
     return out;
   }

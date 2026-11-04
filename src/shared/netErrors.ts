@@ -13,7 +13,7 @@ export function friendlyNetError(message: string, host: string, port: number, li
   if (/etimedout|timed out|i\/o timeout|did not properly respond|deadline exceeded/.test(m)) return `No answer from ${where}. The host may be down, or a firewall or VPN is blocking the port.`;
   if (/enetunreach|ehostunreach|network is unreachable|host is unreachable|unreachable network|unreachable host/.test(m)) return `${where} is not reachable from this network. Check the VPN or Wi-Fi.`;
   if (/econnreset|forcibly closed|connection reset|broken pipe|epipe|wsarecv|wsasend/.test(m)) return `The connection to ${where} was reset (network dropped or the host ended the session).`;
-  if (/certificate|x509|self[- ]signed|unable to verify|cert_|hostname\/ip does not match/.test(m)) return `The TLS certificate of ${where} was not accepted (${message}). Turn off "Verify certificate" for this session if the host uses a self-signed certificate.`;
+  if (/certificate|x509|self[- ]signed|unable to verify|cert_|hostname\/ip does not match/.test(m)) return `The TLS certificate of ${where} was not accepted (${message}). If this is your own system, trust this certificate for the session (its fingerprint is shown) or point "CA certificate file" at the CA that signed it; turning off "Server Authentication" accepts any certificate, including an attacker's.`;
   if (/wrong version number|first record does not look like a tls handshake|tls: |ssl/.test(m)) return `TLS failed with ${where}: the port may not be a TLS port (use 992 for TLS, 23 without).`;
   return message;
 }

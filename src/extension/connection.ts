@@ -1,5 +1,9 @@
+import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
+import { CertificateError, checkPeer } from '../shared/tlsTrust';
+
+export { CertificateError, checkPeer, normalizeFingerprint } from '../shared/tlsTrust';
 
 export interface ConnectOptions {
   host: string;
@@ -7,6 +11,10 @@ export interface ConnectOptions {
   tls: boolean;
   /** Accept certificates that fail validation (self-signed hosts). */
   trustAnyCertificate?: boolean;
+  /** SHA-256 fingerprint of the one host certificate to accept (pinned); checked before the chain. */
+  pinnedFingerprint?: string;
+  /** PEM file with the CA certificate(s) to trust in addition to the system roots. */
+  caFile?: string;
   timeoutMs?: number;
   keepAlive?: boolean;
   /** Client authentication material (TLS only). */
@@ -49,12 +57,26 @@ export class HostConnection implements Transport {
         else resolve();
       };
 
+      let ca: Buffer | undefined;
+      if (options.tls && options.caFile) {
+        try {
+          ca = fs.readFileSync(options.caFile);
+        } catch (err) {
+          done(new Error(`CA certificate file not readable: ${err instanceof Error ? err.message : String(err)}`));
+          return;
+        }
+      }
+      // The chain is checked by hand after the handshake (rejectUnauthorized off): that is
+      // what lets a pinned fingerprint stand in for a chain, and what puts the fingerprint
+      // into the error so the user can decide to trust it.
       const socket = options.tls
         ? tls.connect({
             host: options.host,
             port: options.port,
             servername: options.host,
-            rejectUnauthorized: !options.trustAnyCertificate,
+            rejectUnauthorized: false,
+            minVersion: 'TLSv1.2',
+            ca,
             pfx: options.pfx,
             cert: options.cert,
             key: options.key,
@@ -75,7 +97,21 @@ export class HostConnection implements Transport {
         socket.setTimeout(0);
         done();
       };
-      if (options.tls) socket.once('secureConnect', onReady);
+      const onSecure = (): void => {
+        const t = socket as tls.TLSSocket;
+        const cert = t.getPeerCertificate();
+        const fingerprint = cert?.fingerprint256 ?? '';
+        const refusal = checkPeer(options, { fingerprint256: fingerprint, authorized: t.authorized, authorizationError: t.authorizationError ? String(t.authorizationError) : undefined });
+        if (refusal) {
+          const err = new CertificateError(`certificate of ${options.host} not accepted: ${refusal}`, fingerprint, refusal);
+          settled = true;
+          socket.destroy();
+          reject(err);
+          return;
+        }
+        onReady();
+      };
+      if (options.tls) socket.once('secureConnect', onSecure);
       else socket.once('connect', onReady);
 
       socket.on('data', (chunk: Buffer) => this.events.data(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)));

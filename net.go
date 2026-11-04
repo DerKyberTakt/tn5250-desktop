@@ -1,11 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,8 +22,74 @@ type ConnectOptions struct {
 	Port                int    `json:"port"`
 	TLS                 bool   `json:"tls"`
 	TrustAnyCertificate bool   `json:"trustAnyCertificate"`
-	TimeoutMs           int    `json:"timeoutMs"`
-	KeepAlive           bool   `json:"keepAlive"`
+	// SHA-256 fingerprint of the one certificate to accept (hex, colons optional); empty = none pinned.
+	PinnedFingerprint string `json:"pinnedFingerprint"`
+	// PEM file with CA certificates to trust in addition to the system roots.
+	CAFile    string `json:"caFile"`
+	TimeoutMs int    `json:"timeoutMs"`
+	KeepAlive bool   `json:"keepAlive"`
+}
+
+// certRefusedPrefix marks a refused host certificate in the error text; the page turns it
+// into a CertificateError with the fingerprint, so it can offer "Trust this certificate".
+const certRefusedPrefix = "TLS_CERT_REFUSED"
+
+func fingerprint256(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+func normalizeFingerprint(fp string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(fp) {
+		if (r >= '0' && r <= '9') || (r >= 'A' && r <= 'F') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// verifyPeer decides whether the host certificate is acceptable: a pinned fingerprint
+// wins, else the chain (system roots plus the CA file) and the host name, else anything
+// when verification is off. The handshake has InsecureSkipVerify set so this runs instead.
+func verifyPeer(o ConnectOptions, host string) func(cs tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
+		if len(cs.PeerCertificates) == 0 {
+			return fmt.Errorf("%s  no certificate presented", certRefusedPrefix)
+		}
+		leaf := cs.PeerCertificates[0]
+		fp := fingerprint256(leaf.Raw)
+		if pinned := normalizeFingerprint(o.PinnedFingerprint); pinned != "" {
+			if pinned == fp {
+				return nil
+			}
+			return fmt.Errorf("%s %s the certificate is not the one trusted for this session (it changed, or another system answers on this address)", certRefusedPrefix, fp)
+		}
+		if o.TrustAnyCertificate {
+			return nil
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil || roots == nil {
+			roots = x509.NewCertPool()
+		}
+		if o.CAFile != "" {
+			pem, readErr := os.ReadFile(o.CAFile)
+			if readErr != nil {
+				return fmt.Errorf("CA certificate file not readable: %w", readErr)
+			}
+			if !roots.AppendCertsFromPEM(pem) {
+				return errors.New("CA certificate file holds no PEM certificate")
+			}
+		}
+		opts := x509.VerifyOptions{DNSName: host, Roots: roots, Intermediates: x509.NewCertPool()}
+		for _, c := range cs.PeerCertificates[1:] {
+			opts.Intermediates.AddCert(c)
+		}
+		if _, err := leaf.Verify(opts); err != nil {
+			return fmt.Errorf("%s %s %s", certRefusedPrefix, fp, err.Error())
+		}
+		return nil
+	}
 }
 
 // Emitter delivers socket events to the page; the Wails runtime in the app, a recorder in tests.
@@ -89,7 +159,8 @@ func (s *Sockets) Connect(id string, o ConnectOptions) error {
 		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
 			ServerName:         host,
 			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: o.TrustAnyCertificate, //nolint:gosec // per-profile option for self-signed hosts
+			InsecureSkipVerify: true, //nolint:gosec // VerifyConnection below does the check (pin, CA file, chain)
+			VerifyConnection:   verifyPeer(o, host),
 		})
 	} else {
 		conn, err = dialer.Dial("tcp", addr)

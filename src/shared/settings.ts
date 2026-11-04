@@ -16,6 +16,13 @@ export interface TerminalSettings {
   tls: boolean;
   /** TLS only: validate the host certificate (ACS "server authentication"). */
   verifyCertificate: boolean;
+  /**
+   * TLS only: SHA-256 fingerprint of the host certificate to accept, pinned from a
+   * rejected certificate ("Trust this certificate"). Empty = none pinned.
+   */
+  tlsPinnedCertificate: string;
+  /** TLS only: PEM file with the CA certificate(s) that signed the host certificate (a DCM local CA, say). */
+  tlsCaFile: string;
   /** TLS client authentication: none, a PKCS#12 (.pfx/.p12) file, or PEM certificate + key files. */
   tlsClientAuth: 'none' | 'pfx' | 'pem';
   tlsClientCert: string;
@@ -23,6 +30,8 @@ export interface TerminalSettings {
   deviceName: string;
   screenSize: ScreenSize;
   codePage: number;
+  /** KBDTYPE sent to the host with the workstation name (3 letters, e.g. USB); empty = the one IBM lists for the code page. */
+  keyboardType: string;
   autoConnect: boolean;
   autoReconnect: boolean;
   connectTimeoutSeconds: number;
@@ -164,12 +173,15 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   port: 23,
   tls: false,
   verifyCertificate: true,
+  tlsPinnedCertificate: '',
+  tlsCaFile: '',
   tlsClientAuth: 'none',
   tlsClientCert: '',
   tlsClientKey: '',
   deviceName: '',
   screenSize: '24x80',
   codePage: 37,
+  keyboardType: '',
   autoConnect: true,
   autoReconnect: false,
   connectTimeoutSeconds: 15,
@@ -344,12 +356,15 @@ export const CONNECTION_FIELDS = [
   'port',
   'tls',
   'verifyCertificate',
+  'tlsPinnedCertificate',
+  'tlsCaFile',
   'tlsClientAuth',
   'tlsClientCert',
   'tlsClientKey',
   'deviceName',
   'screenSize',
   'codePage',
+  'keyboardType',
   'connectTimeoutSeconds',
   'keepAlive',
   'typeAhead',
@@ -365,12 +380,15 @@ export const CONNECTION_FIELD_LABELS: Record<ConnectionField, string> = {
   port: 'Destination Port',
   tls: 'Protocol',
   verifyCertificate: 'Server Authentication',
+  tlsPinnedCertificate: 'Trusted certificate',
+  tlsCaFile: 'CA certificate file',
   tlsClientAuth: 'Send a Certificate',
   tlsClientCert: 'Certificate file',
   tlsClientKey: 'Private key file',
   deviceName: 'Workstation ID',
   screenSize: 'Screen Size',
   codePage: 'Host Code Page',
+  keyboardType: 'Keyboard type',
   connectTimeoutSeconds: 'Connection Timeout',
   keepAlive: 'Keep-Alive',
   typeAhead: 'Type-ahead',

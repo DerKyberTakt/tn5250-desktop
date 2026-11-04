@@ -88,6 +88,9 @@ class Reader {
   get eof(): boolean {
     return this.pos >= this.buf.length;
   }
+  get remaining(): number {
+    return Math.max(0, this.buf.length - this.pos);
+  }
   peek(): number {
     return this.buf[this.pos] ?? 0;
   }
@@ -245,12 +248,17 @@ export class DataStreamProcessor {
           this.writeErrorCode(r);
           break;
         case CMD_WSF: {
-          const ll = r.u16();
-          const cls = r.u8();
-          const type = r.u8();
-          r.bytes(Math.max(0, ll - 4));
-          if (cls === 0xd9 && type === 0x70) {
-            out.push({ opcode: OP_NOOP, data: this.queryReply() });
+          // One WSF carries one or more structured fields (LL, class, type, data), each
+          // walked by its length: a X'04' inside one is data, not the next ESC.
+          while (r.remaining >= 4 && r.peek() !== ESC) {
+            const ll = r.u16();
+            const cls = r.u8();
+            const type = r.u8();
+            if (ll < 4) break;
+            r.bytes(Math.min(ll - 4, r.remaining));
+            if (cls === 0xd9 && type === 0x70) {
+              out.push({ opcode: OP_NOOP, data: this.queryReply() });
+            }
           }
           break;
         }
@@ -263,9 +271,23 @@ export class DataStreamProcessor {
     return out;
   }
 
+  /**
+   * Byte ranges [start, end) of the last read response that came from non-display fields
+   * (passwords): a trace must not keep them. Cleared by every response builder.
+   */
+  secretRanges: Array<[number, number]> = [];
+
+  /** The ranges of the last response, handed over once. */
+  takeSecretRanges(): Array<[number, number]> {
+    const ranges = this.secretRanges;
+    this.secretRanges = [];
+    return ranges;
+  }
+
   /** The response of a command attention key: cursor and AID, no field data. */
   aidOnly(aid: number): Uint8Array {
     const s = this.screen;
+    this.secretRanges = [];
     return Uint8Array.from([s.rowOf(s.cursor) + 1, s.colOf(s.cursor) + 1, aid]);
   }
 
@@ -278,6 +300,8 @@ export class DataStreamProcessor {
   readResponse(kind: ReadKind, aid: number): Uint8Array {
     const s = this.screen;
     const out: number[] = [s.rowOf(s.cursor) + 1, s.colOf(s.cursor) + 1, aid];
+    const secret: Array<[number, number]> = [];
+    this.secretRanges = secret;
     type Entry = { addr: number; field?: Field; bar?: GuiScrollBar; sel?: GuiSelection };
     // A continued entry field set goes out as one field: its first segment's SBA, then the
     // data of every segment with no delimiters; the other segments are not listed.
@@ -323,7 +347,9 @@ export class DataStreamProcessor {
         bytes = bytes.filter((b) => b !== 0);
         if (kind === 'input') while (bytes.length < n) bytes.push(0);
       }
+      const nondisplay = (set[0]!.attr & 0x07) === 0x07;
       if (kind === 'input') {
+        if (nondisplay) secret.push([out.length, out.length + bytes.length]);
         for (const b of bytes) out.push(b === 0 ? 0x40 : b);
         continue;
       }
@@ -334,6 +360,7 @@ export class DataStreamProcessor {
         while (end > 0 && bytes[end - 1] === 0x40) end -= 1;
       }
       out.push(O_SBA, s.rowOf(f.start) + 1, s.colOf(f.start) + 1);
+      if (nondisplay) secret.push([out.length, out.length + end]);
       for (let i = 0; i < end; i++) {
         const b = bytes[i] as number;
         out.push(b === 0 && kind === 'mdt' ? 0x40 : b);
@@ -576,7 +603,7 @@ export class DataStreamProcessor {
    * Create Window: flags, 2 reserved, depth, width, then minor structures (length,
    * type, ...): 0x01 border presentation = flags, monochrome attribute, colour
    * attribute, 8 border characters (upper-left, top, upper-right, left, right,
-   * lower-left, bottom, lower-right); 0x10 title/footer (ignored). The window sits at
+   * lower-left, bottom, lower-right); 0x10 title/footer (handled). The window sits at
    * the current write address and is laid out like the text windows the host draws
    * for a plain terminal: attribute, border character, attribute, `width` cells,
    * attribute, border character, attribute; `depth` rows between a top and a bottom

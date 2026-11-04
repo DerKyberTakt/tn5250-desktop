@@ -30,8 +30,8 @@ describe('friendlyNetError', () => {
   });
 
   it('explains TLS problems', () => {
-    expect(f('self-signed certificate in certificate chain')).toMatch(/Verify certificate/);
-    expect(f('tls: failed to verify certificate: x509: certificate signed by unknown authority')).toMatch(/Verify certificate/);
+    expect(f('self-signed certificate in certificate chain')).toMatch(/trust this certificate/);
+    expect(f('tls: failed to verify certificate: x509: certificate signed by unknown authority')).toMatch(/CA certificate file/);
     expect(f('tls: first record does not look like a TLS handshake')).toMatch(/not be a TLS port/);
   });
 

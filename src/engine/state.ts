@@ -31,7 +31,11 @@ export class TerminalState {
   insert = false;
   /** Set by a Read command: which response format the host expects next. */
   pendingRead: ReadKind | undefined;
-  /** Operator error text (EBCDIC bytes already placed on the error row), for the OIA. */
+  /**
+   * Text for the message line, from one of two sources: a host Write Error Code (which
+   * writes the error row itself; the text is read back from it) or an operator error
+   * (code and text, shown by the OIA only; the error row is not written).
+   */
   errorMessage = '';
   /** Cursor saved by Write Error Code, restored on Reset. */
   savedCursor: number | undefined;

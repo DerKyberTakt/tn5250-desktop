@@ -56,7 +56,7 @@ export type SettingsToHost =
   | { type: 'importKmp'; target: number }
   | { type: 'setPassword'; target: number }
   | { type: 'browseWatermark' }
-  | { type: 'browseFile'; key: 'tlsClientCert' | 'tlsClientKey' }
+  | { type: 'browseFile'; key: 'tlsClientCert' | 'tlsClientKey' | 'tlsCaFile' }
   | { type: 'browseFont' }
   | { type: 'setCertPassphrase'; target: number }
   | { type: 'exportColors'; values: Record<string, string> }

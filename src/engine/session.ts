@@ -20,6 +20,8 @@ export interface SessionOptions {
   screenSize?: '24x80' | '27x132';
   codePage?: number;
   deviceName?: string;
+  /** KBDTYPE override for NEW-ENVIRON; empty = from the code page. */
+  keyboardType?: string;
   /** Keep keys pressed while the keyboard is locked (X SYSTEM) and replay them when the host unlocks it. */
   typeAhead?: boolean;
   /** Answer the host's Query as an enhanced-interface device (GUI windows drawn by the terminal). Default on. */
@@ -35,8 +37,11 @@ type QueuedKey = { kind: 'press'; action: KeyAction } | { kind: 'type'; text: st
 const IMMEDIATE_ACTIONS = new Set<KeyAction>(['reset', 'attn', 'sysreq', 'testRequest', 'printScreen']);
 
 export interface SessionEvents {
-  /** Bytes to write to the socket. */
-  send(bytes: Uint8Array): void;
+  /**
+   * Bytes to write to the socket. `forTrace` is the same frame with the data of non-display
+   * fields (passwords) blanked, for traces and logs; when absent the frame holds no secret.
+   */
+  send(bytes: Uint8Array, forTrace?: Uint8Array): void;
   /** The screen or status changed. */
   update?(): void;
   alarm?(): void;
@@ -86,16 +91,17 @@ export class Session5250 {
       { alarm: () => this.events.alarm?.(), trace: this.events.trace ? (l) => this.events.trace?.(l) : undefined },
     );
     this.keyboard = new Keyboard(this.screen, this.state, this.processor, this.codePage, {
-      send: (opcode, flags1, data) => this.sendRecord(opcode, flags1, data),
+      send: (opcode, flags1, data) => this.sendRecord(opcode, flags1, data, this.processor.takeSecretRanges()),
     });
     this.telnet = new TelnetSession(
       {
         terminalType: this.terminalType,
         deviceName: options.deviceName ?? '',
         codePage: this.codePage.ccsid,
+        keyboardType: options.keyboardType ?? '',
       },
       {
-        send: (bytes) => this.events.send(bytes),
+        send: (bytes, forTrace) => this.events.send(bytes, forTrace),
         record: (record) => this.onRecord(record),
         environment: (vars) => {
           const name = vars.get('DEVNAME');
@@ -210,9 +216,19 @@ export class Session5250 {
     };
   }
 
-  /** Sends a record to the host with GDS framing. */
-  sendRecord(opcode: number, flags1: number, data: Uint8Array): void {
-    this.telnet.sendRecord(buildRecord(opcode, flags1, data));
+  /**
+   * Sends a record to the host with GDS framing. `secret` lists the byte ranges of `data`
+   * that hold non-display field data: the trace copy of the frame has them blanked.
+   */
+  sendRecord(opcode: number, flags1: number, data: Uint8Array, secret: Array<[number, number]> = []): void {
+    const frame = buildRecord(opcode, flags1, data);
+    if (secret.length === 0) {
+      this.telnet.sendRecord(frame);
+      return;
+    }
+    const masked = data.slice();
+    for (const [start, end] of secret) masked.fill(0x40, start, end);
+    this.telnet.sendRecord(frame, buildRecord(opcode, flags1, masked));
   }
 
   private onRecord(bytes: Uint8Array): void {
@@ -239,7 +255,7 @@ export class Session5250 {
     this.quiet = false;
     if (record.data.length > 0) {
       for (const response of this.processor.process(record.data)) {
-        this.sendRecord(response.opcode, 0, response.data);
+        this.sendRecord(response.opcode, 0, response.data, this.processor.takeSecretRanges());
       }
     }
     // STRPCCMD: the host wrote a PC command and reads the screen. When the host side takes

@@ -5,6 +5,7 @@ import { friendlyNetError } from '../shared/netErrors';
 import { classifyPcCommand, decidePcCommand, type PcCommandDecision, type PcCommandKind, type PcCommandPolicy } from '../shared/pcCommand';
 import type { ConnectionInfo, ConnectionStatus, OiaState, ScreenSnapshot } from '../shared/protocol';
 import type { TerminalSettings } from '../shared/settings';
+import { CertificateError } from '../shared/tlsTrust';
 import type { Transport, TransportFactory } from './connection';
 
 export interface SessionControllerEvents {
@@ -32,9 +33,17 @@ export interface SessionControllerEvents {
   nextDeviceName?(): string | undefined;
   /** Client certificate material for TLS, if configured. */
   clientAuth?(): Promise<{ pfx?: Buffer; cert?: Buffer; key?: Buffer; passphrase?: string } | undefined>;
+  /**
+   * The host certificate was refused (chain not verified, or not the pinned one). The host
+   * side may offer to trust it: save the fingerprint on the profile and connect again.
+   */
+  certificateRejected?(fingerprint: string, reason: string): void;
 }
 
-/** One entry of a session trace, in the same shape as scripts/capture.mjs output. */
+/**
+ * One entry of a session trace (the tn5250-trace-*.json format both apps save: raw telnet
+ * bytes per direction, the data of non-display fields blanked on the way out).
+ */
 export interface TraceEvent {
   t: number;
   dir: 'in' | 'out';
@@ -64,6 +73,7 @@ export class SessionController {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private wantConnected = false;
   private signonDone = false;
+  private signonSkipLogged = false;
   private screensReceived = 0;
   private connectedAt = 0;
   private deviceRetries = 0;
@@ -83,11 +93,14 @@ export class SessionController {
         screenSize: this.profile.screenSize,
         codePage: this.profile.codePage,
         deviceName: this.profile.deviceName,
+        keyboardType: this.profile.keyboardType,
         typeAhead: this.profile.typeAhead,
       },
       {
-        send: (bytes) => {
-          this.record('out', bytes);
+        send: (bytes, forTrace) => {
+          // The trace keeps the masked copy: what was typed into a non-display field
+          // (the password) never leaves the socket path.
+          this.record('out', forTrace ?? bytes);
           this.connection?.write(bytes);
         },
         update: () => {
@@ -138,6 +151,7 @@ export class SessionController {
     this.clearTimers();
     this.session = this.createSession();
     this.signonDone = false;
+    this.signonSkipLogged = false;
     this.trace = [];
     this.traceStart = Date.now();
     this.setStatus('connecting', `${this.profile.host}:${this.profile.port}`, { attempt: this.reconnectAttempt + 1 });
@@ -171,6 +185,10 @@ export class SessionController {
       error: (err) => this.events.log(`socket error: ${err.message}`),
     });
     this.connection = connection;
+    const signon = this.events.signon?.() ?? this.profile;
+    if (signon.autoSignon && !this.profile.tls) {
+      this.events.log('warning: bypass sign-on over plain telnet sends the user profile and password unencrypted; use TLS (port 992) where the host offers it');
+    }
     try {
       const auth = this.profile.tls ? await this.events.clientAuth?.() : undefined;
       await connection.connect({
@@ -178,6 +196,8 @@ export class SessionController {
         port: this.profile.port,
         tls: this.profile.tls,
         trustAnyCertificate: !this.profile.verifyCertificate,
+        pinnedFingerprint: this.profile.tlsPinnedCertificate || undefined,
+        caFile: this.profile.tlsCaFile || undefined,
         timeoutMs: this.profile.connectTimeoutSeconds * 1000,
         keepAlive: this.profile.keepAlive,
         ...(auth ?? {}),
@@ -186,6 +206,12 @@ export class SessionController {
       if (this.connection !== connection) return; // cancelled or superseded meanwhile
       this.connection = undefined;
       this.setStatus('disconnected', friendlyNetError(err instanceof Error ? err.message : String(err), this.profile.host, this.profile.port));
+      if (err instanceof CertificateError) {
+        // No point retrying the same certificate; the user decides.
+        this.wantConnected = false;
+        this.events.certificateRejected?.(err.fingerprint, err.reason);
+        return;
+      }
       this.scheduleReconnect();
       return;
     }
@@ -269,14 +295,29 @@ export class SessionController {
     return rows.join(LF);
   }
 
-  /** Bypass sign-on: fill the first input screen after connecting (user, password, Enter). */
+  /** Screens after connect on which bypass sign-on may still act (sign-on may follow a message screen). */
+  private static readonly SIGNON_SCREENS = 5;
+
+  /**
+   * Bypass sign-on: fill the Sign On screen (user, password, Enter). The password goes
+   * only into a non-display field: a message screen, a changed sign-on display or a
+   * hostile host never gets it in a field that shows, and never after the first screens.
+   */
   private async maybeSignon(): Promise<void> {
     const { autoSignon, signonUser } = this.events.signon?.() ?? this.profile;
     const user = signonUser.trim();
     if (this.signonDone || !this.connected || !autoSignon || !user) return;
+    if (this.screensReceived > SessionController.SIGNON_SCREENS) return;
     const s = this.session.screen;
     const inputs = s.fields.filter((f) => !f.bypass);
     if (this.session.state.inputInhibited !== 'none' || inputs.length < 2) return;
+    const userField = inputs[0]!;
+    const passwordField = inputs.find((f) => f !== userField && (f.attr & 0x07) === 0x07);
+    if (!passwordField) {
+      if (!this.signonSkipLogged) this.events.log('bypass sign-on skipped: no non-display password field on this screen');
+      this.signonSkipLogged = true;
+      return;
+    }
     this.signonDone = true;
     const password = await this.events.password?.();
     if (!password) {
@@ -284,15 +325,15 @@ export class SessionController {
       return;
     }
     if (!this.connected) return;
-    s.cursor = inputs[0]!.start;
+    s.cursor = userField.start;
     this.session.type(user);
-    s.cursor = inputs[1]!.start;
+    s.cursor = passwordField.start;
     this.session.type(password);
     this.session.press('enter');
     this.events.log('bypass sign-on sent');
   }
 
-  /** The raw byte trace of the current connection, loadable by `npm run dump`. */
+  /** The byte trace of the current connection (tn5250-trace-*.json); non-display field data is blanked. */
   exportTrace(): Record<string, unknown> {
     return {
       description: `TN5250 trace (${this.session.terminalType}) - ${this.profile.name}`,

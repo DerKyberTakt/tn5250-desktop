@@ -408,6 +408,12 @@ export class Screen {
   toSnapshot(codePage: CodePage): ScreenSnapshot {
     let text = '';
     const attrs = new Array<number>(this.size).fill(0);
+    // Non-display fields (passwords) leave the engine as blanks: the webview never holds
+    // their characters, whatever it does with the snapshot.
+    const hidden = new Uint8Array(this.size);
+    for (const f of this.fields) {
+      if ((f.attr & 0x07) === 0x07) hidden.fill(1, f.start, Math.min(f.end, this.size));
+    }
     for (let i = 0; i < this.size; i++) {
       const b = this.buffer[i] as number;
       if (isAttribute(b)) {
@@ -415,6 +421,8 @@ export class Screen {
         text += ' ';
       } else if (b === 0) {
         text += '\u0000';
+      } else if (hidden[i]) {
+        text += ' ';
       } else {
         text += codePage.decode(b);
       }

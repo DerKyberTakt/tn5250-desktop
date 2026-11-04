@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectionEvents, ConnectOptions, Transport } from '../../src/extension/connection';
+import { CertificateError } from '../../src/shared/tlsTrust';
+import { CodePage } from '../../src/engine/codepage';
+import { bytesToHex } from '../helpers/fixture';
 import { SessionController } from '../../src/extension/sessionController';
 import type { ConnectionInfo, ConnectionStatus } from '../../src/shared/protocol';
 import { SETTINGS_DEFAULTS, type TerminalSettings } from '../../src/shared/settings';
@@ -25,7 +28,11 @@ class FakeTransport implements Transport {
     });
   }
 
-  write(): void {}
+  writes: Uint8Array[] = [];
+
+  write(bytes: Uint8Array): void {
+    this.writes.push(bytes);
+  }
 
   close(): void {
     this.closed = true;
@@ -175,5 +182,102 @@ describe('SessionController bypass sign-on', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(asked).toBe(1);
     expect(logs.some((l) => l.includes('no password saved for USER1'))).toBe(true);
+  });
+
+  /** A host record (payload after the GDS header) framed as it arrives on the wire. */
+  const frame = (hex: string): Uint8Array => {
+    const payload = hexToBytes(hex);
+    const total = 10 + payload.length;
+    return Uint8Array.from([(total >> 8) & 0xff, total & 0xff, 0x12, 0xa0, 0, 0, 4, 0, 0, 0x03, ...payload, 0xff, 0xef]);
+  };
+  const cp = CodePage.get(37);
+  const e = (t: string): string => bytesToHex(cp.encodeString(t));
+
+  function signonHarness(password: string) {
+    vi.useRealTimers();
+    const profile: TerminalSettings = { ...SETTINGS_DEFAULTS, host: 'pub400.com', port: 23, autoSignon: true, signonUser: 'user1' };
+    const logs: string[] = [];
+    let asked = 0;
+    let transport: FakeTransport | undefined;
+    const controller = new SessionController(
+      profile,
+      {
+        screen: () => undefined,
+        status: () => undefined,
+        alarm: () => undefined,
+        log: (m) => logs.push(m),
+        password: async () => {
+          asked += 1;
+          return password;
+        },
+      },
+      (events) => (transport = new FakeTransport(events)),
+    );
+    const wire = (): string => (transport?.writes ?? []).map((b) => bytesToHex(b)).join(' ');
+    return { controller, logs, asked: () => asked, transport: () => transport!, wire };
+  }
+
+  it('types the password only into a non-display field; a screen without one is skipped', async () => {
+    const h = signonHarness('s3cret');
+    const done = h.controller.connect();
+    h.transport().settle.resolve();
+    await done;
+    // Two visible entry fields: not a sign-on screen.
+    h.transport().events.data(frame('04110008' + '11060a' + '1d4000200010' + '11070a' + '1d4000200010' + '04520000'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.asked()).toBe(0);
+    expect(h.logs.some((l) => l.includes('bypass sign-on skipped'))).toBe(true);
+    expect(h.wire()).not.toContain(e('s3cret'));
+    // Now the real thing: user field, then a non-display password field.
+    h.transport().events.data(frame('04110008' + '11060a' + '1d4000200010' + '11070a' + '1d4000270010' + '04520000'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.asked()).toBe(1);
+    expect(h.wire()).toContain(e('user1'));
+    expect(h.wire()).toContain(e('s3cret'));
+  });
+
+  it('the exported trace never contains the password', async () => {
+    const h = signonHarness('s3cret');
+    const done = h.controller.connect();
+    h.transport().settle.resolve();
+    await done;
+    h.transport().events.data(frame('04110008' + '11060a' + '1d4000200010' + '11070a' + '1d4000270010' + '04520000'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.wire()).toContain(e('s3cret'));
+    const trace = h.controller.exportTrace() as { events: Array<{ dir: string; hex: string }> };
+    const out = trace.events.filter((ev) => ev.dir === 'out').map((ev) => ev.hex).join(' ');
+    expect(out).toContain(e('user1'));
+    expect(out).not.toContain(e('s3cret'));
+    expect(out).toContain('40'.repeat(6)); // the password's place, blanked, same length
+  });
+});
+
+describe('SessionController TLS certificates', () => {
+  it('a refused certificate reports its fingerprint to the host side and does not retry', async () => {
+    vi.useRealTimers();
+    const seen: string[] = [];
+    const profile: TerminalSettings = { ...SETTINGS_DEFAULTS, host: 'pub400.com', port: 992, tls: true, autoReconnect: true };
+    let transport: FakeTransport | undefined;
+    const statuses: string[] = [];
+    const controller = new SessionController(
+      profile,
+      {
+        screen: () => undefined,
+        status: (st, detail) => statuses.push(`${st}:${detail}`),
+        alarm: () => undefined,
+        log: () => undefined,
+        certificateRejected: (fp, reason) => seen.push(`${fp}|${reason}`),
+      },
+      (events) => (transport = new FakeTransport(events)),
+    );
+    const done = controller.connect();
+    await new Promise((r) => setTimeout(r, 0)); // the TLS path awaits client-auth material before dialling
+    transport?.settle.reject(new CertificateError('certificate of pub400.com not accepted: self signed', 'AB:CD', 'self signed'));
+    await done;
+    expect(seen).toEqual(['AB:CD|self signed']);
+    expect(statuses[statuses.length - 1]).toMatch(/^disconnected:.*trust this certificate/);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(transport?.closed).toBe(false);
+    expect(statuses.filter((x) => x.startsWith('connecting'))).toHaveLength(1);
   });
 });
