@@ -76,16 +76,17 @@ describe('enhanced 5250: selection fields', () => {
     expect(screen.selections).toHaveLength(1);
     const sel = screen.selections[0]!;
     expect(sel).toMatchObject({ kind: 'single', indicators: 'left', rows: 3, cols: 1, textSize: 10, cursor: -1 });
-    expect(sel.choices.map((c) => [c.row, c.col, c.indicatorCol, c.textCol])).toEqual([[4, 4, 5, 7], [5, 4, 5, 7], [6, 4, 5, 7]]);
-    // Row 5 (0-based 4): attr, '.', attr, "Red       ", attr.
+    expect(sel.choices.map((c) => [c.row, c.col, c.indicatorCol, c.textCol])).toEqual([[4, 2, 3, 5], [5, 2, 3, 5], [6, 2, 3, 5]]);
+    // The field address (col 4) is the text's leading attribute; the indicator pair sits to
+    // its left. Row 5 (0-based 4): attr, '.', attr, "Red       ", attr.
+    expect(screen.buffer[screen.addr(4, 2)]).toBe(0x20);
+    expect(screen.rowText(4, cp).slice(3, 4)).toBe('.');
     expect(screen.buffer[screen.addr(4, 4)]).toBe(0x20);
-    expect(screen.rowText(4, cp).slice(5, 6)).toBe('.');
-    expect(screen.buffer[screen.addr(4, 6)]).toBe(0x20);
-    expect(screen.rowText(4, cp).slice(7, 17)).toBe('Red       ');
-    expect(screen.buffer[screen.addr(4, 17)]).toBe(0x20);
+    expect(screen.rowText(4, cp).slice(5, 15)).toBe('Red       ');
+    expect(screen.buffer[screen.addr(4, 15)]).toBe(0x20);
     const snap = screen.toSnapshot(cp);
     expect(snap.gui?.selections[0]).toMatchObject({ style: 'radio', cursor: -1 });
-    expect(snap.gui?.selections[0]?.choices[2]).toMatchObject({ row: 6, col: 7, length: 10, indicatorCol: 5, state: 'available', mnemonic: 0 });
+    expect(snap.gui?.selections[0]?.choices[2]).toMatchObject({ row: 6, col: 5, length: 10, indicatorCol: 3, state: 'available', mnemonic: 0 });
   });
 
   it('Tab enters the field, arrows move the selection cursor, Space selects, Enter returns the choice number', () => {
@@ -95,19 +96,19 @@ describe('enhanced 5250: selection fields', () => {
     keyboard.press('tab');
     const sel = screen.selections[0]!;
     expect(sel.cursor).toBe(0);
-    expect(screen.cursor).toBe(screen.addr(4, 7));
-    expect(screen.buffer[screen.addr(4, 6)]).toBe(0x21); // selection cursor: reverse
+    expect(screen.cursor).toBe(screen.addr(4, 5));
+    expect(screen.buffer[screen.addr(4, 4)]).toBe(0x21); // selection cursor: reverse
     keyboard.press('down');
     expect(sel.cursor).toBe(1);
-    expect(screen.buffer[screen.addr(4, 6)]).toBe(0x20);
-    expect(screen.buffer[screen.addr(5, 6)]).toBe(0x21);
+    expect(screen.buffer[screen.addr(4, 4)]).toBe(0x20);
+    expect(screen.buffer[screen.addr(5, 4)]).toBe(0x21);
     keyboard.type(' ');
     expect(sel.choices[1]?.state).toBe('selected');
-    expect(screen.rowText(5, cp).slice(5, 6)).toBe('/');
+    expect(screen.rowText(5, cp).slice(3, 4)).toBe('/');
     expect(sel.mdt).toBe(true);
     keyboard.press('enter');
-    // cursor at the selection cursor (row 6 col 8), Enter, SBA to the cell after the field address, choice 2 -> X'0021'.
-    expect(sent[0]).toBe('0608' + 'f1' + SBA(5, 6) + '0021');
+    // cursor at the selection cursor (row 6 col 6), Enter, SBA to the cell after the field address, choice 2 -> X'0021'.
+    expect(sent[0]).toBe('0606' + 'f1' + SBA(5, 6) + '0021');
     // Mnemonic: 'b' selects Blue; the previous choice is deselected in a single choice field.
     proc.process(hexToBytes('04520000'));
     keyboard.press('tab');
@@ -128,9 +129,9 @@ describe('enhanced 5250: selection fields', () => {
     const sel = screen.selections[0]!;
     expect(sel.kind).toBe('multiple');
     // Two columns: the second starts after lead(3) + text(6) + end(1) + padding(1).
-    expect(sel.choices.map((c) => [c.row, c.col])).toEqual([[2, 2], [2, 13], [3, 2]]);
-    expect(screen.buffer[screen.addr(2, 2)]).toBe(0x24); // check box indicator attribute: underscore
-    expect(screen.cursor).toBe(screen.addr(2, 5)); // the read homed to the first choice
+    expect(sel.choices.map((c) => [c.row, c.col])).toEqual([[2, 0], [2, 11], [3, 0]]);
+    expect(screen.buffer[screen.addr(2, 0)]).toBe(0x24); // check box indicator attribute: underscore
+    expect(screen.cursor).toBe(screen.addr(2, 3)); // the read homed to the first choice
     expect(sel.cursor).toBe(0);
     keyboard.type(' ');
     keyboard.press('right');
@@ -138,8 +139,8 @@ describe('enhanced 5250: selection fields', () => {
     keyboard.type(' ');
     expect(sel.choices.map((c) => c.state)).toEqual(['selected', 'available', 'available']);
     keyboard.press('enter');
-    // The selection cursor stayed on the second choice (row 3, text col 17).
-    expect(sent[0]).toBe('0311' + 'f1' + SBA(3, 4) + 'f1000000');
+    // The selection cursor stayed on the second choice (row 3, text col 15).
+    expect(sent[0]).toBe('030f' + 'f1' + SBA(3, 4) + 'f1000000');
   });
 
   it('push buttons draw < > and send the choice AID at once (auto-enter, auto-select)', () => {
@@ -176,11 +177,11 @@ describe('enhanced 5250: selection fields', () => {
     const sel = screen.selections[0]!;
     expect(screen.scrollBars).toHaveLength(1);
     const bar = screen.scrollBars[0]!;
-    expect(bar).toMatchObject({ owner: sel.addr, total: 50, pos: 10, size: 4, addr: screen.addr(4, 4 + 3 + 8) });
+    expect(bar).toMatchObject({ owner: sel.addr, total: 50, pos: 10, size: 4, addr: screen.addr(4, 4 + 1 + 8) });
     keyboard.scrollBar(bar.addr, true, 1);
     // The selection cursor is in the list (homed there), so the cursor stays; Roll Up with the
     // field data (nothing selected) and the increment, one SBA for the field.
-    expect(sent[0]).toBe('0508' + h(AID_ROLL_UP) + SBA(5, 6) + '0000' + '00000001');
+    expect(sent[0]).toBe('0506' + h(AID_ROLL_UP) + SBA(5, 6) + '0000' + '00000001');
     proc.process(hexToBytes('04110000' + SBA(5, 5) + wdsf('d958' + '0000') + '04520000'));
     expect(screen.selections).toHaveLength(0);
     expect(screen.scrollBars).toHaveLength(0);

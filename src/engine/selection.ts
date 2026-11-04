@@ -249,9 +249,12 @@ export function layoutSelection(sel: GuiSelection, screen: Screen): void {
     if (sel.separator) sel.separator.row = row + 1;
     return;
   }
-  // Column starts: every column is lead cells + text + ending attribute, then padding.
+  // The field address is the leading attribute of the upper-left choice's text; the
+  // indicator cells (check box / radio button / numeric field) sit to the LEFT of it
+  // (5494 Functions Reference, Define Selection Field). Every further column is lead
+  // cells + text + ending attribute after the previous one, then padding.
   const starts: number[] = [];
-  let x = baseCol;
+  let x = baseCol + 1 - leadCells(sel, 0);
   for (let ci = 0; ci < sel.cols; ci++) {
     starts.push(x);
     x += leadCells(sel, ci) + sel.textSize + 1 + sel.padding;

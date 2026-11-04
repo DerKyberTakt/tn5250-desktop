@@ -2,6 +2,7 @@
 
 ## 0.2.0 - 2026-11-03
 
+- Fixed: selection field choices were laid out two columns to the right of where the host puts them (the field address is the text's leading attribute; the check box / radio button cells sit to its left), so pull-down text ran past the window and lost its last letters.
 - Fixed: a host error message written with Write Error Code stayed on the message line after the host repainted, and the read that follows such a message homed the cursor to the first field; now the row it covered comes back with the next write and the cursor stays where the error happened. A cursor the host places inside a selection field lands on its first choice, so the arrow keys work the field at once. I/O fields (DDS data type I) refuse keyboard data with error 0004.
 - Fixed: System Request (Shift+Esc), Attention (Esc) and Test Request were swallowed while the host had the keyboard locked (X SYSTEM), so a running program or a long batch could not be interrupted. They now go to the host at any time, as on a real display.
 - Entry field FCWs of the enhanced interface: continued entry fields (DDS CNTFLD) are edited as one field across their segments and go back to the host as one field; word wrap fields (WRDWRAP) keep words whole; cursor progression (FLDCSRPRG) sends Tab to the numbered field and Backtab back; highlighted entry fields (ENTFLDATR) change their attribute while the cursor is in them (shared from tn5250-terminal).
