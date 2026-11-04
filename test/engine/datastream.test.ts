@@ -126,7 +126,7 @@ describe('DataStreamProcessor commands', () => {
     expect(screen.cursor).toBe(screen.addr(1, 2));
   });
 
-  it('a repaint discards the error row saved for Reset', () => {
+  it('a repaint restores the error row saved for Reset', () => {
     const { screen, state, proc } = setup();
     proc.process(hexToBytes('04110008' + '111801' + e('Footer') + '130101'));
     proc.process(hexToBytes('0421' + e('Not allowed')));
@@ -134,7 +134,9 @@ describe('DataStreamProcessor commands', () => {
     proc.process(hexToBytes('04110008' + '110101' + e('New screen') + '04520000'));
     expect(state.savedErrorRow).toBeUndefined();
     expect(state.savedCursor).toBeUndefined();
-    expect(screen.rowText(23, cp).trim()).toBe('Not allowed');
+    // The message the host wrote with Write Error Code goes away with the repaint, as on a
+    // real display; what the row held before comes back.
+    expect(screen.rowText(23, cp).trim()).toBe('Footer');
   });
 
   it('Roll scrolls the region', () => {

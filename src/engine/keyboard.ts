@@ -58,7 +58,7 @@ function pfNumber(aid: number): number {
 
 /** Operator error codes, as shown by 5250 displays. */
 export const OPERATOR_ERRORS: Record<string, string> = {
-  '0004': 'Data not allowed in this field',
+  '0004': 'Entry of data not allowed in this input/output field',
   '0005': 'Cursor in protected area of display',
   '0007': 'Mandatory enter field requires data',
   '0008': 'Field requires alphabetic characters',
@@ -615,6 +615,11 @@ export class Keyboard {
       return;
     }
     const { f, set, cells, idx } = edit;
+    // An I/O field (DDS data type I) takes data from a feature device only, never the keyboard.
+    if (f.shift === 'inputOutput') {
+      this.error('0004');
+      return;
+    }
     // The field is full and the cursor sits past its last position: the operator must
     // leave the field first (Field Exit, Tab, an arrow key).
     if (this.state.cursorPastEnd) {

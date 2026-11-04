@@ -146,9 +146,10 @@ export class DataStreamProcessor {
           const cc1 = r.u8();
           const cc2 = r.u8();
           this.applyCC1(cc1);
-          // The host is repainting: anything saved for Reset is stale now.
-          this.state.savedCursor = undefined;
-          this.state.savedErrorRow = undefined;
+          // The host is repainting: an error line written by Write Error Code goes back to
+          // what it covered (the host does not rewrite that row for a message it did not
+          // write itself), and the cursor returns to where the operator was.
+          this.restoreErrorLine();
           this.writeOrders(r);
           this.applyCC2(cc2);
           break;
@@ -181,8 +182,11 @@ export class DataStreamProcessor {
           // was written but never read carries IC 1,1, and the window it came back from
           // must not leave the operator there.
           const at0 = this.screen.fieldAt(0);
-          if (!this.cursorSet || (this.screen.cursor === 0 && !(at0 && !at0.bypass))) this.homeCursor();
+          // After a Write Error Code the operator stays where the error happened.
+          const afterError = this.state.savedCursor !== undefined;
+          if (!afterError && (!this.cursorSet || (this.screen.cursor === 0 && !(at0 && !at0.bypass)))) this.homeCursor();
           this.cursorSet = false;
+          this.snapToSelection();
           break;
         }
         case CMD_READ_IMMEDIATE:
@@ -735,6 +739,54 @@ export class DataStreamProcessor {
   }
 
   /** A read command without a preceding Insert Cursor homes the cursor to the first input field (inside the window that restricts the cursor, if one does). */
+  /** Undoes a Write Error Code: the saved error row and cursor come back, the message goes. */
+  private restoreErrorLine(): void {
+    const s = this.screen;
+    if (this.state.savedErrorRow) {
+      s.buffer.set(this.state.savedErrorRow, s.errorRow * s.cols);
+      this.state.savedErrorRow = undefined;
+      this.state.errorMessage = '';
+    }
+    if (this.state.savedCursor !== undefined) {
+      s.cursor = this.state.savedCursor;
+      this.state.savedCursor = undefined;
+    }
+  }
+
+  /**
+   * A cursor the host placed inside a selection field but not on a choice (its field
+   * address, a lead cell, the gap between columns) lands on the first choice the selection
+   * cursor may rest on, so the arrow keys work the field at once.
+   */
+  private snapToSelection(): void {
+    const s = this.screen;
+    const on = s.selectionAt(s.cursor);
+    if (on) {
+      // On a choice already (maybe on its lead cells): make it the selection cursor so it
+      // shows as such, with the text cursor on the choice text.
+      const c = on.sel.choices[on.choice]!;
+      if (c.noCursor) return;
+      if (s.colOf(s.cursor) < c.textCol) s.cursor = s.addr(c.row, c.textCol);
+      if (on.sel.cursor !== on.choice) {
+        on.sel.cursor = on.choice;
+        refreshSelection(on.sel, s);
+      }
+      return;
+    }
+    for (const sel of s.selections) {
+      let end = sel.addr;
+      for (const c of sel.choices) end = Math.max(end, s.addr(c.row, c.textCol + c.textLen));
+      if (s.cursor < sel.addr - 1 || s.cursor > end) continue;
+      const idx = firstCursorChoice(sel);
+      if (idx < 0) return;
+      const c = sel.choices[idx]!;
+      sel.cursor = idx;
+      s.cursor = s.addr(c.row, c.textCol);
+      refreshSelection(sel, s);
+      return;
+    }
+  }
+
   private homeCursor(): void {
     const s = this.screen;
     const first = s.fields.find((f) => !f.bypass && s.cursorAllowed(f.start));
