@@ -1,6 +1,7 @@
 import type { KeyAction } from '../shared/keymap';
 import { ACS_KEYMAP } from '../shared/keymap';
 import { KeyCapture } from './keyCapture';
+import { preserveScroll } from './scroll';
 import { MAIN_ROWS, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, blockWidth, capWidth, chordName, isLatched, mergePhysical, modsPrefix, nameUsesCode, primaryAcsKey, toggleCap, typesText, type ClickedChord, type KeyRow } from './visualKeyboard';
 import {
   COLOR_KEYS,
@@ -27,33 +28,91 @@ let page = 'connection';
 let dirty = false;
 let capturing: KeyAction | undefined;
 const capture = new KeyCapture();
-/** What just happened on the Keyboard page (assigned, moved, cancelled ...), shown in the key bar under the picture. */
-let keyNotice: { text: string; undo?: () => void } | undefined;
-let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 /** The open terminal tabs, so the page can warn before a save that would reload one. */
 let openTabs: OpenTabInfo[] = [];
 /** The chord latched on the visual keyboard while Assign is active (clicks, or keys pressed once something is latched). */
 let vkChord: ClickedChord = { mods: new Set() };
 /** Rebuilds the visual keyboard and its key bar in place (set while the Keyboard page is shown). */
 let vkRefresh: (() => void) | undefined;
-/** Rebuilds the keyboard, its bar and the key tables in place, leaving the search box alone. */
+/** Rebuilds the keyboard, its bar, the warnings and the key tables in place, leaving the search box alone. */
 let kbRefresh: (() => void) | undefined;
 
 /**
- * Shows a line in the key bar. One with Undo stays until the next action or Dismiss; one
- * without (or sticky) fades after a few seconds.
+ * The one toast: a fixed corner element showing informational and confirmation messages
+ * ("saved", "imported", "assigned" ...) one after another, each about 2.5 s and then a
+ * short fade. Field-level problems stay next to their field and never come through here.
  */
-function notify(text: string, opts: { undo?: () => void; sticky?: boolean } = {}): void {
-  if (noticeTimer) clearTimeout(noticeTimer);
-  noticeTimer = undefined;
-  keyNotice = { text, undo: opts.undo };
-  if (!opts.undo && !opts.sticky) {
-    noticeTimer = setTimeout(() => {
-      noticeTimer = undefined;
-      keyNotice = undefined;
-      vkRefresh?.();
-    }, 6000);
+const TOAST_MS = 2500;
+const TOAST_FADE_MS = 250;
+const TOAST_MAX_QUEUED = 6;
+interface ToastItem {
+  text: string;
+  ms: number;
+  action?: { label: string; run: () => void };
+}
+const toastQueue: ToastItem[] = [];
+let toastShowing: { text: string; dismiss: () => void } | undefined;
+
+function toastHost(): HTMLElement {
+  let host = document.getElementById('toasts');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toasts';
+    host.setAttribute('role', 'status');
+    host.setAttribute('aria-live', 'polite');
+    document.body.append(host);
   }
+  return host;
+}
+
+function showNextToast(): void {
+  if (toastShowing) return;
+  const item = toastQueue.shift();
+  if (!item) return;
+  const box = el('div', 'toast');
+  box.append(el('span', 'toast-text', item.text));
+  let closed = false;
+  const dismiss = (): void => {
+    if (closed) return;
+    closed = true;
+    clearTimeout(timer);
+    box.classList.remove('show');
+    setTimeout(() => {
+      box.remove();
+      toastShowing = undefined;
+      showNextToast();
+    }, TOAST_FADE_MS);
+  };
+  if (item.action) {
+    const act = item.action;
+    const b = el('button', 'link', act.label);
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      dismiss();
+      act.run();
+    };
+    box.append(b);
+  }
+  box.onclick = dismiss;
+  toastShowing = { text: item.text, dismiss };
+  toastHost().append(box);
+  void box.offsetWidth; // start the fade-in from the hidden state
+  box.classList.add('show');
+  const timer = setTimeout(dismiss, item.ms);
+}
+
+/** Queues a message for the corner toast; one with an action (Undo) stays up a little longer. */
+function toast(text: string, opts: { action?: { label: string; run: () => void }; ms?: number } = {}): void {
+  if (toastShowing?.text === text && !opts.action) return;
+  if (toastQueue.some((t) => t.text === text)) return;
+  toastQueue.push({ text, ms: opts.ms ?? (opts.action ? 6000 : TOAST_MS), action: opts.action });
+  while (toastQueue.length > TOAST_MAX_QUEUED) toastQueue.shift();
+  showNextToast();
+}
+
+/** What happened on the Keyboard page (assigned, moved, cancelled ...); undo adds an Undo button. */
+function notify(text: string, opts: { undo?: () => void } = {}): void {
+  toast(text, opts.undo ? { action: { label: 'Undo', run: opts.undo } } : {});
 }
 
 /** Ends Assign quietly (before Reset, Import or a session change). */
@@ -68,7 +127,18 @@ function cancelCapture(): void {
   if (!capturing) return;
   stopCapture();
   notify('Assignment cancelled.');
-  (kbRefresh ?? render)();
+  refreshKeys();
+}
+
+/**
+ * After a key change: updates the Keyboard page in place (list, picture, warnings, Save
+ * button) so the page does not move; anywhere else it is the scroll-preserving full render.
+ */
+function refreshKeys(): void {
+  if (kbRefresh) {
+    kbRefresh();
+    renderButtons();
+  } else render();
 }
 
 function post(msg: SettingsToHost): void {
@@ -205,7 +275,10 @@ const HELP: Partial<Record<Key, string>> = {
   subfileScrollBar:
     'Draws a scroll bar beside every subfile that shows More..., Bottom or + at its end, even when the display file does not ask for one (SFLEND(*SCRBAR)). Clicks send Page Up / Page Down. A scroll bar the host defines itself is always shown and can also be dragged.',
   pcCommands:
-    'Host programs can ask the PC to run a command (STRPCCMD, PC Organizer), usually START with a web address. Open links: http(s) links open in the browser at once, anything else asks first. Always ask: every command asks. Run everything: nothing asks. Off: the host shows its "PCO.EXE is not active" screen instead.',
+    'Host programs can ask the PC to run a command (STRPCCMD, PC Organizer), usually START with a web address. Open links: http(s) links open in the browser at once, anything else asks first. Always ask: every command asks. Run everything: nothing asks, so the host (or anyone who controls it) can run any command on this PC. Off: the host shows its "PCO.EXE is not active" screen instead.',
+  keyboardType: 'The KBDTYPE the host is told with the workstation name (CRTDEVDSP keyboard type, 3 letters: USB US, AGB German, UKB UK, FAB French ...). Blank sends the type IBM lists for the host code page; set it when your country shares a code page with others (500, 277, 278, 284, 297).',
+  tlsCaFile: 'A PEM file with the certificate authority that signed the host certificate, for example the local CA of the IBM i Digital Certificate Manager. Checked together with the system root certificates.',
+  tlsPinnedCertificate: 'The one host certificate this session accepts, by SHA-256 fingerprint. Filled in by "Trust this certificate" after a refused certificate; it then replaces the chain check for this session. Clear it to go back to the normal check, for example after the host got a new certificate.',
 };
 
 const YESNO = (key: Key, label: string, note?: string): FieldSpec => ({ kind: 'bool', key, label, note });
@@ -241,6 +314,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'text', key: 'deviceName', label: 'Workstation ID', placeholder: 'blank = assigned by the host' },
       { kind: 'select', key: 'screenSize', label: 'Screen Size', options: [['24x80', '24x80 (IBM-3179-2)'], ['27x132', '27x132 (IBM-3477-FC)']] },
       { kind: 'select', key: 'codePage', label: 'Host Code Page', options: CODEPAGES },
+      { kind: 'text', key: 'keyboardType', label: 'Keyboard type', placeholder: 'blank = from the code page (USB, AGB, UKB ...)' },
       YESNO('autoConnect', 'Auto-Connect'),
       YESNO('autoReconnect', 'Auto-Reconnect'),
       { kind: 'heading', label: 'Demo / test system' },
@@ -257,9 +331,10 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'number', key: 'connectTimeoutSeconds', label: 'Connection Timeout (seconds)', min: 1, max: 600 },
       { kind: 'number', key: 'inactivityTimeoutMinutes', label: 'Inactivity Timeout (minutes, 0 = none)', min: 0, max: 10080 },
       YESNO('keepAlive', 'Keep-Alive'),
-      { kind: 'static', label: 'Enable ENPTUI', text: 'Not supported yet. Windows and menus are drawn as text by the host.' },
+      { kind: 'static', label: 'Enhanced interface (ENPTUI)', text: 'Always on: windows, menu bars, pull-downs, selection fields, scroll bars and the entry field extensions are drawn by the emulator (Enhanced style) or as characters (Classic style).' },
       { kind: 'heading', label: 'IBM i signon information' },
       YESNO('autoSignon', 'Bypass signon'),
+      { kind: 'static', label: 'Warning', text: 'This session uses plain telnet: Bypass signon sends the user ID and password unencrypted on every connect and reconnect, as a typed sign-on does. Switch Protocol to TLS (port 992) where the host offers it.', showIf: 'autoSignon', hideIf: 'tls' },
       { kind: 'text', key: 'signonUser', label: 'User ID' },
       { kind: 'button', label: 'Password', text: 'Set Password…', message: 'setPassword' },
     ],
@@ -270,6 +345,8 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     group: 'Connection',
     fields: [
       YESNO('verifyCertificate', 'Server Authentication'),
+      { kind: 'file', key: 'tlsCaFile', label: 'CA certificate file (PEM)', message: 'browseFile', showIf: 'verifyCertificate' },
+      { kind: 'text', key: 'tlsPinnedCertificate', label: 'Trusted certificate (SHA-256)', placeholder: 'set by "Trust this certificate" when a certificate is refused; clear to forget' },
       { kind: 'heading', label: 'Client Authentication' },
       { kind: 'select', key: 'tlsClientAuth', label: 'Send a Certificate', options: [['none', 'No'], ['pfx', 'Yes, from a PKCS#12 file (.pfx / .p12)'], ['pem', 'Yes, from PEM certificate and key files']] },
       { kind: 'file', key: 'tlsClientCert', label: 'Certificate file', message: 'browseFile', showIf: 'tlsClientAuth' },
@@ -492,6 +569,15 @@ function setValue(key: Key, raw: string | boolean | number): void {
   else if (typeof current === 'boolean') v = raw === true || raw === 'true';
   (values as unknown as Record<string, unknown>)[key] = v;
   dirty = true;
+  // TLS and plain telnet have their own well-known ports: follow the protocol switch
+  // when the port still is the other protocol's default.
+  if (key === 'tls' && v === true && values.port === 23) {
+    values.port = 992;
+    toast('Port set to 992 (telnet over TLS).');
+  } else if (key === 'tls' && v === false && values.port === 992) {
+    values.port = 23;
+    toast('Port set to 23 (telnet).');
+  }
   if (typeof current === 'boolean' || key === 'watermarkType' || key === 'watermarkPosition' || key === 'uiMode' || key === 'blinkText') render();
   else {
     renderButtons();
@@ -853,7 +939,7 @@ function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
     i.value = String(values[key] ?? '');
     i.oninput = () => setValue(key, i.value);
     const b = el('button', 'secondary', 'Browse…');
-    b.onclick = () => (f.message === 'browseFile' ? post({ type: 'browseFile', key: key as 'tlsClientCert' | 'tlsClientKey' }) : post({ type: 'browseWatermark' }));
+    b.onclick = () => (f.message === 'browseFile' ? post({ type: 'browseFile', key: key as 'tlsClientCert' | 'tlsClientKey' | 'tlsCaFile' }) : post({ type: 'browseWatermark' }));
     wrap.append(i, b);
     row.append(wrap);
     return row;
@@ -962,7 +1048,7 @@ function renderKeyTables(query: string): HTMLElement[] {
           values.keymap = { ...values.keymap, [k]: null };
           dirty = true;
           notify(`${k} unassigned from ${actionLabel(action)}.`);
-          render();
+          refreshKeys();
         };
         chip.append(x);
         td.append(chip);
@@ -973,7 +1059,7 @@ function renderKeyTables(query: string): HTMLElement[] {
       b.onclick = () => {
         capturing = action;
         vkChord = { mods: new Set() };
-        render();
+        refreshKeys();
       };
       act.append(b);
       tr.append(act);
@@ -1022,7 +1108,7 @@ function restoreDefault(action: KeyAction, keys: string[]): void {
   unignoreWarning(action);
   dirty = true;
   notify(`${actionLabel(action)} restored to ${keys.join(', ')}.`);
-  render();
+  refreshKeys();
 }
 
 /** Ignore on a "no key for ..." warning: hidden until the function gets a key again or a .kmp is imported. */
@@ -1030,7 +1116,7 @@ function ignoreWarning(action: KeyAction): void {
   if (!values.keyWarningsIgnored.includes(action)) values.keyWarningsIgnored = [...values.keyWarningsIgnored, action];
   dirty = true;
   notify(`Warning for ${actionLabel(action)} hidden.`);
-  render();
+  refreshKeys();
 }
 
 function unignoreWarning(action: KeyAction): void {
@@ -1079,13 +1165,12 @@ function assignKey(name: string, note?: string): void {
     notify(`${name} moved from ${actionLabel(previous)} to ${actionLabel(action)}.${suffix}`, {
       undo: () => {
         values.keymap = before;
-        keyNotice = undefined;
         dirty = true;
-        render();
+        refreshKeys();
       },
     });
   } else notify(`${name} assigned to ${actionLabel(action)}.${suffix}`);
-  render();
+  refreshKeys();
 }
 
 /** Toggles the pressed look of a key cap while a physical key is down (live feedback). */
@@ -1097,7 +1182,7 @@ function setKeyDown(code: string, down: boolean): void {
  * The visual keyboard: live feedback of pressed keys, a dot on key caps that have a
  * binding (hover lists them), click = filter the list by that key cap, and while Assign
  * is active click = compose the chord, saved from the key bar underneath. The key bar
- * also shows what just happened (assigned, moved, cancelled) when nothing is captured.
+ * (What just happened, assigned, moved, cancelled, comes up as a toast.)
  */
 function renderVisualKeyboard(search: HTMLInputElement): HTMLElement {
   const vk = el('div', 'vk');
@@ -1157,7 +1242,7 @@ function renderVisualKeyboard(search: HTMLInputElement): HTMLElement {
     wrap.append(block(MAIN_ROWS, 'vk-main'), block(NAV_ROWS, 'vk-nav'), block(NUMPAD_ROWS, 'vk-numpad'));
     return wrap;
   };
-  // The key bar: while Assign is active [Cancel] readout [Save keybind]; otherwise the last notice.
+  // The key bar: while Assign is active [Cancel] readout [Save keybind]; empty otherwise (messages are toasts).
   const buildBar = (): HTMLElement => {
     const b = el('div', 'vk-bar');
     if (capturing) {
@@ -1185,20 +1270,6 @@ function renderVisualKeyboard(search: HTMLInputElement): HTMLElement {
         if (name && canSave) assignKey(name, shiftOnLetter ? shiftOnLetterNote(name) : undefined);
       };
       b.append(cancel, readout, save);
-    } else if (keyNotice) {
-      b.classList.add('notice');
-      b.append(el('span', 'vk-readout', keyNotice.text));
-      if (keyNotice.undo) {
-        const u = el('button', 'link', 'Undo');
-        u.onclick = keyNotice.undo;
-        b.append(u);
-      }
-      const x = el('button', 'link', 'Dismiss');
-      x.onclick = () => {
-        keyNotice = undefined;
-        refresh();
-      };
-      b.append(x);
     }
     return b;
   };
@@ -1250,12 +1321,29 @@ function renderKeyboard(): HTMLElement {
     values.keymap = {};
     values.keyWarningsIgnored = [];
     dirty = true;
-    notify('All keys reset to the ACS layout. Save to keep it, Revert to go back.', { sticky: true });
-    render();
+    notify('All keys reset to the ACS layout. Save to keep it, Revert to go back.');
+    refreshKeys();
   };
   box.append(renderVisualKeyboard(search));
+  const banners = el('div', 'kb-banners');
+  const fillBanners = (): void => {
+    const nodes: HTMLElement[] = [];
+    for (const miss of missingDefaults()) {
+      const warn = el('div', 'kb-banner');
+      warn.append(el('span', undefined, `No key for ${miss.label} (ACS default: ${miss.keys.join(', ')}).`));
+      const b = el('button', 'link', 'Restore');
+      b.onclick = () => restoreDefault(miss.action, miss.keys);
+      const ignore = el('button', 'link', 'Ignore');
+      ignore.title = 'Hide this warning until the function gets a key again or a keyboard map is imported.';
+      ignore.onclick = () => ignoreWarning(miss.action);
+      warn.append(b, ignore);
+      nodes.push(warn);
+    }
+    banners.replaceChildren(...nodes);
+  };
   kbRefresh = () => {
     vkRefresh?.();
+    fillBanners();
     fill();
   };
   bar.append(
@@ -1266,17 +1354,8 @@ function renderKeyboard(): HTMLElement {
     infoBubble('Put every key back to the ACS layout for this profile. Takes effect when you save; Revert undoes it before then.'),
   );
   box.append(bar);
-  for (const miss of missingDefaults()) {
-    const warn = el('div', 'kb-banner');
-    warn.append(el('span', undefined, `No key for ${miss.label} (ACS default: ${miss.keys.join(', ')}).`));
-    const b = el('button', 'link', 'Restore');
-    b.onclick = () => restoreDefault(miss.action, miss.keys);
-    const ignore = el('button', 'link', 'Ignore');
-    ignore.title = 'Hide this warning until the function gets a key again or a keyboard map is imported.';
-    ignore.onclick = () => ignoreWarning(miss.action);
-    warn.append(b, ignore);
-    box.append(warn);
-  }
+  fillBanners();
+  box.append(banners);
   box.append(el('p', 'note', 'Assign, then type the key or combination (a modifier on its own, like Right Ctrl, counts when released), or click the keys on the picture and press Save keybind. Esc or Cancel leaves Assign. A click on a key cap without Assign filters the list; the x clears it. This profile only; sessions inherit the defaults.'));
   box.append(tables);
   fill();
@@ -1308,6 +1387,7 @@ function renderButtons(): void {
   save.disabled = !dirty;
   save.onclick = () => {
     const original = selected < 0 ? defaults : resolveSettings(defaults, sessions[selected] ?? { host: '' });
+    pendingSave = { target: selected, snapshot: stable(values), at: Date.now() };
     post({ type: 'save', target: selected, values, connectionChanges: connectionChanges(original, values) });
   };
   bar.append(save);
@@ -1328,11 +1408,25 @@ function renderButtons(): void {
   bar.append(json);
 }
 
+/** Name of the profile shown (Defaults or a session). */
+function profileTitle(): string {
+  return selected < 0 ? 'Defaults' : sessions[selected]?.name || sessions[selected]?.host || 'Session';
+}
+
+/** The h2 of the main area for the current page or search. */
+function mainHeading(): string {
+  if (searchQuery.trim()) return `${profileTitle()} › Search: ${searchQuery.trim()}`;
+  const p = PAGES.find((x) => x.id === page) ?? PAGES[0]!;
+  return `${profileTitle()} › ${p.group} › ${p.title}`;
+}
+
 function renderMain(main: HTMLElement): void {
   main.replaceChildren();
-  const title = selected < 0 ? 'Defaults' : sessions[selected]?.name || sessions[selected]?.host || 'Session';
+  // The in-place refreshes below belong to the Keyboard page; they are set again when it is built.
+  vkRefresh = undefined;
+  kbRefresh = undefined;
   if (searchQuery.trim()) {
-    main.append(el('h2', undefined, `${title} › Search: ${searchQuery.trim()}`));
+    main.append(el('h2', undefined, mainHeading()));
     const hits = searchFields(searchQuery);
     const keyTables = renderKeyTables(searchQuery);
     if (!hits.length && !keyTables.length) main.append(el('p', 'note', 'No settings match.'));
@@ -1366,7 +1460,7 @@ function renderMain(main: HTMLElement): void {
     }
   } else {
     const p = PAGES.find((x) => x.id === page) ?? PAGES[0]!;
-    main.append(el('h2', undefined, `${title} › ${p.group} › ${p.title}`));
+    main.append(el('h2', undefined, mainHeading()));
     if (p.id === 'keyboard') main.append(renderKeyboard());
     else
       for (const f of p.fields) {
@@ -1381,22 +1475,94 @@ function renderMain(main: HTMLElement): void {
   renderButtons();
 }
 
+/** What the main area shows; its scroll position is kept while this stays the same (Save, Assign, a toggle) and starts at the top when it changes (page, profile). */
+function viewKey(): string {
+  return `${selected}|${searchQuery.trim() ? 'search' : page}`;
+}
+let lastViewKey = '';
+
+const scrollTargets = (): { nav: Element | null; main: HTMLElement | null } => ({ nav: document.querySelector('.nav'), main: document.getElementById('main') });
+const afterLayout = (fn: () => void): void => {
+  requestAnimationFrame(fn);
+};
+
+/** Rebuilds the whole page; the scroll position of the sidebar and (for the same view) of the main area is put back in the same frame. */
 function render(): void {
-  app.replaceChildren();
-  app.append(renderNav());
-  const main = el('div', 'main');
-  main.id = 'main';
-  app.append(main);
-  renderMain(main);
+  const same = viewKey() === lastViewKey;
+  preserveScroll(
+    scrollTargets,
+    () => {
+      app.replaceChildren();
+      app.append(renderNav());
+      const main = el('div', 'main');
+      main.id = 'main';
+      app.append(main);
+      renderMain(main);
+    },
+    { restore: same ? ['nav', 'main'] : ['nav'], defer: afterLayout },
+  );
+  lastViewKey = viewKey();
+}
+
+/** Rebuilds only the sidebar and the heading (a saved session name), keeping both scroll positions. */
+function refreshChrome(): void {
+  const nav = document.querySelector('.nav');
+  if (nav) preserveScroll(scrollTargets, () => nav.replaceWith(renderNav()), { restore: ['nav', 'main'], defer: afterLayout });
+  const h = document.querySelector('#main h2');
+  if (h) h.textContent = mainHeading();
+}
+
+/** The editable values of a profile as stored: the defaults, or a session resolved over them with only its own keymap overrides. */
+function profileValues(index: number): TerminalSettings {
+  const v = index < 0 ? { ...defaults, keymap: { ...defaults.keymap }, titleParts: [...defaults.titleParts] } : resolveSettings(defaults, sessions[index] ?? { host: '' });
+  if (index >= 0) v.keymap = { ...(sessions[index]?.keymap ?? {}) };
+  return v;
+}
+
+/** JSON with sorted keys, to compare settings objects whatever order their keys were added in. */
+function stable(v: unknown): string {
+  return JSON.stringify(v, (_k, x: unknown) =>
+    x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x,
+  );
+}
+
+/**
+ * A Save that was sent and not yet answered. The host answers a save with its normal data
+ * message (more than one while the settings are written); those are taken in quietly and,
+ * once they stop, the page only clears the dirty state, updates the sidebar and toasts "saved"
+ * instead of rebuilding itself (which used to throw the scroll position to the top).
+ */
+let pendingSave: { target: number; snapshot: string; at: number } | undefined;
+let saveSettle: ReturnType<typeof setTimeout> | undefined;
+const SAVE_ANSWER_MS = 30000;
+const SAVE_SETTLE_MS = 150;
+
+function finishSave(): void {
+  saveSettle = undefined;
+  const p = pendingSave;
+  pendingSave = undefined;
+  if (!p || p.target !== selected) return;
+  const edited = stable(values) !== p.snapshot; // typed again while the save was running
+  if (edited) dirty = true;
+  else {
+    dirty = false;
+    const stored = profileValues(selected);
+    // The stored profile differs from the form (the host normalised something): show what is stored.
+    if (stable(stored) !== p.snapshot) {
+      values = stored;
+      render();
+    }
+  }
+  refreshChrome();
+  renderButtons();
+  toast('Settings saved.');
 }
 
 function select(index: number): void {
   selected = index;
-  values = index < 0 ? { ...defaults, keymap: { ...defaults.keymap }, titleParts: [...defaults.titleParts] } : resolveSettings(defaults, sessions[index] ?? { host: '' });
-  if (index >= 0) values.keymap = { ...(sessions[index]?.keymap ?? {}) };
+  values = profileValues(index);
   dirty = false;
   stopCapture();
-  keyNotice = undefined;
   render();
 }
 
@@ -1419,8 +1585,8 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
     values.keymap = { ...values.keymap, ...ev.data.keymap };
     values.keyWarningsIgnored = [];
     dirty = true;
-    notify(`Imported ${count} key assignment${count === 1 ? '' : 's'}${ev.data.skipped ? `, ${ev.data.skipped} skipped` : ''}. Save to keep them.`, { sticky: true });
-    render();
+    toast(`Imported ${count} key assignment${count === 1 ? '' : 's'}${ev.data.skipped ? `, ${ev.data.skipped} skipped` : ''}. Save to keep them.`, { ms: 4000 });
+    refreshKeys();
     return;
   }
   if (ev.data.type !== 'data') return;
@@ -1430,11 +1596,22 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
   watermarkImageData = ev.data.watermarkImageData;
   fontFace = ev.data.fontFace;
   applyFontFace();
+  if (pendingSave && (Date.now() - pendingSave.at > SAVE_ANSWER_MS || ev.data.patch || ev.data.select !== pendingSave.target || ev.data.select !== selected)) {
+    pendingSave = undefined; // not the answer to the Save (cancelled, or the page moved on)
+  }
+  if (pendingSave) {
+    if (saveSettle) clearTimeout(saveSettle);
+    saveSettle = setTimeout(finishSave, SAVE_SETTLE_MS);
+    return;
+  }
   if (ev.data.patch) {
     // Keep the user's unsaved edits and apply the browse/import result.
     Object.assign(values, ev.data.patch);
     dirty = true;
     render();
+    const imported = Object.keys(ev.data.patch);
+    if (imported.includes('fontFile')) toast('Font imported. Save to keep it.');
+    else if (imported.some((k) => (COLOR_KEYS as readonly string[]).includes(k))) toast('Colours imported. Save to keep them.');
     return;
   }
   select(Math.min(ev.data.select, sessions.length - 1));

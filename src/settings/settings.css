@@ -356,7 +356,7 @@ select {
   width: 27px;
 }
 
-/* The key bar under the picture: [Cancel] readout [Save keybind] while Assign is active, else the last notice. */
+/* The key bar under the picture: [Cancel] readout [Save keybind] while Assign is active, empty otherwise (messages are toasts). */
 .vk-bar {
   display: flex;
   align-items: center;
@@ -364,10 +364,6 @@ select {
   min-height: 30px;
   margin-top: 10px;
   max-width: 760px;
-}
-
-.vk-bar.notice {
-  justify-content: flex-start;
 }
 
 .vk-bar button.link {
@@ -404,11 +400,6 @@ select {
   flex: 1 1 auto;
   font-size: 12px;
   color: var(--vscode-descriptionForeground);
-}
-
-.vk-bar.notice .vk-readout {
-  flex: 0 1 auto;
-  color: var(--vscode-foreground);
 }
 
 /* The search boxes: our own clear (x), red and shown whenever there is text (the browser's only shows on hover). */
@@ -760,4 +751,58 @@ button.iconbtn {
 
 .preview canvas {
   cursor: move;
+}
+
+/* The one toast: a fixed corner stack of messages shown one at a time, fading in and out. Field errors stay at their field. */
+#toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  color: var(--vscode-notifications-foreground, var(--vscode-foreground));
+  background: var(--vscode-notifications-background, var(--vscode-editorWidget-background, #252526));
+  border: 1px solid var(--vscode-notifications-border, var(--vscode-panel-border, #444));
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: none;
+}
+
+.toast button.link {
+  flex: none;
+  padding: 0;
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: opacity 0.25s ease;
+    transform: none;
+  }
 }
