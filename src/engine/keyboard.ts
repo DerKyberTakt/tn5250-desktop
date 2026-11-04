@@ -73,6 +73,9 @@ export const OPERATOR_ERRORS: Record<string, string> = {
   '0026': 'Field minus requires a numeric last digit',
 };
 
+/** Keys the host accepts while the keyboard is locked: they interrupt whatever the host is doing. */
+const OUT_OF_BAND_ACTIONS = new Set<KeyAction>(['attn', 'sysreq', 'testRequest']);
+
 const MOVEMENT_ACTIONS = new Set<KeyAction>([
   'tab',
   'backtab',
@@ -141,6 +144,12 @@ export class Keyboard {
     }
     // Moving the cursor is a natural way out of an operator error.
     if (this.state.inputInhibited === 'error' && MOVEMENT_ACTIONS.has(action)) this.clearError();
+    // Attention, System Request and Test Request go to the host out of band: they are the
+    // way to interrupt a running job, so a locked keyboard (X SYSTEM) must not swallow them.
+    if (this.state.inputInhibited === 'system' && OUT_OF_BAND_ACTIONS.has(action)) {
+      this.outOfBand(action);
+      return;
+    }
     if (this.state.inputInhibited !== 'none') return;
     // A keystroke cancels a programmable two-event mouse sequence that was started.
     this.state.pendingMouse = undefined;
@@ -234,13 +243,9 @@ export class Keyboard {
         this.fieldMark();
         break;
       case 'attn':
-        this.out.send(OP_NOOP, FLAG_ATN, new Uint8Array(0));
-        break;
       case 'sysreq':
-        this.out.send(OP_NOOP, FLAG_SRQ, new Uint8Array(0));
-        break;
       case 'testRequest':
-        this.out.send(OP_NOOP, FLAG_TRQ, new Uint8Array(0));
+        this.outOfBand(action);
         break;
       case 'printScreen':
       case 'copy':
@@ -256,6 +261,12 @@ export class Keyboard {
   }
 
   // ---- helpers -----------------------------------------------------------
+
+  /** Sends a flag-only record for Attention, System Request or Test Request. */
+  private outOfBand(action: KeyAction): void {
+    const flag = action === 'attn' ? FLAG_ATN : action === 'sysreq' ? FLAG_SRQ : FLAG_TRQ;
+    this.out.send(OP_NOOP, flag, new Uint8Array(0));
+  }
 
   private error(code: string): void {
     this.state.inputInhibited = 'error';

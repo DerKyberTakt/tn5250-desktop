@@ -205,6 +205,20 @@ describe('Keyboard editing', () => {
     ]);
   });
 
+  it('Attn and SysReq still go out while the host has the keyboard locked', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.press('enter');
+    expect(h.state.inputInhibited).toBe('system');
+    h.session.press('pf3'); // ordinary keys stay locked out
+    h.session.press('sysreq');
+    h.session.press('attn');
+    expect(h.sent.slice(1).map((s) => [s.opcode, s.flags1, s.data])).toEqual([
+      [OP_NOOP, FLAG_SRQ, ''],
+      [OP_NOOP, FLAG_ATN, ''],
+    ]);
+  });
+
   it('function keys send their AID with the Read Input Fields flat format when requested', () => {
     const h = harness();
     h.host('04110008' + '110201' + '1d4000200003' + '130202' + '0442' + '0000');
