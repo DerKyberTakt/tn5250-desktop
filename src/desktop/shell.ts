@@ -2,7 +2,7 @@ import type { KeyAction } from '../shared/keymap';
 import type { WebviewToHost } from '../shared/protocol';
 import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
-import { errorText, goApp, onLaunchArgs, onRelay, relay, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
+import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
 import { confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
@@ -107,7 +107,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     window.addEventListener('message', (ev) => this.onFrameMessage(ev));
     try {
       onRelay((msg) => this.onRelay(msg as ToWindow));
-      void relay('broker', { type: 'window:hello', window: this.windowName }).catch(() => undefined);
+      void relayNow('broker', { type: 'window:hello', window: this.windowName }).catch(() => undefined);
     } catch {
       // not running inside the app
     }
@@ -549,6 +549,11 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       const ok = await confirmDialog('Close script', 'The script has unsaved changes. Close anyway?', 'Close');
       if (!ok) return;
     }
+    this.removeEntry(entry);
+  }
+
+  /** Takes a tab out of this window (closed, or handed to another window). */
+  private removeEntry(entry: Entry): void {
     const i = this.entries.indexOf(entry);
     if (i < 0) return;
     this.entries.splice(i, 1);
@@ -702,7 +707,12 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
 
   /** A message from the broker: for one of our tabs, a dialog to show, or the app-wide registry. */
   private onRelay(msg: ToWindow): void {
+    if (msg.type === 'broker:ready') {
+      brokerIsReady();
+      return;
+    }
     if (msg.type === 'registry') {
+      brokerIsReady();
       this.registry = msg.tabs;
       return;
     }
@@ -711,7 +721,37 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       return;
     }
     const entry = this.entries.find((e) => e.kind === 'terminal' && e.tab.id === msg.tab);
-    if (entry?.kind === 'terminal') entry.tab.receive(msg);
+    if (entry?.kind === 'terminal') {
+      entry.tab.receive(msg);
+    } else if (msg.type === 'tab:opened') {
+      // A session handed to this window from another one: adopt it as a tab.
+      const tab = new TerminalTab(this, msg.profile, { id: msg.tab, letter: msg.letter, profile: msg.profile, deviceTemplate: msg.deviceTemplate, status: msg.status, detail: msg.detail });
+      this.sidebar.hidden = true;
+      this.addEntry({ kind: 'terminal', tab, button: el('div') }, true);
+    }
+  }
+
+  /** Opens another shell window; its page says hello to the broker when it has loaded. */
+  private async newWindow(): Promise<string> {
+    const name = `win-${Date.now().toString(36)}`;
+    await goApp().WindowOpen(name, APP_NAME, -1, -1, 0, 0);
+    return name;
+  }
+
+  /** The active session leaves for a new window; the broker keeps it connected throughout. */
+  private async moveActiveToNewWindow(): Promise<void> {
+    const entry = this.active;
+    if (entry?.kind !== 'terminal' || entry.tab.isDemo) return;
+    let name: string;
+    try {
+      name = await this.newWindow();
+    } catch (err) {
+      this.notify(`Could not open a window: ${errorText(err)}`);
+      return;
+    }
+    entry.tab.handOver();
+    void relay('broker', { type: 'tab:move', tab: entry.tab.id, window: name }).catch(() => undefined);
+    this.removeEntry(entry);
   }
 
   /** A yes/no question the broker needs answered by the user of this window. */
@@ -901,6 +941,9 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
           '-',
           { label: 'Duplicate Session', run: () => this.duplicate(), enabled: live },
           { label: 'Close Tab', run: () => this.active && void this.close(this.active), enabled: () => !!this.active },
+          '-',
+          { label: 'New Window', run: () => void this.newWindow().catch((err: unknown) => this.notify(`Could not open a window: ${errorText(err)}`)) },
+          { label: 'Move Tab to New Window', run: () => void this.moveActiveToNewWindow(), enabled: live },
         ],
       },
       {

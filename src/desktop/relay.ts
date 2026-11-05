@@ -25,7 +25,8 @@ export type ToBroker =
 
 /** Broker -> window. */
 export type ToWindow =
-  | { type: 'tab:opened'; tab: string; letter: string; deviceName: string; deviceTemplate: string; status: ConnectionStatus; detail: string }
+  | { type: 'broker:ready' }
+  | { type: 'tab:opened'; tab: string; letter: string; profile: TerminalSettings; deviceTemplate: string; status: ConnectionStatus; detail: string }
   | { type: 'tab:output'; tab: string; msg: HostToWebview }
   | { type: 'tab:state'; tab: string; status: ConnectionStatus; detail: string }
   | { type: 'tab:log'; tab: string; line: string }

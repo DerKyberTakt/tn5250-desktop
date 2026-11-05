@@ -230,9 +230,32 @@ export function wailsRuntime(): WailsRuntime {
   return runtime;
 }
 
-/** Sends a relay message to one window (src/desktop/relay.ts). */
+let brokerReady = false;
+const brokerQueue: unknown[] = [];
+
+/**
+ * Sends a relay message to one window (src/desktop/relay.ts). Messages for the broker wait
+ * until its page has said it listens (broker:ready, or a registry reply to window:hello):
+ * an event delivered to a page that has not loaded is lost.
+ */
 export function relay(to: string, msg: unknown): Promise<void> {
+  if (to === 'broker' && !brokerReady) {
+    brokerQueue.push(msg);
+    return Promise.resolve();
+  }
   return goApp().Relay(to, 'relay', msg);
+}
+
+/** Sends at once, queue or not (the window:hello handshake). */
+export function relayNow(to: string, msg: unknown): Promise<void> {
+  return goApp().Relay(to, 'relay', msg);
+}
+
+/** The broker listens: send what waited. */
+export function brokerIsReady(): void {
+  if (brokerReady) return;
+  brokerReady = true;
+  for (const msg of brokerQueue.splice(0)) void goApp().Relay('broker', 'relay', msg).catch(() => undefined);
 }
 
 /** Relay messages addressed to this window. */

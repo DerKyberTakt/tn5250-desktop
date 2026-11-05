@@ -51,6 +51,10 @@ class Broker {
   private system: SystemInfo = { computerName: '', userName: '', platform: '' };
   private asks = new Map<string, { window: string; resolve: (ok: boolean) => void }>();
   private askCounter = 0;
+  /** Windows whose page has said hello (events reach them). */
+  private readonly windows = new Set<string>();
+  /** Tabs handed to a window that has not said hello yet. */
+  private readonly pendingMoves = new Map<string, string[]>();
 
   async start(): Promise<void> {
     await this.store.load();
@@ -60,6 +64,16 @@ class Broker {
       // keep the empty defaults
     }
     onRelay((msg) => void this.onMessage(msg as ToBroker));
+    // Windows that loaded before this page may have sent their hello into the void.
+    try {
+      for (const w of (await goApp().WindowList()) ?? []) this.send(w.name, { type: 'broker:ready' });
+    } catch {
+      // no windows yet
+    }
+  }
+
+  private opened(s: Session): Omit<Extract<ToWindow, { type: 'tab:opened' }>, 'type'> {
+    return { tab: s.tab, letter: s.letter, profile: s.profile, deviceTemplate: s.deviceTemplate, status: s.status, detail: s.detail };
   }
 
   private send(window: string, msg: ToWindow): void {
@@ -74,9 +88,20 @@ class Broker {
   private async onMessage(msg: ToBroker): Promise<void> {
     switch (msg.type) {
       case 'window:hello':
+        this.windows.add(msg.window);
         this.send(msg.window, { type: 'registry', tabs: this.tabs.snapshot() });
+        for (const tab of this.pendingMoves.get(msg.window) ?? []) {
+          const s = this.tabs.get(tab);
+          if (s && s.window === msg.window) {
+            this.send(msg.window, { type: 'tab:opened', ...this.opened(s) });
+            s.controller.publish();
+          }
+        }
+        this.pendingMoves.delete(msg.window);
         break;
       case 'window:closed':
+        this.windows.delete(msg.window);
+        this.pendingMoves.delete(msg.window);
         for (const s of this.tabs.byWindow(msg.window)) this.close(s.tab);
         for (const [id, ask] of this.asks) {
           if (ask.window === msg.window) {
@@ -132,8 +157,12 @@ class Broker {
         const s = this.tabs.get(msg.tab);
         if (!s) break;
         this.tabs.move(msg.tab, msg.window);
-        this.send(msg.window, { type: 'tab:opened', tab: s.tab, letter: s.letter, deviceName: s.profile.deviceName, deviceTemplate: s.deviceTemplate, status: s.status, detail: s.detail });
-        s.controller.publish();
+        if (this.windows.has(msg.window)) {
+          this.send(msg.window, { type: 'tab:opened', ...this.opened(s) });
+          s.controller.publish();
+        } else {
+          this.pendingMoves.set(msg.window, [...(this.pendingMoves.get(msg.window) ?? []), msg.tab]);
+        }
         this.broadcastRegistry();
         break;
       }
@@ -222,7 +251,8 @@ class Broker {
       (events) => new GoTransport(events),
     );
     this.tabs.add(s);
-    this.send(window, { type: 'tab:opened', tab, letter, deviceName: profile.deviceName, deviceTemplate, status: 'idle', detail: '' });
+    this.windows.add(window);
+    this.send(window, { type: 'tab:opened', ...this.opened(s) });
     this.broadcastRegistry();
   }
 
@@ -240,7 +270,7 @@ class Broker {
     s.port = s.profile.port;
     s.title = buildTitle(s.profile, s.letter);
     s.controller.disconnect();
-    this.send(s.window, { type: 'tab:opened', tab, letter: s.letter, deviceName, deviceTemplate: template, status: s.status, detail: s.detail });
+    this.send(s.window, { type: 'tab:opened', ...this.opened(s) });
     void s.controller.connect();
     this.broadcastRegistry();
   }

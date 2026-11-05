@@ -32,7 +32,8 @@ export interface TabHost {
 export interface AdoptedTab {
   id: string;
   letter: string;
-  deviceName: string;
+  /** The session's profile as the broker holds it (workstation name expanded). */
+  profile: TerminalSettings;
   deviceTemplate: string;
   status: ConnectionStatus;
   detail: string;
@@ -91,7 +92,7 @@ export class TerminalTab {
   private opened(info: Omit<AdoptedTab, 'id'>): void {
     if (!this.profile) return;
     this.letter = info.letter;
-    this.profile.deviceName = info.deviceName;
+    Object.assign(this.profile, info.profile);
     this.deviceTemplate = info.deviceTemplate;
     this.status = info.status;
     this.statusDetail = info.detail;
@@ -226,9 +227,8 @@ export class TerminalTab {
   }
 
   /** The tab moves to another window: the frame goes, the session stays with the broker. */
-  handOver(): AdoptedTab {
+  handOver(): void {
     this.handedOver = true;
-    return { id: this.id, letter: this.letter, deviceName: this.profile?.deviceName ?? '', deviceTemplate: this.deviceTemplate, status: this.status, detail: this.statusDetail };
   }
 
   dispose(): void {
