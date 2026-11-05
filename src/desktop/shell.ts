@@ -224,9 +224,15 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   }
 
   notify(text: string): void {
+    this.log(text);
     this.statusText.textContent = text;
     if (this.statusTimer) clearTimeout(this.statusTimer);
-    this.statusTimer = setTimeout(() => this.refresh(), 5000);
+    // refresh() leaves the text alone while a notice is showing; clear the timer first or
+    // the notice stays forever (the "Opened https://..." that never went away).
+    this.statusTimer = setTimeout(() => {
+      this.statusTimer = undefined;
+      this.refresh();
+    }, 5000);
   }
 
   printScreen(tab: TerminalTab): void {
