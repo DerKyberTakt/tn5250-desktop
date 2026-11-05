@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:dist/desktop
@@ -38,27 +37,18 @@ func main() {
 			OnSecondInstanceLaunch: app.secondInstance,
 		},
 		OnShutdown: app.shutdown,
-		Mac:        application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
-		Linux:      application.LinuxOptions{ProgramName: "tn5250-terminal"},
+		// The hidden broker window runs the sessions: it must not quit the app on its own, and
+		// its timers must not be throttled as a background page.
+		Mac:   application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
+		Linux: application.LinuxOptions{ProgramName: "tn5250-terminal", DisableQuitOnLastWindowClosed: true},
+		Windows: application.WindowsOptions{
+			DisableQuitOnLastWindowClosed: true,
+			AdditionalBrowserArgs:         []string{"--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows"},
+		},
 	})
 	app.attach(wails)
-	win := wails.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:             mainWindow,
-		Title:            "TN5250 Terminal",
-		Width:            1180,
-		Height:           800,
-		MinWidth:         640,
-		MinHeight:        420,
-		BackgroundColour: application.NewRGB(0, 0, 0),
-		URL:              "/",
-		// Files dropped on the window are uploaded by the IFS browser; the page decides what a drop means.
-		EnableFileDrop: true,
-		Windows:        application.WindowsWindow{Theme: application.SystemDefault},
-		Linux:          application.LinuxWindow{Icon: icon, WebviewGpuPolicy: application.WebviewGpuPolicyOnDemand},
-	})
-	win.OnWindowEvent(events.Common.WindowFilesDropped, func(e *application.WindowEvent) {
-		win.EmitEvent("files:dropped", e.Context().DroppedFiles())
-	})
+	app.newBrokerWindow()
+	app.newWindow(mainWindow, "TN5250 Terminal", 1180, 800)
 	if err := wails.Run(); err != nil {
 		log.Fatal(err)
 	}

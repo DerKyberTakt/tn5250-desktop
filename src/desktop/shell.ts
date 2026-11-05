@@ -2,7 +2,7 @@ import type { KeyAction } from '../shared/keymap';
 import type { WebviewToHost } from '../shared/protocol';
 import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
-import { errorText, goApp, onLaunchArgs, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
+import { errorText, goApp, onLaunchArgs, onRelay, relay, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
 import { confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
@@ -11,7 +11,8 @@ import { SettingsTab } from './settingsTab';
 import { ConsoleTab, type ConsoleHost, type ConsoleMode } from './consoleTab';
 import { SqlTab, type SqlHost } from './sqlTab';
 import { Store } from './store';
-import { TerminalTab, type TabHost } from './terminalTab';
+import { windowNameFromUrl, type RegistryEntry, type ToWindow } from './relay';
+import { TerminalTab, type TabHost } from './remoteTab';
 
 const APP_NAME = 'TN5250 Terminal';
 const PROJECT_URL = 'https://github.com/DerKyberTakt/tn5250-desktop';
@@ -55,6 +56,10 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   readonly store = new Store();
   readonly credentials = new Credentials(this.store);
   system: SystemInfo = { computerName: '', userName: '', platform: '' };
+  /** This window's name; the broker addresses it by that (main, or win-N). */
+  readonly windowName = windowNameFromUrl(location.search);
+  /** Every session in every window, as the broker reports it. */
+  private registry: RegistryEntry[] = [];
 
   private readonly entries: Entry[] = [];
   private active: Entry | undefined;
@@ -92,12 +97,20 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
         else if (e.kind === 'settings') e.tab.push();
       }
       this.renderSessions();
+      // The broker keeps its own copy of the settings (bypass sign-on, passwords, PC commands).
+      void relay('broker', { type: 'store:changed' }).catch(() => undefined);
     });
     this.buildMenus();
     this.buildToolbar();
     this.bindSidebar();
     this.renderSessions();
     window.addEventListener('message', (ev) => this.onFrameMessage(ev));
+    try {
+      onRelay((msg) => this.onRelay(msg as ToWindow));
+      void relay('broker', { type: 'window:hello', window: this.windowName }).catch(() => undefined);
+    } catch {
+      // not running inside the app
+    }
     try {
       // Files dropped on the window go to the IFS browser tab that is showing.
       wailsRuntime().OnFileDrop((_x, _y, paths) => {
@@ -687,6 +700,37 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
 
   // --- frames ---
 
+  /** A message from the broker: for one of our tabs, a dialog to show, or the app-wide registry. */
+  private onRelay(msg: ToWindow): void {
+    if (msg.type === 'registry') {
+      this.registry = msg.tabs;
+      return;
+    }
+    if (msg.type === 'ui:ask') {
+      void this.askFromBroker(msg);
+      return;
+    }
+    const entry = this.entries.find((e) => e.kind === 'terminal' && e.tab.id === msg.tab);
+    if (entry?.kind === 'terminal') entry.tab.receive(msg);
+  }
+
+  /** A yes/no question the broker needs answered by the user of this window. */
+  private async askFromBroker(msg: Extract<ToWindow, { type: 'ui:ask' }>): Promise<void> {
+    const ok = await confirmDialog(msg.title, msg.text, msg.ok);
+    void relay('broker', { type: 'ui:answer', request: msg.request, ok }).catch(() => undefined);
+    if (ok && msg.then === 'openSettings') {
+      const entry = this.entries.find((e) => e.kind === 'terminal' && e.tab.id === msg.tab);
+      const p = entry?.kind === 'terminal' ? entry.tab.profile : undefined;
+      const index = p ? this.store.readSessions().findIndex((s) => s.name === p.name && s.host === p.host) : -1;
+      this.openSettings(index);
+    }
+  }
+
+  /** Sessions open in every window (for the Connections panel). */
+  sessionsEverywhere(): RegistryEntry[] {
+    return this.registry;
+  }
+
   private onFrameMessage(ev: MessageEvent): void {
     const data = ev.data as { tn5250Frame?: boolean; message?: unknown } | undefined;
     if (!data?.tn5250Frame || typeof data.message !== 'object' || data.message === null) return;
@@ -967,8 +1011,9 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
 
   private async saveTrace(): Promise<void> {
     const t = this.activeTerminal();
-    const trace = t?.exportTrace();
-    if (!t || !trace) return;
+    if (!t) return;
+    const trace = await t.exportTrace();
+    if (!trace) return;
     const saved = await goApp().SaveTextFile('Save session trace', `tn5250-trace-${this.fileSafe(t.title)}.json`, JSON.stringify(trace, null, 1) + '\n', [{ name: 'JSON', patterns: '*.json' }]);
     if (saved) await messageDialog('Trace saved', ['The trace contains screen contents; share it only with people allowed to see them.']);
   }

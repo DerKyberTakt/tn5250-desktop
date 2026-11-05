@@ -85,6 +85,15 @@ export interface SystemInfo {
   platform: string;
 }
 
+/** A window's place on the virtual screen (windows.go). */
+export interface WindowBounds {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface IfsEntry {
   name: string;
   dir: boolean;
@@ -117,6 +126,13 @@ export interface IfsProgress {
 }
 
 interface GoApp {
+  /** Delivers an event to one window (the broker or a visible window). */
+  Relay(to: string, name: string, data: unknown): Promise<void>;
+  WindowOpen(name: string, title: string, x: number, y: number, width: number, height: number): Promise<void>;
+  WindowFocus(name: string): Promise<void>;
+  WindowClose(name: string): Promise<void>;
+  WindowList(): Promise<WindowBounds[] | null>;
+  WindowBounds(name: string): Promise<WindowBounds>;
   NetConnect(id: string, options: ConnectOptionsDto): Promise<void>;
   NetSend(id: string, base64: string): Promise<void>;
   NetClose(id: string): Promise<void>;
@@ -212,6 +228,16 @@ export function wailsRuntime(): WailsRuntime {
   if (window.runtime) return window.runtime;
   if (!inApp()) throw new Error('Wails runtime not available');
   return runtime;
+}
+
+/** Sends a relay message to one window (src/desktop/relay.ts). */
+export function relay(to: string, msg: unknown): Promise<void> {
+  return goApp().Relay(to, 'relay', msg);
+}
+
+/** Relay messages addressed to this window. */
+export function onRelay(callback: (msg: unknown) => void): () => void {
+  return wailsRuntime().EventsOn('relay', callback);
 }
 
 /** The command line a second launch of the exe was started with (forwarded by the host). */

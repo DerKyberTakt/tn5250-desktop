@@ -23,6 +23,7 @@ const pages = await esbuild.context({
     'settings-style': 'src/settings/settings.css',
     // Desktop only: the shell page and the frame shim.
     shell: 'src/desktop/shell.ts',
+    broker: 'src/desktop/broker.ts',
     shim: 'src/desktop/frameShim.ts',
   },
   outdir,

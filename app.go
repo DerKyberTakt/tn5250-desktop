@@ -46,9 +46,15 @@ func (a *App) attach(w *application.App) {
 }
 
 func (a *App) emit(event string, data any) {
-	if a.wails != nil {
-		a.wails.Event.Emit(event, data)
+	if a.wails == nil {
+		return
 	}
+	// Socket bytes belong to the broker window alone; the rest is for whoever listens.
+	if strings.HasPrefix(event, "net:") {
+		a.emitTo(brokerWindow, event, data)
+		return
+	}
+	a.wails.Event.Emit(event, data)
 }
 
 func (a *App) shutdown() {
