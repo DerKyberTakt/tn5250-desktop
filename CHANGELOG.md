@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 - unreleased
+## 0.2.1 - unreleased
 
 - Ported to Wails v3 (3.1.0): one process can own several windows, which the next entries build on. Same features, same settings file and saved passwords. Build metadata moved from `wails.json` to `build/config.yml`; the Linux build now uses GTK 4 + WebKitGTK 6.0 (Ubuntu 24.04+, Debian 13+). A second launch of the exe (`tn5250-terminal host[:port]`) now opens that session in the running window instead of only raising it.
 
