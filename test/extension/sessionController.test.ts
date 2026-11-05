@@ -292,7 +292,8 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
   /** A Sign On screen (title, user field, non-display password field, Read MDT); `message` goes on row 24. */
   const signonScreen = (message = '', ccsid = 37): Uint8Array =>
     frame('04110008' + '110118' + e('Sign On', ccsid) + '11060a' + '1d4000200010' + '11070a' + '1d4000270010' + (message ? '111801' + e(message, ccsid) : '') + '04520000');
-  const menuScreen = (): Uint8Array => frame('04110008' + '110118' + e('Main Menu') + '11060a' + '1d4000200010' + '04520000');
+  // A real host clears the unit (ESC 40) before a new screen; without it the old fields stay.
+  const menuScreen = (): Uint8Array => frame('0440' + '04110008' + '110118' + e('Main Menu') + '11060a' + '1d4000200010' + '04520000');
 
   function harness(over: Partial<TerminalSettings> = {}, password?: string) {
     vi.useRealTimers();
@@ -370,6 +371,27 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
     expect(h.wire()).toContain(e('ge!heim', 273));
     await h.host(signonScreen('CPF1120 - User USER1 does not exist or password not correct for user profile.', 273));
     expect(h.hints).toEqual([{ codePage: 273, chars: ['!'] }]);
+  });
+
+  it('a customised sign-on screen without the words "Sign On" (PUB400) still gets the hint', async () => {
+    const h = harness();
+    await h.start();
+    const pub400 = (message = ''): Uint8Array =>
+      frame('04110008' + '11010a' + e('Welcome to PUB400.COM * your public IBM i server') + '110501' + e('Your user name:') + '11051e' + '1d4000200010' + '110601' + e('Password (max. 128):') + '11061e' + '1d4000270080' + (message ? '111801' + e(message) : '') + '04520000');
+    await h.host(pub400());
+    await h.signon('pa!s');
+    await h.host(pub400('CPF1120 - User USER1 does not exist or password not correct for user profile.'));
+    expect(h.hints).toEqual([{ codePage: 37, chars: ['!'] }]);
+  });
+
+  it('a Change Password screen (three non-display fields) arms nothing', async () => {
+    const h = harness();
+    await h.start();
+    await h.host(frame('04110008' + '110118' + e('Change Password') + '11060a' + '1d4000270010' + '11070a' + '1d4000270010' + '11080a' + '1d4000270010' + '04520000'));
+    h.controller.type('pa!s');
+    h.controller.press('enter');
+    await h.host(signonScreen('CPF1120 - User USER1 does not exist or password not correct for user profile.'));
+    expect(h.hints).toEqual([]);
   });
 
   it('a screen with a non-display field that is not a sign-on screen arms nothing', async () => {

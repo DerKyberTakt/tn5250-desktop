@@ -1,4 +1,5 @@
 import type { PcCommandRequest } from '../engine/pco';
+import type { Field } from '../engine/screen';
 import { Session5250 } from '../engine/session';
 import { variantChars } from '../engine/variant';
 import type { KeyAction } from '../shared/keymap';
@@ -287,12 +288,28 @@ export class SessionController {
    */
   private armSignon(): void {
     this.pendingSignon = undefined;
-    if (!isSignonScreen(this.screenText())) return;
-    const s = this.session.screen;
-    const passwordField = s.fields.find((f) => !f.bypass && (f.attr & 0x07) === 0x07);
+    const passwordField = this.signonPasswordField();
     if (!passwordField) return;
-    const chars = variantChars(s.fieldBytes(passwordField), this.session.codePage);
+    const chars = variantChars(this.session.screen.fieldBytes(passwordField), this.session.codePage);
     if (chars.length) this.pendingSignon = { chars, screens: 0 };
+  }
+
+  /** Entry fields of a sign-on screen beyond user and password (program, menu, library ...). */
+  private static readonly SIGNON_MAX_FIELDS = 6;
+
+  /**
+   * The password field of a sign-on screen, or undefined when the screen is not one. A
+   * sign-on screen says "Sign On" near the top, or has the sign-on shape: a visible user
+   * field first and exactly one non-display field among a few entry fields. Customised
+   * screens (PUB400's "Welcome" banner, other languages) have the shape without the words;
+   * a Change Password screen has three non-display fields and is left alone.
+   */
+  private signonPasswordField(): Field | undefined {
+    const inputs = this.session.screen.fields.filter((f) => !f.bypass);
+    const hidden = inputs.filter((f) => (f.attr & 0x07) === 0x07);
+    if (hidden.length !== 1 || inputs.length < 2 || inputs.length > SessionController.SIGNON_MAX_FIELDS) return undefined;
+    if (inputs[0] === hidden[0] && !isSignonScreen(this.screenText())) return undefined;
+    return hidden[0];
   }
 
   /** The host's answer to a sign-on attempt: the Sign On screen again means it failed. */
@@ -304,7 +321,7 @@ export class SessionController {
       return;
     }
     this.pendingSignon = undefined;
-    if (!isSignonScreen(this.screenText()) || this.signonHintShown) return;
+    if (!this.signonPasswordField() || this.signonHintShown) return;
     this.signonHintShown = true;
     const codePage = this.session.codePage.ccsid;
     this.events.log(`sign-on failed and the password has characters that differ between code pages (${pending.chars.join(' ')}); this session uses code page ${codePage}: check Host Code Page against the host's CCSID (README > Troubleshooting)`);
