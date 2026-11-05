@@ -83,7 +83,7 @@ func (a *App) secondInstance(data application.SecondInstanceData) {
 	win.Show()
 	win.Focus()
 	if len(data.Args) > 0 {
-		win.EmitEvent("launch:args", data.Args)
+		dispatch(win, "launch:args", data.Args)
 	}
 }
 

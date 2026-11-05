@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-
 	"github.com/DerKyberTakt/tn5250-desktop/internal/update"
 )
 

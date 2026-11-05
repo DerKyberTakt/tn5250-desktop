@@ -41,8 +41,14 @@ func (a *App) Relay(to string, name string, data any) error {
 	if err != nil {
 		return err
 	}
-	win.EmitEvent(name, data)
+	dispatch(win, name, data)
 	return nil
+}
+
+// dispatch delivers an event to one window only. (win.EmitEvent is an app-wide broadcast
+// that merely records the window as sender: every window would receive every message.)
+func dispatch(win application.Window, name string, data any) {
+	win.DispatchWailsEvent(&application.CustomEvent{Name: name, Data: data})
 }
 
 // WindowOpen opens a visible window loading the shell page for that window name. x and y
@@ -145,7 +151,7 @@ func (a *App) newWindow(name, title string, width, height int) *application.Webv
 		Linux:            application.LinuxWindow{Icon: icon, WebviewGpuPolicy: application.WebviewGpuPolicyOnDemand},
 	})
 	win.OnWindowEvent(events.Common.WindowFilesDropped, func(e *application.WindowEvent) {
-		win.EmitEvent("files:dropped", e.Context().DroppedFiles())
+		dispatch(win, "files:dropped", e.Context().DroppedFiles())
 	})
 	win.OnWindowEvent(events.Common.WindowClosing, func(_ *application.WindowEvent) {
 		a.emitTo(brokerWindow, "relay", map[string]any{"type": "window:closed", "window": name})
@@ -185,6 +191,6 @@ func (a *App) emitTo(name, event string, data any) {
 		return
 	}
 	if win, ok := a.wails.Window.Get(name); ok {
-		win.EmitEvent(event, data)
+		dispatch(win, event, data)
 	}
 }
