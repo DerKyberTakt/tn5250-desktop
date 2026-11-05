@@ -850,7 +850,7 @@ function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
   if (helpText) label.append(infoBubble(helpText));
   row.append(label);
   if (f.kind === 'static') {
-    row.append(el('span', 'static', f.text));
+    row.append(el('span', f.label === 'Warning' ? 'static warn' : 'static', f.text));
     return row;
   }
   if (f.kind === 'button') {

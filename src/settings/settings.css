@@ -101,6 +101,15 @@ button.link {
   opacity: 0.75;
 }
 
+.row .static.warn {
+  opacity: 1;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+  background: var(--vscode-inputValidation-warningBackground, rgba(204, 153, 0, 0.18));
+  border: 1px solid var(--vscode-inputValidation-warningBorder, #b89500);
+}
+
 input[type='text'],
 input[type='number'],
 select {
