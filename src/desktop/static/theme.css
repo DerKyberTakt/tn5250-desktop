@@ -25,6 +25,12 @@
   --vscode-editorHoverWidget-background: #ffffe1;
   --vscode-editorHoverWidget-foreground: #1f1f1f;
   --vscode-editorHoverWidget-border: #a0a0a0;
+  --vscode-notifications-foreground: #1f1f1f;
+  --vscode-notifications-background: #ffffff;
+  --vscode-notifications-border: #c8c8c8;
+  --vscode-inputValidation-warningForeground: #1f1f1f;
+  --vscode-inputValidation-warningBackground: #fff4ce;
+  --vscode-inputValidation-warningBorder: #b89500;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -50,6 +56,12 @@
     --vscode-editorHoverWidget-background: #252526;
     --vscode-editorHoverWidget-foreground: #d4d4d4;
     --vscode-editorHoverWidget-border: #454545;
+    --vscode-notifications-foreground: #e0e0e0;
+    --vscode-notifications-background: #252526;
+    --vscode-notifications-border: #454545;
+    --vscode-inputValidation-warningForeground: #e0e0e0;
+    --vscode-inputValidation-warningBackground: #3a3000;
+    --vscode-inputValidation-warningBorder: #b89500;
   }
 }
 
