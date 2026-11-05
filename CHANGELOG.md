@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 - 2026-11-03
+## 0.2.0 - 2026-11-04
 
 - Fixed: a password with characters that differ between EBCDIC code pages (`!`, `@`, `#`, `[`, `]` ...) failed with CPF1120 when Host Code Page did not match the host's CCSID, and nothing pointed at the cause. After such a failed sign-on the app shows a one-time hint naming the characters and the code page in use (log too, never the password); the Host Code Page and Bypass signon help texts and a new README Troubleshooting section explain it; the keyboard type sent with the workstation name now follows the code page (tn5250-terminal #5).
 - Security review (traces, sign-on, TLS): a saved session trace blanks what was typed into non-display fields (passwords), keeping the lengths. Bypass sign-on types the password only into a non-display field, on the first screens after connect, and logs when it skips a screen. Removing a session removes its saved password unless another session still signs on with the same user at the same host. Bypass sign-on over plain telnet warns on the settings page and in the log. Non-display cells leave the engine as blanks, so the page never holds them.
