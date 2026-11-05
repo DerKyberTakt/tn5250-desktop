@@ -450,7 +450,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     this.addEntry({ kind: 'terminal', tab: new TerminalTab(this, undefined), button: el('div') }, true);
   }
 
-  private openSettings(select = -1): void {
+  openSettings(select = -1): void {
     const existing = this.entries.find((e) => e.kind === 'settings');
     if (existing && existing.kind === 'settings') {
       existing.tab.show(select);

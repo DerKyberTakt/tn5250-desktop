@@ -53,6 +53,6 @@ const NLS: Record<number, HostNls> = {
 export function hostNls(ccsid: number, keyboardType = ''): HostNls | undefined {
   const base = NLS[ccsid];
   const kbd = keyboardType.trim().toUpperCase();
-  if (!base) return kbd ? undefined : undefined;
+  if (!base) return undefined;
   return kbd ? { charset: base.charset, kbdType: kbd } : base;
 }

@@ -1,7 +1,9 @@
 import type { PcCommandRequest } from '../engine/pco';
 import { Session5250 } from '../engine/session';
+import { variantChars } from '../engine/variant';
 import type { KeyAction } from '../shared/keymap';
 import { friendlyNetError } from '../shared/netErrors';
+import { isSignonScreen } from '../shared/screenText';
 import { classifyPcCommand, decidePcCommand, type PcCommandDecision, type PcCommandKind, type PcCommandPolicy } from '../shared/pcCommand';
 import type { ConnectionInfo, ConnectionStatus, OiaState, ScreenSnapshot } from '../shared/protocol';
 import type { TerminalSettings } from '../shared/settings';
@@ -38,6 +40,18 @@ export interface SessionControllerEvents {
    * side may offer to trust it: save the fingerprint on the profile and connect again.
    */
   certificateRejected?(fingerprint: string, reason: string): void;
+  /**
+   * A sign-on attempt failed (the host answered with the Sign On screen again) and the
+   * password held characters that mean something else in another code page (! @ [ ] ...).
+   * The session's code page may not match the host's CCSID. Raised once per connection;
+   * `chars` lists the variant characters only, never the password.
+   */
+  signonHint?(info: SignonHint): void;
+}
+
+export interface SignonHint {
+  codePage: number;
+  chars: string[];
 }
 
 /**
@@ -74,6 +88,9 @@ export class SessionController {
   private wantConnected = false;
   private signonDone = false;
   private signonSkipLogged = false;
+  /** Enter was pressed on a sign-on screen whose password field holds variant characters. */
+  private pendingSignon: { chars: string[]; screens: number } | undefined;
+  private signonHintShown = false;
   private screensReceived = 0;
   private connectedAt = 0;
   private deviceRetries = 0;
@@ -105,6 +122,7 @@ export class SessionController {
         },
         update: () => {
           this.screensReceived += 1;
+          this.checkSignon();
           this.publish();
           void this.maybeSignon();
         },
@@ -152,6 +170,8 @@ export class SessionController {
     this.session = this.createSession();
     this.signonDone = false;
     this.signonSkipLogged = false;
+    this.pendingSignon = undefined;
+    this.signonHintShown = false;
     this.trace = [];
     this.traceStart = Date.now();
     this.setStatus('connecting', `${this.profile.host}:${this.profile.port}`, { attempt: this.reconnectAttempt + 1 });
@@ -252,8 +272,43 @@ export class SessionController {
 
   press(action: KeyAction): void {
     if (!this.connected) return;
+    if (action === 'enter') this.armSignon();
     this.session.press(action);
     this.touch();
+  }
+
+  /** Screens the host may send after a sign-on attempt before the hint gives up. */
+  private static readonly SIGNON_ANSWER_SCREENS = 3;
+
+  /**
+   * Enter on a sign-on screen: remember whether the password field holds characters
+   * that differ between code pages, so a failed attempt can point at the code page.
+   * Only the list of such characters is kept, never the field's content.
+   */
+  private armSignon(): void {
+    this.pendingSignon = undefined;
+    if (!isSignonScreen(this.screenText())) return;
+    const s = this.session.screen;
+    const passwordField = s.fields.find((f) => !f.bypass && (f.attr & 0x07) === 0x07);
+    if (!passwordField) return;
+    const chars = variantChars(s.fieldBytes(passwordField), this.session.codePage);
+    if (chars.length) this.pendingSignon = { chars, screens: 0 };
+  }
+
+  /** The host's answer to a sign-on attempt: the Sign On screen again means it failed. */
+  private checkSignon(): void {
+    const pending = this.pendingSignon;
+    if (!pending) return;
+    if (this.session.state.inputInhibited !== 'none') {
+      if (++pending.screens > SessionController.SIGNON_ANSWER_SCREENS) this.pendingSignon = undefined;
+      return;
+    }
+    this.pendingSignon = undefined;
+    if (!isSignonScreen(this.screenText()) || this.signonHintShown) return;
+    this.signonHintShown = true;
+    const codePage = this.session.codePage.ccsid;
+    this.events.log(`sign-on failed and the password has characters that differ between code pages (${pending.chars.join(' ')}); this session uses code page ${codePage}: check Host Code Page against the host's CCSID (README > Troubleshooting)`);
+    this.events.signonHint?.({ codePage, chars: pending.chars });
   }
 
   type(text: string): void {
@@ -329,6 +384,7 @@ export class SessionController {
     this.session.type(user);
     s.cursor = passwordField.start;
     this.session.type(password);
+    this.armSignon();
     this.session.press('enter');
     this.events.log('bypass sign-on sent');
   }

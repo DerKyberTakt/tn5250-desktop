@@ -20,6 +20,8 @@ export interface TabHost {
   changed(tab: TerminalTab): void;
   printScreen(tab: TerminalTab): void;
   notify(text: string): void;
+  /** Opens the Settings tab (select = index of the session to show, -1 for the defaults). */
+  openSettings(select?: number): void;
 }
 
 /** Tabs opened per device-name template, so * and = produce distinct names. */
@@ -106,10 +108,27 @@ export class TerminalTab {
           pcCommandPolicy: () => this.liveSettings().pcCommands,
           pcCommand: (kind, decision, wait) => this.handlePcCommand(kind, decision, wait),
           certificateRejected: (fingerprint, reason) => void this.offerTrust(fingerprint, reason),
+          signonHint: (info) => void this.signonHint(info.codePage, info.chars),
         },
         (events) => new GoTransport(events),
       );
     }
+  }
+
+  /**
+   * A sign-on failed with a password that holds characters that differ between code pages:
+   * the session's code page may not be the host's CCSID. One dialog per connection.
+   */
+  private async signonHint(codePage: number, chars: string[]): Promise<void> {
+    const profile = this.profile;
+    const open = await confirmDialog(
+      'Sign-on failed: check the code page',
+      `The password contains characters that are different in other code pages (${chars.join(' ')}). This session uses code page ${codePage}; the host reads what you type with its own CCSID (QCCSID or the user profile). If the user ID and password are right, set Host Code Page to the host's value. Each failed attempt counts toward QMAXSIGN.`,
+      'Open Settings',
+    );
+    if (!open || !profile) return;
+    const index = this.host.store.readSessions().findIndex((s) => s.name === profile.name && s.host === profile.host);
+    this.host.openSettings(index);
   }
 
   /**

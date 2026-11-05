@@ -1,4 +1,5 @@
 /** One past (or running) connection, as the History view shows it. */
+import { isSignonScreen } from './screenText';
 export interface HistoryEntry {
   id: string;
   /** Saved session name, '' for an ad-hoc host. */
@@ -63,8 +64,8 @@ export function describeEntry(e: HistoryEntry, now = Date.now()): string {
  * followed by dots or a colon and the value. '' when the screen is not a sign-on screen.
  */
 export function signonUser(screenText: string): string {
+  if (!isSignonScreen(screenText)) return '';
   const rows = screenText.split(/\r?\n/);
-  if (!rows.slice(0, 4).some((r) => /\bSign\s*On\b/i.test(r))) return '';
   for (const row of rows) {
     const m = /^\s*User\b[\s.:]*([A-Za-z0-9$#@_]{1,10})\s*$/.exec(row) ?? /^\s*User\b[\s.:]*([A-Za-z0-9$#@_]{1,10})\s{2,}/.exec(row);
     if (m) return (m[1] as string).toUpperCase();

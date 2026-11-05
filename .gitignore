@@ -15,3 +15,6 @@ build/windows/installer/tmp/
 tn5250-trace-*.json
 # local traces and stack dumps for debugging
 debug/
+
+# Wails build artifact
+package.json.md5

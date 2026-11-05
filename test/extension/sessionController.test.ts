@@ -281,3 +281,104 @@ describe('SessionController TLS certificates', () => {
     expect(statuses.filter((x) => x.startsWith('connecting'))).toHaveLength(1);
   });
 });
+
+describe('SessionController sign-on hint (issue #5: variant characters and the code page)', () => {
+  const frame = (hex: string): Uint8Array => {
+    const payload = hexToBytes(hex);
+    const total = 10 + payload.length;
+    return Uint8Array.from([(total >> 8) & 0xff, total & 0xff, 0x12, 0xa0, 0, 0, 4, 0, 0, 0x03, ...payload, 0xff, 0xef]);
+  };
+  const e = (t: string, ccsid = 37): string => bytesToHex(CodePage.get(ccsid).encodeString(t));
+  /** A Sign On screen (title, user field, non-display password field, Read MDT); `message` goes on row 24. */
+  const signonScreen = (message = '', ccsid = 37): Uint8Array =>
+    frame('04110008' + '110118' + e('Sign On', ccsid) + '11060a' + '1d4000200010' + '11070a' + '1d4000270010' + (message ? '111801' + e(message, ccsid) : '') + '04520000');
+  const menuScreen = (): Uint8Array => frame('04110008' + '110118' + e('Main Menu') + '11060a' + '1d4000200010' + '04520000');
+
+  function harness(over: Partial<TerminalSettings> = {}, password?: string) {
+    vi.useRealTimers();
+    const profile: TerminalSettings = { ...SETTINGS_DEFAULTS, host: 'pub400.com', port: 23, ...over };
+    const logs: string[] = [];
+    const hints: Array<{ codePage: number; chars: string[] }> = [];
+    let transport: FakeTransport | undefined;
+    const controller = new SessionController(
+      profile,
+      {
+        screen: () => undefined,
+        status: () => undefined,
+        alarm: () => undefined,
+        log: (m) => logs.push(m),
+        password: async () => password,
+        signonHint: (info) => hints.push(info),
+      },
+      (events) => (transport = new FakeTransport(events)),
+    );
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const start = async () => {
+      const done = controller.connect();
+      transport!.settle.resolve();
+      await done;
+    };
+    const host = async (bytes: Uint8Array) => {
+      transport!.events.data(bytes);
+      await tick();
+    };
+    const signon = async (pw: string) => {
+      controller.type('user1');
+      controller.press('tab');
+      controller.type(pw);
+      controller.press('enter');
+      await tick();
+    };
+    return { controller, logs, hints, start, host, signon, wire: () => (transport?.writes ?? []).map((b) => bytesToHex(b)).join(' ') };
+  }
+
+  it('a failed sign-on with ! in the password raises the hint once, naming the character and the code page', async () => {
+    const h = harness();
+    await h.start();
+    await h.host(signonScreen());
+    await h.signon('pa!s');
+    expect(h.wire()).toContain(e('pa!s'));
+    await h.host(signonScreen('CPF1120 - User USER1 does not exist or password not correct for user profile.'));
+    expect(h.hints).toEqual([{ codePage: 37, chars: ['!'] }]);
+    expect(h.logs.some((l) => l.includes('code page 37') && l.includes('(!)') && !l.includes('pa!s'))).toBe(true);
+    // A second failure on the same connection stays quiet.
+    await h.signon('pa!s');
+    await h.host(signonScreen('CPF1120 - User USER1 does not exist or password not correct for user profile.'));
+    expect(h.hints).toHaveLength(1);
+  });
+
+  it('no hint when the password has only invariant characters, or when the sign-on succeeded', async () => {
+    const h = harness();
+    await h.start();
+    await h.host(signonScreen());
+    await h.signon('Passw0rd.');
+    await h.host(signonScreen('CPF1120 - User USER1 does not exist or password not correct for user profile.'));
+    expect(h.hints).toEqual([]);
+    await h.signon('pa!s');
+    await h.host(menuScreen());
+    expect(h.hints).toEqual([]);
+    // The menu's own Enter is not a sign-on attempt.
+    h.controller.press('enter');
+    await h.host(signonScreen());
+    expect(h.hints).toEqual([]);
+  });
+
+  it('works for bypass sign-on and for a non-37 code page (! under 273 is X\'4F\')', async () => {
+    const h = harness({ codePage: 273, autoSignon: true, signonUser: 'user1' }, 'ge!heim');
+    await h.start();
+    await h.host(signonScreen('', 273));
+    expect(h.wire()).toContain(e('ge!heim', 273));
+    await h.host(signonScreen('CPF1120 - User USER1 does not exist or password not correct for user profile.', 273));
+    expect(h.hints).toEqual([{ codePage: 273, chars: ['!'] }]);
+  });
+
+  it('a screen with a non-display field that is not a sign-on screen arms nothing', async () => {
+    const h = harness();
+    await h.start();
+    await h.host(frame('04110008' + '110118' + e('Change Password') + '11060a' + '1d4000270010' + '04520000'));
+    h.controller.type('pa!s');
+    h.controller.press('enter');
+    await h.host(signonScreen('CPF1120 - User USER1 does not exist or password not correct for user profile.'));
+    expect(h.hints).toEqual([]);
+  });
+});

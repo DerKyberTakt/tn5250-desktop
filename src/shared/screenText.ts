@@ -88,6 +88,14 @@ function isMarked(attr: number): boolean {
   return !a.nondisplay && (a.underline || a.reverse);
 }
 
+/**
+ * Whether the screen text (one line per row) is an IBM i sign-on screen: a row near the
+ * top says "Sign On" (QDSIGNON, QDSIGNON2 and the usual customised copies keep that title).
+ */
+export function isSignonScreen(screenText: string): boolean {
+  return screenText.split(/\r?\n/, 4).some((r) => /\bSign\s*On\b/i.test(r));
+}
+
 export function rowText(s: Pick<ScreenSnapshot, 'cols' | 'text'>, row: number): string {
   return s.text.slice(row * s.cols, (row + 1) * s.cols).split(NULL).join(' ');
 }

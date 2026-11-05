@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decoratedFieldCells, expandTabs, fieldRanges, hotspotAt, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, wordAt, doubleClickRange } from '../../src/shared/screenText';
+import { decoratedFieldCells, expandTabs, fieldRanges, hotspotAt, isSignonScreen, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, wordAt, doubleClickRange } from '../../src/shared/screenText';
 import { SETTINGS_DEFAULTS, buildTitle, copySessionAt, diffSettings, resolveSettings } from '../../src/shared/settings';
 
 describe('fieldRanges', () => {
@@ -154,5 +154,14 @@ describe('copySessionAt', () => {
     r!.sessions[1]!.keymap!.F13 = null;
     expect(list[0]?.keymap?.F13).toBe('pf13');
     expect(copySessionAt(list, 5)).toBeUndefined();
+  });
+});
+
+describe('isSignonScreen', () => {
+  it('recognises "Sign On" in the first four rows only', () => {
+    expect(isSignonScreen('                      Sign On\n     System . . :   PUB400\n')).toBe(true);
+    expect(isSignonScreen('\n\n          Sign on\n')).toBe(true);
+    expect(isSignonScreen('     Main Menu\n     User  . . . :   USER1')).toBe(false);
+    expect(isSignonScreen('\n\n\n\n     Sign On')).toBe(false);
   });
 });

@@ -85,6 +85,27 @@ passwords in the Keychain.
 `SHA256SUMS` lists the checksums of every file (`sha256sum -c SHA256SUMS`, or
 `Get-FileHash <file>` in PowerShell).
 
+## Troubleshooting
+
+### Sign-on fails with CPF1120, but the user ID and password are right
+
+The password probably contains a character that is not the same in every EBCDIC code page: `! @ # $ [ ] { } | \\ ^ ~` and the accented letters. The emulator sends the byte of the character in the session's code page; the host reads that byte with the CCSID of the sign-on job (`QCCSID`, or the user profile's CCSID), and at password level 2 or 3 it checks the password as those characters. When the two code pages differ, `!` typed under 037 arrives as:
+
+| Host CCSID | `!` arrives as |
+|---|---|
+| 037, 1140 | `!` |
+| 273, 1141 (Germany/Austria) | `Ü` |
+| 500, 1148 (International) | `]` |
+| 1142 (Denmark/Norway) | `€` (and `#` as `Æ`) |
+| 1144 (Italy) | `é` (and `#` as `£`) |
+
+It works the other way round too: a password set from a 037 session fails from a 273 session. Nothing on the screen shows it, because the password field does not display, and from IBM i 7.5 the host answers CPF1120 ("user does not exist or password not correct") for both cases. Each failed attempt counts toward `QMAXSIGN`, so do not keep guessing.
+
+- Set **Host Code Page** (Settings > Connection) to the host's CCSID and connect again. Use the value your ACS session has for that host, or ask for `QCCSID`.
+- After a failed sign-on with such a password, the app shows a one-time hint that names the characters and the code page in use.
+- The workstation is announced with the keyboard type and character set that belong to the code page (`KBDTYPE` AGB for 273, INB for 500, and so on; the Keyboard type setting overrides it), so the virtual device matches the code page.
+- A password made of letters, digits and `.`, `-`, `_` is the same in every code page and avoids the problem when you sign on from several systems.
+
 ## Building
 
 Requirements: Node.js 20+, Go 1.27+, and the Wails CLI
