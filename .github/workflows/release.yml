@@ -161,7 +161,7 @@ jobs:
           if (Test-Path $key) { throw 'uninstall left the registry key' }
           Write-Host 'installer smoke test passed'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: windows
           path: out/
@@ -261,7 +261,7 @@ jobs:
           fi
           echo "started and ran until the timeout (exit 124): ok"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: linux
           path: out/
@@ -323,7 +323,7 @@ jobs:
             echo "::error title=macos smoke test::the app exited early; $(tail -n 30 smoke.log | tr '\n' '|' | cut -c1-3500)"; exit 1
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: macos
           path: out/
@@ -332,7 +332,7 @@ jobs:
     needs: [version, windows, linux, macos]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
           path: assets
           merge-multiple: true
@@ -341,7 +341,7 @@ jobs:
           cd assets
           sha256sum $(ls | sort) > SHA256SUMS
           cat SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: tn5250-terminal-${{ needs.version.outputs.version }}-all
           path: assets/
