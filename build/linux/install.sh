@@ -16,5 +16,5 @@ install -m 755 "$here/tn5250-terminal" "$bin/tn5250-terminal"
 install -m 644 "$here/tn5250-terminal.png" "$share/icons/hicolor/512x512/apps/tn5250-terminal.png"
 sed "s|^Exec=.*|Exec=$bin/tn5250-terminal|" "$here/tn5250-terminal.desktop" > "$share/applications/tn5250-terminal.desktop"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$share/applications" || true
-echo "installed to $bin/tn5250-terminal (needs libgtk-3 and libwebkit2gtk-4.1 from your distribution)"
+echo "installed to $bin/tn5250-terminal (needs libgtk-4 and libwebkitgtk-6.0 from your distribution)"
 case ":$PATH:" in *":$bin:"*) ;; *) echo "note: $bin is not on your PATH";; esac

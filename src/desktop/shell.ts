@@ -2,7 +2,7 @@ import type { KeyAction } from '../shared/keymap';
 import type { WebviewToHost } from '../shared/protocol';
 import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
-import { errorText, goApp, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
+import { errorText, goApp, onLaunchArgs, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
 import { confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
@@ -166,7 +166,8 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     this.updating = true;
     let off: (() => void) | undefined;
     try {
-      off = wailsRuntime().EventsOn('update:progress', (done, total) => {
+      off = wailsRuntime().EventsOn('update:progress', (p) => {
+        const { done, total } = p as { done: number; total: number };
         const d = Number(done);
         const t = Number(total);
         this.notify(t > 0 ? `Downloading ${latest}… ${Math.floor((d * 100) / t)}%` : `Downloading ${latest}… ${(d / 1048576).toFixed(1)} MB`);
@@ -187,9 +188,16 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     let args: string[];
     try {
       args = await goApp().LaunchArgs();
+      // A second launch of the exe hands its command line to this window.
+      onLaunchArgs((more) => this.openFromArgs(more));
     } catch {
       return;
     }
+    this.openFromArgs(args);
+  }
+
+  /** `tn5250-terminal [--tls] [--demo] host[:port]` opens that session. */
+  private openFromArgs(args: string[]): void {
     if (args.includes('--demo')) this.openDemo();
     const tls = args.includes('--tls');
     const hostArg = args.find((a) => !a.startsWith('-'));

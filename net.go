@@ -92,8 +92,21 @@ func verifyPeer(o ConnectOptions, host string) func(cs tls.ConnectionState) erro
 	}
 }
 
-// Emitter delivers socket events to the page; the Wails runtime in the app, a recorder in tests.
-type Emitter func(event string, args ...interface{})
+// Emitter delivers socket events to the page as one JSON payload; the Wails runtime in the
+// app, a recorder in tests.
+type Emitter func(event string, data any)
+
+// NetData is the "net:data" payload: bytes from the host, base64.
+type NetData struct {
+	ID   string `json:"id"`
+	Data string `json:"data"`
+}
+
+// NetClosed is the "net:closed" payload; Reason is "" when the host simply closed.
+type NetClosed struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
 
 const maxConnections = 64
 
@@ -187,7 +200,7 @@ func (s *Sockets) read(id string, conn net.Conn) {
 	for {
 		n, err := conn.Read(buf)
 		if n > 0 {
-			s.emit("net:data", id, base64.StdEncoding.EncodeToString(buf[:n]))
+			s.emit("net:data", NetData{ID: id, Data: base64.StdEncoding.EncodeToString(buf[:n])})
 		}
 		if err != nil {
 			s.mu.Lock()
@@ -201,7 +214,7 @@ func (s *Sockets) read(id string, conn net.Conn) {
 				if !errors.Is(err, net.ErrClosed) && err.Error() != "EOF" {
 					reason = unwrapNetError(err).Error()
 				}
-				s.emit("net:closed", id, reason)
+				s.emit("net:closed", NetClosed{ID: id, Reason: reason})
 			}
 			return
 		}

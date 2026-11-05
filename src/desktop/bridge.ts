@@ -1,8 +1,11 @@
 /**
- * Typed access to the Go host. Wails binds every exported method of the Go
- * `App` struct (app.go) to window.go.main.App and injects window.runtime into
- * the shell page (not into the terminal frames).
+ * Typed access to the Go host. The Go `App` service (app.go) is called by name
+ * through the Wails v3 runtime (`Call.ByName("main.App.X", ...)`), and its events
+ * arrive as one JSON payload each (`Events.On`). Only the shell page bundles the
+ * runtime; the terminal and settings frames talk to the shell with postMessage.
+ * Tests may install fakes on window.go.main.App / window.runtime instead.
  */
+import { Application, Browser, Call, Events, Window } from '@wailsio/runtime';
 
 export interface ConnectOptionsDto {
   host: string;
@@ -160,9 +163,13 @@ interface GoApp {
 }
 
 interface WailsRuntime {
-  EventsOn(name: string, callback: (...args: unknown[]) => void): () => void;
+  /** Subscribes to a Go event; the callback gets the event's data payload. Returns the unsubscribe. */
+  EventsOn(name: string, callback: (data: unknown) => void): () => void;
+  /** Files dropped on the window (paths resolved by the host). */
   OnFileDrop(callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean): void;
   WindowSetTitle(title: string): void;
+  /** Opens a URL in the default browser (the Go OpenURL is used for host-driven links). */
+  OpenURL(url: string): void;
   Quit(): void;
 }
 
@@ -170,18 +177,46 @@ declare global {
   interface Window {
     go?: { main?: { App?: GoApp } };
     runtime?: WailsRuntime;
+    /** Set by the Wails runtime inside the app. */
+    _wails?: unknown;
   }
 }
 
+const SERVICE = 'main.App.';
+
+/** Every method of the Go App service, called by name. */
+const service = new Proxy({} as Record<string, (...args: unknown[]) => Promise<unknown>>, {
+  get: (_target, name) => (...args: unknown[]) => Call.ByName(SERVICE + String(name), ...args),
+}) as unknown as GoApp;
+
+const runtime: WailsRuntime = {
+  EventsOn: (name, callback) => Events.On(name, (ev) => callback(ev.data)),
+  OnFileDrop: (callback) => void Events.On('files:dropped', (ev) => callback(0, 0, (ev.data as string[] | null) ?? [])),
+  WindowSetTitle: (title) => void Window.SetTitle(title),
+  OpenURL: (url) => void Browser.OpenURL(url),
+  Quit: () => void Application.Quit(),
+};
+
+function inApp(): boolean {
+  return typeof window !== 'undefined' && window._wails !== undefined;
+}
+
 export function goApp(): GoApp {
-  const app = window.go?.main?.App;
-  if (!app) throw new Error('Go host not available');
-  return app;
+  const fake = window.go?.main?.App;
+  if (fake) return fake;
+  if (!inApp()) throw new Error('Go host not available');
+  return service;
 }
 
 export function wailsRuntime(): WailsRuntime {
-  if (!window.runtime) throw new Error('Wails runtime not available');
-  return window.runtime;
+  if (window.runtime) return window.runtime;
+  if (!inApp()) throw new Error('Wails runtime not available');
+  return runtime;
+}
+
+/** The command line a second launch of the exe was started with (forwarded by the host). */
+export function onLaunchArgs(callback: (args: string[]) => void): () => void {
+  return wailsRuntime().EventsOn('launch:args', (data) => callback((data as string[] | null) ?? []));
 }
 
 export function bytesToBase64(bytes: Uint8Array): string {

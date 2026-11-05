@@ -15,7 +15,7 @@ import (
 
 	hs "github.com/DerKyberTakt/tn5250-desktop/internal/hostserver"
 	"github.com/DerKyberTakt/tn5250-desktop/internal/hostserver/ifs"
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // IfsConnectRequest is what the shell sends to open an IFS browser.
@@ -182,9 +182,7 @@ func (a *App) IfsCancel(transfer string) {
 }
 
 func (a *App) emitProgress(p IfsProgress) {
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "ifs:progress", p)
-	}
+	a.emit("ifs:progress", p)
 }
 
 // cancelWriter stops a download when the transfer is cancelled.
@@ -291,7 +289,7 @@ func (a *App) IfsDownload(id string, remotes []string, transfer string) (int, er
 		single = !st.Dir
 	}
 	if single {
-		local, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{Title: "Download " + path.Base(remotes[0]), DefaultFilename: safeLocalName(path.Base(remotes[0]))})
+		local, err := a.wails.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{Title: "Download " + path.Base(remotes[0]), Filename: safeLocalName(path.Base(remotes[0]))}).PromptForSingleSelection()
 		if err != nil || local == "" {
 			return 0, err
 		}
@@ -299,7 +297,7 @@ func (a *App) IfsDownload(id string, remotes []string, transfer string) (int, er
 			return 0, err
 		}
 	} else {
-		dest, err := wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{Title: "Download to folder"})
+		dest, err := a.wails.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{Title: "Download to folder", CanChooseDirectories: true, CanChooseFiles: false}).PromptForSingleSelection()
 		if err != nil || dest == "" {
 			return 0, err
 		}
@@ -361,7 +359,7 @@ func (a *App) IfsUpload(id, remoteDir string, paths []string, replace bool, tran
 		return 0, err
 	}
 	if len(paths) == 0 {
-		paths, err = wruntime.OpenMultipleFilesDialog(a.ctx, wruntime.OpenDialogOptions{Title: "Upload to " + remoteDir})
+		paths, err = a.wails.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{Title: "Upload to " + remoteDir, CanChooseFiles: true, AllowsMultipleSelection: true}).PromptForMultipleSelection()
 		if err != nil || len(paths) == 0 {
 			return 0, err
 		}

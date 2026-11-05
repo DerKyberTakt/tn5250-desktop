@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/DerKyberTakt/tn5250-desktop/internal/update"
 )
@@ -60,6 +59,12 @@ func (a *App) UpdateCheck() (UpdateInfo, error) {
 	return info, nil
 }
 
+// UpdateProgress is the "update:progress" payload (bytes).
+type UpdateProgress struct {
+	Done  int64 `json:"done"`
+	Total int64 `json:"total"`
+}
+
 // UpdateInstall downloads the release tagged tag, verifies it against SHA256SUMS,
 // starts the new version and quits this one. Progress goes out as
 // "update:progress" events (done, total bytes).
@@ -69,9 +74,7 @@ func (a *App) UpdateInstall(tag string) error {
 	defer cancel()
 	c := update.New()
 	progress := func(done, total int64) {
-		if a.ctx != nil {
-			wruntime.EventsEmit(a.ctx, "update:progress", done, total)
-		}
+		a.emit("update:progress", UpdateProgress{Done: done, Total: total})
 	}
 	exe, err := currentExe()
 	if err != nil {
@@ -124,8 +127,8 @@ func (a *App) UpdateInstall(tag string) error {
 	// Let the page receive the result, then exit so the new version can start.
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		if a.ctx != nil {
-			wruntime.Quit(a.ctx)
+		if a.wails != nil {
+			a.wails.Quit()
 		}
 	}()
 	return nil

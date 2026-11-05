@@ -27,8 +27,8 @@
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run lint && npm run test",
     "go:check": "go vet . && go test .",
-    "app:dev": "wails dev",
-    "app:build": "npm run check && wails build -clean -trimpath"
+    "app:dev": "wails3 dev",
+    "app:build": "npm run check && wails3 build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -46,5 +46,8 @@
   "homepage": "https://github.com/DerKyberTakt/tn5250-desktop#readme",
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@wailsio/runtime": "3.1.0"
   }
 }

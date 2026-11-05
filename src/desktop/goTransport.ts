@@ -14,8 +14,14 @@ function listen(): void {
   if (listening) return;
   listening = true;
   const rt = wailsRuntime();
-  rt.EventsOn('net:data', (id, data) => transports.get(String(id))?.onData(String(data)));
-  rt.EventsOn('net:closed', (id, reason) => transports.get(String(id))?.onClosed(String(reason ?? '')));
+  rt.EventsOn('net:data', (d) => {
+    const { id, data } = d as { id: string; data: string };
+    transports.get(id)?.onData(data);
+  });
+  rt.EventsOn('net:closed', (d) => {
+    const { id, reason } = d as { id: string; reason: string };
+    transports.get(id)?.onClosed(reason ?? '');
+  });
 }
 
 /** A TCP/TLS connection owned by the Go host (net.go); bytes cross as base64. */

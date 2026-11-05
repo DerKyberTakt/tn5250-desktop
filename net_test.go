@@ -17,11 +17,14 @@ type recorder struct {
 
 func newRecorder() *recorder { return &recorder{got: make(chan struct{}, 64)} }
 
-func (r *recorder) emit(event string, args ...interface{}) {
+func (r *recorder) emit(event string, data any) {
 	r.mu.Lock()
 	line := event
-	for _, a := range args {
-		line += " " + a.(string)
+	switch d := data.(type) {
+	case NetData:
+		line += " " + d.ID + " " + d.Data
+	case NetClosed:
+		line += " " + d.ID + " " + d.Reason
 	}
 	r.events = append(r.events, line)
 	r.mu.Unlock()

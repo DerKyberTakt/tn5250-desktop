@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -13,8 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/wailsapp/wails/v2/pkg/options"
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/zalando/go-keyring"
 )
 
@@ -24,9 +22,11 @@ const (
 	maxImageBytes  = 4 * 1024 * 1024
 )
 
-// App is bound to the page: every exported method is callable from the shell as window.go.main.App.X.
+// App is the service bound to the pages: every exported method is callable from the shell
+// as Call.ByName("main.App.X", ...) (bridge.ts). Events go out with app.Event.Emit as one
+// JSON payload each.
 type App struct {
-	ctx     context.Context
+	wails   *application.App
 	sockets *Sockets
 	ifsOnce sync.Once
 	ifsSt   *ifsState
@@ -36,19 +36,22 @@ type App struct {
 
 func NewApp() *App {
 	a := &App{}
-	a.sockets = NewSockets(func(event string, args ...interface{}) {
-		if a.ctx != nil {
-			wruntime.EventsEmit(a.ctx, event, args...)
-		}
-	})
+	a.sockets = NewSockets(a.emit)
 	return a
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+// attach gives the service the running application (events, dialogs, windows).
+func (a *App) attach(w *application.App) {
+	a.wails = w
 }
 
-func (a *App) shutdown(_ context.Context) {
+func (a *App) emit(event string, data any) {
+	if a.wails != nil {
+		a.wails.Event.Emit(event, data)
+	}
+}
+
+func (a *App) shutdown() {
 	a.sockets.CloseAll()
 	st := a.ifs()
 	st.mu.Lock()
@@ -60,12 +63,22 @@ func (a *App) shutdown(_ context.Context) {
 	}
 }
 
-func (a *App) secondInstance(_ options.SecondInstanceData) {
-	if a.ctx == nil {
+// secondInstance: another launch of the exe brings the main window up and hands it the
+// command line (`tn5250-terminal host[:port]` opens that session there).
+func (a *App) secondInstance(data application.SecondInstanceData) {
+	if a.wails == nil {
 		return
 	}
-	wruntime.WindowUnminimise(a.ctx)
-	wruntime.WindowShow(a.ctx)
+	win, ok := a.wails.Window.Get(mainWindow)
+	if !ok {
+		return
+	}
+	win.Restore()
+	win.Show()
+	win.Focus()
+	if len(data.Args) > 0 {
+		win.EmitEvent("launch:args", data.Args)
+	}
 }
 
 // --- sockets ---
@@ -199,17 +212,17 @@ type FileFilter struct {
 	Patterns string `json:"patterns"`
 }
 
-func toWailsFilters(filters []FileFilter) []wruntime.FileFilter {
-	out := make([]wruntime.FileFilter, 0, len(filters))
+func toWailsFilters(filters []FileFilter) []application.FileFilter {
+	out := make([]application.FileFilter, 0, len(filters))
 	for _, f := range filters {
-		out = append(out, wruntime.FileFilter{DisplayName: f.Name, Pattern: f.Patterns})
+		out = append(out, application.FileFilter{DisplayName: f.Name, Pattern: f.Patterns})
 	}
 	return out
 }
 
 // PickFile shows an open dialog and returns the chosen path ("" when cancelled).
 func (a *App) PickFile(title string, filters []FileFilter) (string, error) {
-	return wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{Title: title, Filters: toWailsFilters(filters)})
+	return a.PickFileIn(title, filters, "")
 }
 
 // PickFileIn is PickFile opening in dir when that folder exists ("~/..." = under the home directory).
@@ -222,12 +235,14 @@ func (a *App) PickFileIn(title string, filters []FileFilter, dir string) (string
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		dir = ""
 	}
-	return wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{Title: title, DefaultDirectory: dir, Filters: toWailsFilters(filters)})
+	return a.wails.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
+		Title: title, Directory: dir, Filters: toWailsFilters(filters), CanChooseFiles: true,
+	}).PromptForSingleSelection()
 }
 
 // SaveTextFile asks where to save and writes the text; false when cancelled.
 func (a *App) SaveTextFile(title, defaultName, text string, filters []FileFilter) (bool, error) {
-	p, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{Title: title, DefaultFilename: defaultName, Filters: toWailsFilters(filters)})
+	p, err := a.wails.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{Title: title, Filename: defaultName, Filters: toWailsFilters(filters)}).PromptForSingleSelection()
 	if err != nil || p == "" {
 		return false, err
 	}
@@ -270,18 +285,25 @@ func (a *App) ImageDataURL(path string) (string, error) {
 }
 
 func (a *App) ClipboardSet(text string) error {
-	return wruntime.ClipboardSetText(a.ctx, text)
+	if !a.wails.Clipboard.SetText(text) {
+		return errors.New("clipboard not available")
+	}
+	return nil
 }
 
 func (a *App) ClipboardGet() (string, error) {
-	return wruntime.ClipboardGetText(a.ctx)
+	text, ok := a.wails.Clipboard.Text()
+	if !ok {
+		return "", errors.New("clipboard not available")
+	}
+	return text, nil
 }
 
 // OpenURL opens http(s) links in the default browser; nothing else.
 func (a *App) OpenURL(url string) {
 	lower := strings.ToLower(url)
 	if strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") {
-		wruntime.BrowserOpenURL(a.ctx, url)
+		_ = a.wails.Browser.OpenURL(url)
 	}
 }
 

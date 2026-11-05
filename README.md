@@ -59,15 +59,15 @@ Builds are not code-signed yet, so Windows SmartScreen may say "Windows protecte
 PC" the first time: choose **More info > Run anyway**. Settings are kept in
 `%APPDATA%\tn5250-terminal` and survive updates and uninstalls.
 
-**Linux (x86_64, GTK 3 + WebKitGTK 4.1)**
+**Linux (x86_64, GTK 4 + WebKitGTK 6.0)**
 
 - `tn5250-terminal-x86_64.AppImage`: `chmod +x` and run; updates itself in place.
 - `tn5250-terminal_<version>_amd64.deb`: Debian 12+, Ubuntu 22.04+ and derivatives
   (`sudo apt install ./tn5250-terminal_<version>_amd64.deb`).
 - `tn5250-terminal-linux-amd64.tar.gz`: the binary with a desktop file and icon;
   `./install.sh` puts them under `~/.local` for the current user. Needs the distribution's
-  `libgtk-3` and `libwebkit2gtk-4.1` packages (Arch: `webkit2gtk-4.1`, Fedora:
-  `webkit2gtk4.1`).
+  `libgtk-4` and `libwebkitgtk-6.0` packages (Ubuntu 24.04+, Debian 13+; Arch:
+  `webkitgtk-6.0`, Fedora: `webkitgtk6.0`).
 
 Settings are kept in `~/.config/tn5250-terminal`; passwords in the desktop's secret
 service (GNOME Keyring, KDE Wallet) through libsecret.
@@ -108,16 +108,17 @@ It works the other way round too: a password set from a 037 session fails from a
 
 ## Building
 
-Requirements: Node.js 20+, Go 1.27+, and the Wails CLI
-(`go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.0`).
+Requirements: Node.js 20+, Go 1.27+, and the Wails v3 CLI
+(`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0`; `wails3 doctor` checks the rest).
 
 ```
 npm ci
 npm run check                  # typecheck, lint, tests
 go test . ./internal/...
-wails build -trimpath          # build/bin/tn5250-terminal.exe (Windows)
-wails build -trimpath -platform linux/amd64 -tags webkit2_41    # needs libgtk-3-dev libwebkit2gtk-4.1-dev
-wails build -trimpath -platform darwin/universal                # needs Xcode command line tools
+wails3 build                                   # build/bin/tn5250-terminal.exe (Windows), or the Linux/macOS binary
+wails3 task windows:package INSTALL_SCOPE=user # per-user NSIS installer
+wails3 task linux:build                        # needs libgtk-4-dev libwebkitgtk-6.0-dev
+wails3 task darwin:package:universal           # needs Xcode command line tools; .app bundle
 ```
 
 The release workflow (`.github/workflows/release.yml`) builds all of the above on a tag

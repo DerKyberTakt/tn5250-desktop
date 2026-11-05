@@ -2,7 +2,7 @@ name: Release
 
 # A tag vX.Y.Z (or vX.Y.Z.N for a desktop-only release) builds the app for Windows,
 # Linux and macOS, smoke-tests each build, and publishes everything with one
-# SHA256SUMS on the GitHub Release. The tag must match wails.json info.productVersion.
+# SHA256SUMS on the GitHub Release. The tag must match build/config.yml info.version.
 #
 # A push to a dry-run/** branch (or workflow_dispatch) runs the same jobs and keeps the
 # files as workflow artifacts; nothing is published.
@@ -28,7 +28,7 @@ permissions:
   contents: write
 
 env:
-  WAILS_VERSION: v2.17.0
+  WAILS_VERSION: v3.1.0
 
 jobs:
   version:
@@ -40,12 +40,13 @@ jobs:
       - id: v
         shell: bash
         run: |
-          v=$(node -p "require('./wails.json').info.productVersion")
+          # info.version in build/config.yml (the first version: line is the config schema).
+          v=$(sed -n 's/^  version: *"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' build/config.yml | head -n 1)
           if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-            echo "::error::wails.json productVersion '$v' is not X.Y.Z[.N]"; exit 1
+            echo "::error::build/config.yml info.version '$v' is not X.Y.Z[.N]"; exit 1
           fi
           if [ "${{ github.ref_type }}" = "tag" ] && [ "${{ github.ref_name }}" != "v$v" ]; then
-            echo "::error::Tag ${{ github.ref_name }} does not match wails.json productVersion $v"; exit 1
+            echo "::error::Tag ${{ github.ref_name }} does not match build/config.yml info.version $v"; exit 1
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
@@ -73,7 +74,7 @@ jobs:
 
       - name: Tools (Wails CLI, NSIS, WiX)
         run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@$env:WAILS_VERSION
+          go install github.com/wailsapp/wails/v3/cmd/wails3@$env:WAILS_VERSION
           if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
             if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) { choco install nsis -y --no-progress }
             'C:\Program Files (x86)\NSIS' >> $env:GITHUB_PATH
@@ -83,9 +84,11 @@ jobs:
 
       - name: Build (installer + exe)
         run: |
-          wails build -trimpath -s -platform windows/amd64 -nsis -installscope user 2>&1 | Tee-Object -FilePath build.log
+          # build/windows/nsis/project.nsi is the per-user installer; the task fetches the
+          # WebView2 bootstrapper and runs makensis with INSTALL_SCOPE=user.
+          wails3 task windows:create:nsis:installer INSTALL_SCOPE=user 2>&1 | Tee-Object -FilePath build.log
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error title=wails build windows::$(((Get-Content build.log | Select-Object -Last 40) -join ' | ').Substring(0, [Math]::Min(3800, ((Get-Content build.log | Select-Object -Last 40) -join ' | ').Length)))"
+            Write-Host "::error title=wails3 windows installer::$(((Get-Content build.log | Select-Object -Last 40) -join ' | ').Substring(0, [Math]::Min(3800, ((Get-Content build.log | Select-Object -Last 40) -join ' | ').Length)))"
             exit 1
           }
           Get-ChildItem build/bin
@@ -165,7 +168,7 @@ jobs:
 
   linux:
     needs: version
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -176,25 +179,25 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build dependencies (GTK 3, WebKitGTK 4.1, xvfb for the smoke test)
+      - name: Build dependencies (GTK 4, WebKitGTK 6.0, xvfb for the smoke test)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev xvfb dbus-x11
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev xvfb dbus-x11
 
       - run: npm ci
       - run: npm run check
       - run: npm run build -- --production
       - run: go vet . ./internal/... ./cmd/...
       - run: go test . ./internal/...
-      - run: go install github.com/wailsapp/wails/v2/cmd/wails@$WAILS_VERSION
+      - run: go install github.com/wailsapp/wails/v3/cmd/wails3@$WAILS_VERSION
 
       - name: Build
         run: |
           set -o pipefail
-          wails build -trimpath -s -platform linux/amd64 -tags webkit2_41 -o tn5250-terminal 2>&1 | tee build.log || {
-            echo "::error title=wails build linux::$(tail -n 40 build.log | tr '\n' '|' | cut -c1-3800)"; exit 1; }
+          wails3 task linux:build 2>&1 | tee build.log || {
+            echo "::error title=wails3 task linux:build::$(tail -n 40 build.log | tr '\n' '|' | cut -c1-3800)"; exit 1; }
           ls -la build/bin
-          ldd build/bin/tn5250-terminal | grep -q webkit2gtk-4.1 || { echo "::error::binary is not linked against webkit2gtk-4.1"; exit 1; }
+          ldd build/bin/tn5250-terminal | grep -q webkitgtk-6.0 || { echo "::error::binary is not linked against webkitgtk-6.0"; exit 1; }
 
       - name: Package (tar.gz, .deb, AppImage)
         env:
@@ -222,7 +225,7 @@ jobs:
           Section: net
           Priority: optional
           Architecture: amd64
-          Depends: libgtk-3-0, libwebkit2gtk-4.1-0
+          Depends: libgtk-4-1, libwebkitgtk-6.0-4
           Installed-Size: $size
           Maintainer: DerKyberTakt <DerKyberTakt@users.noreply.github.com>
           Homepage: https://github.com/DerKyberTakt/tn5250-desktop
@@ -281,19 +284,19 @@ jobs:
       - run: npm run build -- --production
       - run: go vet . ./internal/... ./cmd/...
       - run: go test . ./internal/...
-      - run: go install github.com/wailsapp/wails/v2/cmd/wails@$WAILS_VERSION
+      - run: go install github.com/wailsapp/wails/v3/cmd/wails3@$WAILS_VERSION
 
       - name: Build (universal .app)
         run: |
           set -o pipefail
-          wails build -trimpath -s -platform darwin/universal 2>&1 | tee build.log || {
-            echo "::error title=wails build darwin::$(tail -n 40 build.log | tr '\n' '|' | cut -c1-3800)"; exit 1; }
+          # build:universal + .app bundle + ad-hoc signature (the app is not notarized; an ad-hoc
+          # signed binary runs after the user allows it: right-click > Open, or xattr -dr com.apple.quarantine).
+          wails3 task darwin:package:universal 2>&1 | tee build.log || {
+            echo "::error title=wails3 task darwin:package:universal::$(tail -n 40 build.log | tr '\n' '|' | cut -c1-3800)"; exit 1; }
           ls -la build/bin
+          mv "build/bin/tn5250-terminal.app" "build/bin/TN5250 Terminal.app"
           app="build/bin/TN5250 Terminal.app"
           lipo -archs "$app/Contents/MacOS/tn5250-terminal"
-          # Ad-hoc signature: the app is not notarized, but an ad-hoc signed binary runs after
-          # the user allows it (right-click > Open, or xattr -dr com.apple.quarantine).
-          codesign --force --deep --sign - "$app"
           codesign --verify --verbose=2 "$app"
 
       - name: Package (.dmg, .zip)

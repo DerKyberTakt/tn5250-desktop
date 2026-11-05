@@ -2,28 +2,30 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
+	"regexp"
 )
 
-// wails.json is the single source of the app version: Wails writes it into the
-// exe's version resource and the installer, and the release workflow refuses a
-// tag that does not match it.
+// build/config.yml is the single source of the app version: Wails writes it into the exe's
+// version resource, the installer and the packages, and the release workflow refuses a tag
+// that does not match it.
 //
-//go:embed wails.json
-var wailsJSON []byte
+//go:embed build/config.yml
+var buildConfig []byte
 
-var appVersion = readVersion(wailsJSON)
+var appVersion = readVersion(buildConfig)
+
+var versionLine = regexp.MustCompile(`(?m)^\s*version:\s*"?([0-9][0-9A-Za-z.\-]*)"?\s*(#.*)?$`)
 
 func readVersion(data []byte) string {
-	var cfg struct {
-		Info struct {
-			ProductVersion string `json:"productVersion"`
-		} `json:"info"`
+	// The first `version:` line is the config schema ('3'); the app version is the one
+	// under info:, which is the first that looks like a release number.
+	for _, m := range versionLine.FindAllSubmatch(data, -1) {
+		v := string(m[1])
+		if v != "3" {
+			return v
+		}
 	}
-	if err := json.Unmarshal(data, &cfg); err != nil || cfg.Info.ProductVersion == "" {
-		return "0.0.0"
-	}
-	return cfg.Info.ProductVersion
+	return "0.0.0"
 }
 
 // Version returns the app version, e.g. "0.1.2" or "0.1.2.1".

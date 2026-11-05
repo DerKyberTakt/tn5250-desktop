@@ -3,13 +3,14 @@ package main
 import "testing"
 
 func TestReadVersion(t *testing.T) {
-	if got := readVersion([]byte(`{"info":{"productVersion":"0.1.2.1"}}`)); got != "0.1.2.1" {
+	cfg := []byte("version: '3'\n\ninfo:\n  productName: \"X\"\n  version: \"0.1.2.1\" # The application version\n")
+	if got := readVersion(cfg); got != "0.1.2.1" {
 		t.Fatalf("got %q", got)
 	}
-	if got := readVersion([]byte(`{}`)); got != "0.0.0" {
+	if got := readVersion([]byte("version: '3'\n")); got != "0.0.0" {
 		t.Fatalf("missing version: got %q", got)
 	}
 	if appVersion == "0.0.0" {
-		t.Fatal("embedded wails.json has no productVersion")
+		t.Fatal("embedded build/config.yml has no info.version")
 	}
 }

@@ -1,0 +1,42 @@
+# Wails v3 project configuration. `info` feeds the Windows version resource, the NSIS installer,
+# the macOS Info.plist and the Linux packages: after changing it run
+#   wails3 update build-assets -config build/config.yml -dir build -name tn5250-terminal -binaryname tn5250-terminal
+# (regenerates info.json, the manifest, Info.plist, the .desktop file, nfpm and nsis/wails_tools.nsh;
+# project.nsi is ours and is not touched). The release workflow refuses a tag that does not match version.
+version: '3'
+
+info:
+  companyName: "DerKyberTakt"
+  productName: "TN5250 Terminal"
+  productIdentifier: "io.github.derkybertakt.tn5250-desktop"
+  description: "5250 terminal emulator for IBM i"
+  copyright: "Copyright (c) 2026 Kyle Ward. MIT License."
+  comments: "5250 terminal emulator for IBM i"
+  version: "0.3.0"
+
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - dist
+      - build/bin
+      - test
+    file:
+      - .DS_Store
+      - .gitignore
+      - "*_test.go"
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: wails3 build DEV=true
+      type: blocking
+    - cmd: npm run watch
+      type: background
+  reload:
+    - cmd: wails3 build DEV=true
+      type: blocking
