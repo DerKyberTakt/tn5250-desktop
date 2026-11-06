@@ -660,7 +660,7 @@ export class DataStreamProcessor {
     };
     const savedFields = s.fields.filter(touches);
     s.fields = s.fields.filter((f) => !touches(f));
-    const win: GuiWindow = { row, col, depth, width, rows, cols, saved, savedFields, title, footer, restrictCursor: ((data[0] ?? 0) & 0x80) !== 0 };
+    const win: GuiWindow = { row, col, depth, width, rows, cols, saved, savedFields, title, footer, restrictCursor: ((data[0] ?? 0) & 0x80) !== 0, wdsf: data.slice() };
     // Draw: every rectangle cell starts as null, then the border.
     for (let r = 0; r < rows; r++) s.buffer.fill(0, s.addr(row + r, col), s.addr(row + r, col + cols));
     const put = (r: number, c: number, b: number): void => {
@@ -944,10 +944,42 @@ export class DataStreamProcessor {
     // The header carries the error row and the command key switches of this screen.
     const ca = this.state.caKeys;
     const soh = [O_SOH, 7, 0x00, 0x00, 0x00, s.errorRow + 1, (ca >> 16) & 0xff, (ca >> 8) & 0xff, ca & 0xff];
-    const out: number[] = [ESC, restore, ...size, ESC, CMD_WTD, 0x00, 0x00, ...soh, O_SBA, 1, 1];
+    const out: number[] = [ESC, restore, ...size, ESC, CMD_WTD, 0x00, 0x00, ...soh];
+    // The windows go back layer by layer: the screen under them, then every Create Window
+    // with the cells it showed, oldest first. Replayed, each Create Window covers what the
+    // earlier layers wrote, so Remove GUI Window uncovers the same screen as before. The
+    // layers come from closing the windows on the live screen, which is put back after.
+    const snapshot = { buffer: s.buffer.slice(), fields: s.fields, windows: s.windows };
+    s.windows = s.windows.slice();
+    const layers: number[][] = [];
+    while (s.windows.length > 0) {
+      const win = s.windows[s.windows.length - 1]!;
+      const body = [0xd9, WDSF_CREATE_WINDOW, ...win.wdsf];
+      const layer = [O_SBA, win.row + 1, win.col + 1, O_WDSF, ((body.length + 2) >> 8) & 0xff, (body.length + 2) & 0xff, ...body];
+      for (let r = 0; r < win.rows; r++) {
+        const a = s.addr(win.row + r, win.col);
+        layer.push(O_SBA, win.row + r + 1, win.col + 1);
+        this.dumpCells(layer, a, a + win.cols);
+      }
+      layers.unshift(layer);
+      this.removeWindow();
+    }
+    out.push(O_SBA, 1, 1);
+    this.dumpCells(out, 0, s.size);
+    s.buffer.set(snapshot.buffer);
+    s.fields = snapshot.fields;
+    s.windows = snapshot.windows;
+    for (const layer of layers) out.push(...layer);
+    out.push(O_IC, s.rowOf(s.cursor) + 1, s.colOf(s.cursor) + 1);
+    return Uint8Array.from(out);
+  }
+
+  /** Appends the cells of [from, to) as WTD data, with a Start of Field order where a field begins. */
+  private dumpCells(out: number[], from: number, to: number): void {
+    const s = this.screen;
     const fieldsByAttr = new Map<number, Field>();
     for (const f of s.fields) fieldsByAttr.set(f.start - 1, f);
-    for (let i = 0; i < s.size; i++) {
+    for (let i = from; i < to; i++) {
       const b = s.buffer[i] as number;
       const f = fieldsByAttr.get(i);
       if (f && isAttribute(b)) {
@@ -958,8 +990,6 @@ export class DataStreamProcessor {
         out.push(b);
       }
     }
-    out.push(O_IC, s.rowOf(s.cursor) + 1, s.colOf(s.cursor) + 1);
-    return Uint8Array.from(out);
   }
 
   /**

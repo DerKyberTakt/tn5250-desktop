@@ -395,6 +395,37 @@ describe('enhanced 5250: GUI windows', () => {
     expect(Array.from(t.screen.buffer)).toEqual(Array.from(before));
   });
 
+  it('Save Screen keeps the windows: Restore Screen rebuilds them with what they covered', () => {
+    const { t, before } = withWindow();
+    const shown = t.screen.buffer.slice();
+    const saved = t.proc.process(hexToBytes('0402'))[0]?.data as Uint8Array;
+    // Another full screen meanwhile (a called program), then the host replays the image.
+    t.proc.process(hexToBytes('0440' + '04110000' + '110101' + e('Something else') + '04520000'));
+    expect(t.screen.windows).toHaveLength(0);
+    t.proc.process(saved);
+    expect(t.screen.windows).toHaveLength(1);
+    expect(t.screen.windows[0]?.restrictCursor).toBe(false);
+    expect(Array.from(t.screen.buffer)).toEqual(Array.from(shown));
+    expect(t.screen.fields.map((f) => f.start)).toEqual([t.screen.addr(7, 7), t.screen.addr(7, 46)]);
+    // Remove GUI Window still uncovers the base screen.
+    t.proc.process(hexToBytes(REMOVE));
+    expect(Array.from(t.screen.buffer)).toEqual(Array.from(before));
+    expect(t.screen.fields.map((f) => f.start)).toEqual([t.screen.addr(7, 7)]);
+  });
+
+  it('Save Screen keeps nested windows in order', () => {
+    const { t, before } = withWindow();
+    t.proc.process(hexToBytes('04110000' + '110a28' + CREATE + '110b2b' + e('Second') + '04520000'));
+    const shown = t.screen.buffer.slice();
+    const saved = t.proc.process(hexToBytes('0402'))[0]?.data as Uint8Array;
+    t.proc.process(hexToBytes('0440'));
+    t.proc.process(saved);
+    expect(t.screen.windows.map((w) => [w.row, w.col])).toEqual([[6, 29], [9, 39]]);
+    expect(Array.from(t.screen.buffer)).toEqual(Array.from(shown));
+    t.proc.process(hexToBytes('04110000' + '15' + '0007' + 'd95f' + '000000' + '04520000'));
+    expect(Array.from(t.screen.buffer)).toEqual(Array.from(before));
+  });
+
   it('Save Partial Screen answers an image that restores with Restore Partial Screen', () => {
     const t = setup('IBM-3477-FC', { enhanced: true });
     t.proc.process(hexToBytes(BASE));

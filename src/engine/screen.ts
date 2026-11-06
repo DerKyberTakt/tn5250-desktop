@@ -178,6 +178,8 @@ export interface GuiWindow {
   footer?: GuiText;
   /** Create Window flag bit 0: the cursor stays inside the window until Unrestricted Window Cursor Movement. */
   restrictCursor: boolean;
+  /** The Create Window structured field as received (after class and type), replayed by Save Screen. */
+  wdsf: Uint8Array;
 }
 
 /** The cells the cursor may use while a window restricts it: 0-based, inclusive. */
