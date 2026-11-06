@@ -326,6 +326,81 @@ input {
   opacity: 0.65;
 }
 
+#sessions li .badge {
+  float: right;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+#sessions li.group {
+  margin-top: 6px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+#sessions li.group:hover {
+  background: transparent;
+}
+
+#sessions ul.children {
+  list-style: none;
+  margin: 4px -8px -5px;
+  padding: 0 0 0 10px;
+}
+
+#sessions li.child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  border-radius: 3px;
+}
+
+#sessions li.child:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+#sessions li.child .label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#sessions li.child .where {
+  opacity: 0.6;
+  font-size: 11px;
+}
+
+#sessions li.child.here .label {
+  font-weight: 600;
+}
+
+#sessions li.child .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot-idle);
+}
+
+#sessions li.child .dot.connected {
+  background: var(--dot-connected);
+}
+
+#sessions li.child .dot.connecting {
+  background: var(--dot-connecting);
+}
+
+#sessions li.child .dot.disconnected {
+  background: var(--dot-disconnected);
+}
+
 #sessions .none {
   opacity: 0.6;
   font-style: italic;
@@ -374,21 +449,62 @@ input {
   display: none;
 }
 
-#log {
+/* --- session log: grows up out of the status bar, minimises back into it --- */
+#logpane {
   flex: none;
-  height: 140px;
+  display: flex;
+  flex-direction: column;
+  max-height: 0;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+  transition: max-height 0.25s ease;
+}
+
+#logpane.open {
+  max-height: 40vh;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.log-head {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 4px 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--status-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.log-head button {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+}
+
+.log-head button:hover {
+  background: var(--chrome-hover);
+}
+
+#log {
+  flex: 1;
+  min-height: 0;
   margin: 0;
   padding: 6px 8px;
   overflow: auto;
   font-family: var(--vscode-editor-font-family);
   font-size: 12px;
-  background: var(--vscode-editor-background);
-  border-top: 1px solid var(--chrome-border);
   user-select: text;
 }
 
-#log[hidden] {
-  display: none;
+@media (prefers-reduced-motion: reduce) {
+  #logpane {
+    transition: none;
+  }
 }
 
 /* --- status bar --- */
@@ -406,6 +522,28 @@ input {
 #status-text {
   overflow: hidden;
   text-overflow: ellipsis;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+#status-text::before {
+  content: "\25B4";
+  display: inline-block;
+  margin-right: 6px;
+  opacity: 0.6;
+  transition: transform 0.25s ease;
+}
+
+#statusbar.log-open #status-text::before {
+  transform: rotate(180deg);
+}
+
+#status-text:hover {
+  text-decoration: underline;
 }
 
 /* --- dialogs --- */

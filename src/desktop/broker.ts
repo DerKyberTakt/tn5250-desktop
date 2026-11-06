@@ -12,7 +12,7 @@ import { buildTitle, resolveSettings, type TerminalSettings } from '../shared/se
 import { errorText, goApp, onRelay, relay, type SystemInfo } from './bridge';
 import { Credentials } from './credentials';
 import { GoTransport } from './goTransport';
-import { BROKER_WINDOW, TabRegistry, type RegistryEntry, type ToBroker, type ToWindow } from './relay';
+import { BROKER_WINDOW, MAIN_WINDOW, TabRegistry, type RegistryEntry, type ToBroker, type ToWindow } from './relay';
 import { Store } from './store';
 
 interface Session extends RegistryEntry {
@@ -82,7 +82,13 @@ class Broker {
 
   private broadcastRegistry(): void {
     const tabs = this.tabs.snapshot();
-    for (const w of this.tabs.windows()) this.send(w, { type: 'registry', tabs });
+    for (const w of new Set([...this.windows, ...this.tabs.windows()])) this.send(w, { type: 'registry', tabs });
+  }
+
+  /** The window that takes over the sessions of a closing one: main, else any other. */
+  private homeFor(closing: string): string | undefined {
+    if (this.windows.has(MAIN_WINDOW) && closing !== MAIN_WINDOW) return MAIN_WINDOW;
+    return [...this.windows].find((w) => w !== closing);
   }
 
   private async onMessage(msg: ToBroker): Promise<void> {
@@ -99,17 +105,29 @@ class Broker {
         }
         this.pendingMoves.delete(msg.window);
         break;
-      case 'window:closed':
+      case 'window:closed': {
         this.windows.delete(msg.window);
         this.pendingMoves.delete(msg.window);
-        for (const s of this.tabs.byWindow(msg.window)) this.close(s.tab);
+        // Its sessions stay alive in another window; with no window left the app is quitting.
+        const home = this.homeFor(msg.window);
+        for (const s of this.tabs.byWindow(msg.window)) {
+          if (!home) {
+            this.close(s.tab);
+            continue;
+          }
+          this.tabs.move(s.tab, home);
+          this.send(home, { type: 'tab:opened', ...this.opened(s) });
+          s.controller.publish();
+        }
         for (const [id, ask] of this.asks) {
           if (ask.window === msg.window) {
             ask.resolve(false);
             this.asks.delete(id);
           }
         }
+        this.broadcastRegistry();
         break;
+      }
       case 'store:changed':
         await this.store.load();
         break;

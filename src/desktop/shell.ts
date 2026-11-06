@@ -11,8 +11,9 @@ import { SettingsTab } from './settingsTab';
 import { ConsoleTab, type ConsoleHost, type ConsoleMode } from './consoleTab';
 import { SqlTab, type SqlHost } from './sqlTab';
 import { Store } from './store';
-import { windowNameFromUrl, type RegistryEntry, type ToWindow } from './relay';
+import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow } from './relay';
 import { TerminalTab, type TabHost } from './remoteTab';
+import { buildTree, tabsBadge } from './sessionTree';
 
 const APP_NAME = 'TN5250 Terminal';
 const PROJECT_URL = 'https://github.com/DerKyberTakt/tn5250-desktop';
@@ -77,7 +78,9 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   private updating = false;
   private readonly sessionList = byId<HTMLUListElement>('sessions');
   private readonly logEl = byId<HTMLPreElement>('log');
-  private readonly statusText = byId<HTMLSpanElement>('status-text');
+  private readonly logPane = byId<HTMLElement>('logpane');
+  private readonly statusBar = byId<HTMLElement>('statusbar');
+  private readonly statusText = byId<HTMLButtonElement>('status-text');
   private readonly statusRight = byId<HTMLSpanElement>('status-right');
 
   async start(): Promise<void> {
@@ -103,6 +106,8 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     this.buildMenus();
     this.buildToolbar();
     this.bindSidebar();
+    this.statusText.addEventListener('click', () => this.toggleLog());
+    byId<HTMLButtonElement>('log-close').addEventListener('click', () => this.toggleLog(false));
     this.renderSessions();
     window.addEventListener('message', (ev) => this.onFrameMessage(ev));
     try {
@@ -226,10 +231,14 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     const stamp = new Date().toLocaleTimeString();
     this.logLines.push(`${stamp}  ${line}`);
     if (this.logLines.length > LOG_LIMIT) this.logLines.splice(0, this.logLines.length - LOG_LIMIT);
-    if (!this.logEl.hidden) {
+    if (this.logOpen) {
       this.logEl.textContent = this.logLines.join('\n');
       this.logEl.scrollTop = this.logEl.scrollHeight;
     }
+  }
+
+  private get logOpen(): boolean {
+    return this.logPane.classList.contains('open');
   }
 
   changed(tab: TerminalTab | IfsTab | SqlTab | ConsoleTab): void {
@@ -674,17 +683,22 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     byId<HTMLButtonElement>('side-previous').addEventListener('click', () => this.connectPrevious());
   }
 
+  /** The Connections tree: saved sessions with their open tabs (in every window) as children. */
   private renderSessions(): void {
-    const sessions = this.store.readSessions();
     const defaults = this.store.readDefaults();
+    const sessions = this.store.readSessions().map((s) => resolveSettings(defaults, s));
+    const tree = buildTree(sessions, this.registry);
     this.sessionList.replaceChildren();
-    if (!sessions.length) {
+    if (!sessions.length && !tree.others.length) {
       this.sessionList.append(el('li', 'none', 'No saved sessions'));
       return;
     }
-    sessions.forEach((s, i) => {
-      const r = resolveSettings(defaults, s);
+    for (const row of tree.rows) {
+      const r = row.profile;
+      const i = row.index;
       const li = el('li', i === this.selectedSession ? 'selected' : undefined, r.name || r.host || '(no host)');
+      const badge = tabsBadge(row);
+      if (badge) li.prepend(el('span', 'badge', badge));
       li.append(el('small', undefined, r.host ? `${r.host}:${r.port}${r.tls ? ' TLS' : ''}` : 'not configured'));
       li.title = 'Double-click to connect, right-click to edit';
       li.addEventListener('click', () => {
@@ -699,8 +713,52 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
         ev.preventDefault();
         this.openSettings(i);
       });
+      if (row.tabs.length) li.append(this.renderChildren(row.tabs));
       this.sessionList.append(li);
-    });
+    }
+    if (tree.others.length) {
+      const li = el('li', 'group', 'Other connections');
+      li.append(this.renderChildren(tree.others));
+      this.sessionList.append(li);
+    }
+  }
+
+  private renderChildren(tabs: RegistryEntry[]): HTMLUListElement {
+    const ul = el('ul', 'children');
+    for (const t of tabs) {
+      const here = t.window === this.windowName;
+      const li = el('li', here ? 'child here' : 'child');
+      const dot = el('span', `dot ${t.status}`);
+      dot.title = t.status;
+      li.append(dot, el('span', 'label', t.title));
+      if (!here) li.append(el('span', 'where', 'other window'));
+      li.title = here ? 'Click to show this tab' : 'Click to bring its window to the front';
+      const stop = (ev: Event): void => ev.stopPropagation();
+      li.addEventListener('dblclick', stop);
+      li.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      });
+      li.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this.showTab(t);
+      });
+      ul.append(li);
+    }
+    return ul;
+  }
+
+  /** Brings a session's tab to the front, in this window or in the window that has it. */
+  private showTab(t: RegistryEntry): void {
+    if (t.window === this.windowName) {
+      const entry = this.entries.find((e) => e.kind === 'terminal' && e.tab.id === t.tab);
+      if (entry) this.activate(entry);
+      return;
+    }
+    void goApp()
+      .WindowFocus(t.window)
+      .then(() => relayNow(t.window, { type: 'tab:activate', tab: t.tab }))
+      .catch((err: unknown) => this.notify(`Could not switch windows: ${errorText(err)}`));
   }
 
   // --- frames ---
@@ -714,6 +772,12 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     if (msg.type === 'registry') {
       brokerIsReady();
       this.registry = msg.tabs;
+      this.renderSessions();
+      return;
+    }
+    if (msg.type === 'tab:activate') {
+      const entry = this.entries.find((e) => e.kind === 'terminal' && e.tab.id === msg.tab);
+      if (entry) this.activate(entry);
       return;
     }
     if (msg.type === 'ui:ask') {
@@ -749,9 +813,32 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       this.notify(`Could not open a window: ${errorText(err)}`);
       return;
     }
+    await this.moveTab(entry, name);
+  }
+
+  /** The active session joins the main window (Window menu, from a detached window). */
+  private async mergeActiveIntoMain(): Promise<void> {
+    const entry = this.active;
+    if (entry?.kind !== 'terminal' || entry.tab.isDemo || this.windowName === MAIN_WINDOW) return;
+    await this.moveTab(entry, MAIN_WINDOW);
+    void goApp().WindowFocus(MAIN_WINDOW).catch(() => undefined);
+  }
+
+  /**
+   * Hands a terminal tab to another window: the broker re-homes the session and that
+   * window adopts it. A detached window that gave away its last tab closes.
+   */
+  private async moveTab(entry: Entry, window: string): Promise<void> {
+    if (entry.kind !== 'terminal' || !entry.tab.profile) return;
     entry.tab.handOver();
-    void relay('broker', { type: 'tab:move', tab: entry.tab.id, window: name }).catch(() => undefined);
+    try {
+      await relay('broker', { type: 'tab:move', tab: entry.tab.id, window });
+    } catch (err) {
+      this.notify(`Could not move the tab: ${errorText(err)}`);
+      return;
+    }
     this.removeEntry(entry);
+    if (this.windowName !== MAIN_WINDOW && !this.entries.length) void goApp().WindowClose(this.windowName).catch(() => undefined);
   }
 
   /** A yes/no question the broker needs answered by the user of this window. */
@@ -784,7 +871,9 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
 
   /** Shortcuts that work while focus is in the shell (menus, sidebar), not inside a terminal. */
   private onShellKey(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape') this.closeMenus();
+    if (ev.key !== 'Escape') return;
+    if (document.querySelector('.menu.open')) this.closeMenus();
+    else if (this.logOpen) this.toggleLog(false);
   }
 
   // --- toolbar ---
@@ -896,7 +985,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
         label: 'View',
         items: [
           { label: 'Connections Panel', run: () => this.toggleConnections(), checked: () => !this.sidebar.hidden },
-          { label: 'Session Log', run: () => this.toggleLog(), checked: () => !this.logEl.hidden },
+          { label: 'Session Log', run: () => this.toggleLog(), checked: () => this.logOpen },
           { label: 'Key Overlay', run: () => t()?.toggleKeyOverlay(), enabled: () => !!t() },
           '-',
           { label: 'Demo Screen', run: () => this.openDemo() },
@@ -944,6 +1033,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
           '-',
           { label: 'New Window', run: () => void this.newWindow().catch((err: unknown) => this.notify(`Could not open a window: ${errorText(err)}`)) },
           { label: 'Move Tab to New Window', run: () => void this.moveActiveToNewWindow(), enabled: live },
+          { label: 'Merge Tab into Main Window', run: () => void this.mergeActiveIntoMain(), enabled: () => live() && this.windowName !== MAIN_WINDOW },
         ],
       },
       {
@@ -1026,11 +1116,16 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     if (next) this.activate(next);
   }
 
-  private toggleLog(): void {
-    this.logEl.hidden = !this.logEl.hidden;
-    if (!this.logEl.hidden) {
+  /** The session log grows up out of the status bar (click it, View > Session Log) and minimises back (Esc, the arrow). */
+  private toggleLog(show = !this.logOpen): void {
+    this.logPane.classList.toggle('open', show);
+    this.statusBar.classList.toggle('log-open', show);
+    this.statusText.title = show ? 'Minimise the session log' : 'Session log';
+    if (show) {
       this.logEl.textContent = this.logLines.join('\n');
       this.logEl.scrollTop = this.logEl.scrollHeight;
+    } else {
+      this.focusActive();
     }
   }
 

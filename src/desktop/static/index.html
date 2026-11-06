@@ -38,8 +38,11 @@
     </div>
   </section>
 </div>
-<pre id="log" hidden></pre>
-<footer id="statusbar"><span id="status-text">Ready</span><span id="status-right"></span></footer>
+<section id="logpane" aria-label="Session log">
+  <div class="log-head"><span>Session log</span><button id="log-close" type="button" title="Minimise (Esc)">&#x25BE;</button></div>
+  <pre id="log"></pre>
+</section>
+<footer id="statusbar"><button id="status-text" type="button" title="Session log">Ready</button><span id="status-right"></span></footer>
 <pre id="print-area" aria-hidden="true"></pre>
 <script src="shell.js"></script>
 </body>

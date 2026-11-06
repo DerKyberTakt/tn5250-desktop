@@ -34,7 +34,9 @@ export type ToWindow =
   | { type: 'tab:trace'; tab: string; request: string; trace: Record<string, unknown> | undefined }
   | { type: 'tab:gone'; tab: string }
   | { type: 'ui:ask'; request: string; tab: string; title: string; text: string; ok: string; then?: 'openSettings' }
-  | { type: 'registry'; tabs: RegistryEntry[] };
+  | { type: 'registry'; tabs: RegistryEntry[] }
+  /** From another window (the Connections tree): bring this tab to the front. */
+  | { type: 'tab:activate'; tab: string };
 
 /** What every window knows about every session, for the Connections tree. */
 export interface RegistryEntry {
