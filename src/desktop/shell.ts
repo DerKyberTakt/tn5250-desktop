@@ -14,6 +14,7 @@ import { Store } from './store';
 import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow } from './relay';
 import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
+import { TabDrag, reorder, type Point } from './tabDrag';
 
 const APP_NAME = 'TN5250 Terminal';
 const PROJECT_URL = 'https://github.com/DerKyberTakt/tn5250-desktop';
@@ -62,8 +63,20 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   /** Every session in every window, as the broker reports it. */
   private registry: RegistryEntry[] = [];
 
-  private readonly entries: Entry[] = [];
+  private entries: Entry[] = [];
   private active: Entry | undefined;
+  private readonly drag = new TabDrag<Entry>({
+    bar: byId<HTMLDivElement>('tabbar'),
+    buttonOf: (e) => e.button,
+    items: () => this.entries,
+    detachable: (e) => e.kind === 'terminal' && !e.tab.isDemo,
+    windows: () => goApp().WindowList().then((w) => w ?? []),
+    windowName: windowNameFromUrl(location.search),
+    onReorder: (e, to) => this.reorderTab(e, to),
+    onDetach: (e, origin) => void this.detachTab(e, origin),
+    onMerge: (e, window) => void this.mergeTab(e, window),
+    log: (line) => this.log(line),
+  });
   private selectedSession = -1;
   private readonly logLines: string[] = [];
   private statusTimer: ReturnType<typeof setTimeout> | undefined;
@@ -513,8 +526,48 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     this.tabbar.append(entry.button);
     this.frames.append(entry.tab.frame);
     this.renderTabButton(entry);
+    this.drag.attach(entry);
     if (activate) this.activate(entry);
     else this.refresh();
+  }
+
+  /** A tab dragged within the bar: new place in the order (entries and buttons alike). */
+  private reorderTab(entry: Entry, to: number): void {
+    const from = this.entries.indexOf(entry);
+    if (from < 0) return;
+    this.entries = reorder(this.entries, from, to);
+    const next = this.entries[this.entries.indexOf(entry) + 1];
+    this.tabbar.insertBefore(entry.button, next ? next.button : null);
+    this.syncSettingsTabs();
+  }
+
+  /** A tab dropped outside every window: a new window opens there and takes the session. */
+  private async detachTab(entry: Entry, origin: Point): Promise<void> {
+    const name = `win-${Date.now().toString(36)}`;
+    try {
+      await goApp().WindowOpen(name, APP_NAME, origin.x, origin.y, window.outerWidth, window.outerHeight);
+    } catch (err) {
+      this.notify(`Could not open a window: ${errorText(err)}`);
+      return;
+    }
+    await this.moveTab(entry, name);
+  }
+
+  /** A tab dropped on another window of the app: that window takes the session. */
+  private async mergeTab(entry: Entry, window: string): Promise<void> {
+    await this.moveTab(entry, window);
+    void goApp().WindowFocus(window).catch(() => undefined);
+  }
+
+  /** The tab a window just adopted lands like a drop: the blob relaxes into a tab, the bar ripples. */
+  private dropIn(entry: Entry): void {
+    entry.button.classList.add('drop-in');
+    const ripple = el('span', 'ripple');
+    entry.button.append(ripple);
+    setTimeout(() => {
+      entry.button.classList.remove('drop-in');
+      ripple.remove();
+    }, 700);
   }
 
   private renderTabButton(entry: Entry): void {
@@ -568,6 +621,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     this.entries.splice(i, 1);
     entry.tab.dispose();
     entry.button.remove();
+    this.drag.detach(entry);
     if (this.active === entry) {
       this.active = undefined;
       const next = this.entries[Math.min(i, this.entries.length - 1)];
@@ -598,8 +652,10 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
 
   private refresh(): void {
     this.empty.hidden = this.entries.length > 0;
-    // One tab needs no tab bar (the window title names it); it appears with the second tab.
-    this.tabbar.hidden = this.entries.length < 2;
+    // One tab needs no tab bar (the window title names it); it appears with the second tab,
+    // or as soon as there is another window to drag the tab to.
+    const windows = new Set(this.registry.map((t) => t.window)).add(this.windowName);
+    this.tabbar.hidden = this.entries.length === 0 || (this.entries.length < 2 && windows.size < 2);
     const t = this.activeTerminal();
     const title = this.active ? `${this.active.tab.title} - ${APP_NAME}` : APP_NAME;
     document.title = title;
@@ -773,6 +829,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       brokerIsReady();
       this.registry = msg.tabs;
       this.renderSessions();
+      this.refresh();
       return;
     }
     if (msg.type === 'tab:activate') {
@@ -791,7 +848,9 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       // A session handed to this window from another one: adopt it as a tab.
       const tab = new TerminalTab(this, msg.profile, { id: msg.tab, letter: msg.letter, profile: msg.profile, deviceTemplate: msg.deviceTemplate, status: msg.status, detail: msg.detail });
       this.sidebar.hidden = true;
-      this.addEntry({ kind: 'terminal', tab, button: el('div') }, true);
+      const adopted: Entry = { kind: 'terminal', tab, button: el('div') };
+      this.addEntry(adopted, true);
+      this.dropIn(adopted);
     }
   }
 
