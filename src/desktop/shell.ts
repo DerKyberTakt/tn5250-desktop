@@ -10,7 +10,7 @@ import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
 import { ConsoleTab, type ConsoleHost, type ConsoleMode } from './consoleTab';
 import { SqlTab, type SqlHost } from './sqlTab';
-import { Store } from './store';
+import { Store, type AppTheme } from './store';
 import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow } from './relay';
 import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
@@ -107,7 +107,9 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     } catch (err) {
       this.log(`system info: ${errorText(err)}`);
     }
+    this.applyTheme();
     this.store.onChange(() => {
+      this.applyTheme();
       for (const e of this.entries) {
         if (e.kind === 'terminal') e.tab.pushConfig();
         else if (e.kind === 'settings') e.tab.push();
@@ -524,6 +526,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       }
     });
     this.tabbar.append(entry.button);
+    if (entry.tab.frame instanceof HTMLIFrameElement) entry.tab.frame.addEventListener('load', () => this.applyThemeTo(entry.tab.frame));
     this.frames.append(entry.tab.frame);
     this.renderTabButton(entry);
     this.drag.attach(entry);
@@ -630,6 +633,23 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     if (!this.entries.length) this.sidebar.hidden = false;
     this.refresh();
     this.focusActive();
+  }
+
+  /** View > Appearance: data-theme on the shell page and on every frame (they share theme.css). */
+  private applyTheme(): void {
+    const theme = this.store.appTheme;
+    setTheme(document, theme);
+    for (const e of this.entries) this.applyThemeTo(e.tab.frame);
+  }
+
+  private applyThemeTo(frame: HTMLElement): void {
+    if (!(frame instanceof HTMLIFrameElement)) return;
+    try {
+      const doc = frame.contentDocument;
+      if (doc) setTheme(doc, this.store.appTheme);
+    } catch {
+      // a frame of another origin (none today)
+    }
   }
 
   /** Keyboard focus back to the active tab (after menus, dialogs, closing tabs, hiding the panel). */
@@ -1047,6 +1067,10 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
           { label: 'Session Log', run: () => this.toggleLog(), checked: () => this.logOpen },
           { label: 'Key Overlay', run: () => t()?.toggleKeyOverlay(), enabled: () => !!t() },
           '-',
+          { label: 'Appearance: System', run: () => void this.store.setAppTheme('system'), checked: () => this.store.appTheme === 'system' },
+          { label: 'Appearance: Light', run: () => void this.store.setAppTheme('light'), checked: () => this.store.appTheme === 'light' },
+          { label: 'Appearance: Dark', run: () => void this.store.setAppTheme('dark'), checked: () => this.store.appTheme === 'dark' },
+          '-',
           { label: 'Demo Screen', run: () => this.openDemo() },
           { label: 'Demo Screen Size 24x80 / 27x132', run: () => t()?.toggleScreenSize(), enabled: () => !!t()?.isDemo },
         ],
@@ -1244,6 +1268,13 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       'No telemetry. Connections go only to the hosts you enter, and to github.com to check for updates (Help > Check for Updates at Startup turns that off).',
     ]);
   }
+}
+
+/** data-theme="light" | "dark" forces a scheme; absent = the system's. */
+function setTheme(doc: Document, theme: AppTheme): void {
+  const root = doc.documentElement;
+  if (theme === 'system') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', theme);
 }
 
 /** The session name older versions keyed a saved password by, when the profile is for host. */

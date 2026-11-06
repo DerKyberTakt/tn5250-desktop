@@ -20,6 +20,8 @@ interface SettingsFile {
   lastSession?: string;
   /** Check GitHub for a newer release at startup (Help menu); on unless false. */
   checkForUpdates?: boolean;
+  /** View > Appearance: follow the system, or force light / dark. */
+  appTheme?: AppTheme;
   /** Host and user of the last IFS sign-on, to fill the dialog (the password is in the credential store). */
   ifsLast?: { host: string; user: string };
   /** Which USER@host passwords are saved in the credential store (names only, no passwords). */
@@ -27,6 +29,9 @@ interface SettingsFile {
 }
 
 type Listener = () => void;
+
+export type AppTheme = 'system' | 'light' | 'dark';
+const APP_THEMES: AppTheme[] = ['system', 'light', 'dark'];
 
 export class Store {
   private file: SettingsFile = { version: 1, defaults: {}, sessions: [] };
@@ -43,6 +48,7 @@ export class Store {
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions.filter((s) => typeof s?.host === 'string') : [],
       lastSession: typeof parsed.lastSession === 'string' ? parsed.lastSession : undefined,
       checkForUpdates: typeof parsed.checkForUpdates === 'boolean' ? parsed.checkForUpdates : undefined,
+      appTheme: APP_THEMES.includes(parsed.appTheme as AppTheme) ? parsed.appTheme : undefined,
       credentials: Array.isArray(parsed.credentials)
         ? parsed.credentials.filter((c) => typeof c?.user === 'string' && typeof c?.host === 'string').map((c) => ({ user: c.user, host: c.host }))
         : undefined,
@@ -119,6 +125,16 @@ export class Store {
 
   async setCheckForUpdates(on: boolean): Promise<void> {
     this.file.checkForUpdates = on;
+    await this.persist();
+  }
+
+  get appTheme(): AppTheme {
+    return this.file.appTheme ?? 'system';
+  }
+
+  async setAppTheme(theme: AppTheme): Promise<void> {
+    if (this.appTheme === theme) return;
+    this.file.appTheme = theme === 'system' ? undefined : theme;
     await this.persist();
   }
 

@@ -137,6 +137,11 @@ func (a *App) newWindow(name, title string, width, height int) *application.Webv
 	if name != mainWindow {
 		url = "/?window=" + name
 	}
+	// The colour shown until the page paints: the shell's chrome colour of the system scheme.
+	background := application.NewRGB(236, 236, 236)
+	if a.wails.Env.IsDarkMode() {
+		background = application.NewRGB(43, 43, 43)
+	}
 	win := a.wails.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             name,
 		Title:            title,
@@ -144,7 +149,7 @@ func (a *App) newWindow(name, title string, width, height int) *application.Webv
 		Height:           height,
 		MinWidth:         640,
 		MinHeight:        420,
-		BackgroundColour: application.NewRGB(0, 0, 0),
+		BackgroundColour: background,
 		URL:              url,
 		EnableFileDrop:   true,
 		Windows:          application.WindowsWindow{Theme: application.SystemDefault},

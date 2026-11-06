@@ -13,6 +13,13 @@ It shares its TN5250 engine and terminal UI with the
 - 24x80 and 27x132 sessions over telnet or TLS, auto-fit, ACS-style keyboard map,
   bypass sign-on, reconnect with a visible connection status.
 - Session tabs, quick connect, saved sessions, ACS-style menus and toolbar.
+- **Several windows**, as in ACS: drag a tab out of the window to give the session a window
+  of its own, drag it onto another window of the app to merge it there, drag within the
+  bar to reorder (also Window > Move Tab to New Window / Merge Tab into Main Window). The
+  session keeps running while it moves; closing a window hands its sessions to the main
+  window. The Connections panel lists every open tab under its saved session, whichever
+  window shows it, and the status bar opens the session log. View > Appearance picks
+  System, Light or Dark.
 - **Enhanced 5250 interface**: GUI windows with titles, scroll bars you can click and drag
   (DDS `SFLEND(*SCRBAR)`), menu bars, pull-downs, radio buttons, check boxes, selection
   lists and push buttons, continued entry fields, word wrap, cursor progression,

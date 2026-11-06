@@ -34,7 +34,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --vscode-foreground: #d4d4d4;
     --vscode-editor-background: #1e1e1e;
     --vscode-panel-border: #3c3c3c;
@@ -63,6 +63,45 @@
     --vscode-inputValidation-warningBackground: #3a3000;
     --vscode-inputValidation-warningBorder: #b89500;
   }
+}
+
+/* View > Appearance: Dark (the setting beats the system scheme). */
+:root[data-theme="dark"] {
+  --vscode-foreground: #d4d4d4;
+  --vscode-editor-background: #1e1e1e;
+  --vscode-panel-border: #3c3c3c;
+  --vscode-input-background: #2a2a2a;
+  --vscode-input-foreground: #e0e0e0;
+  --vscode-input-border: #4a4a4a;
+  --vscode-dropdown-background: #2a2a2a;
+  --vscode-dropdown-foreground: #e0e0e0;
+  --vscode-button-background: #2f6fb8;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-secondaryBackground: #3a3a3a;
+  --vscode-button-secondaryForeground: #e0e0e0;
+  --vscode-textLink-foreground: #6aa7e8;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-list-activeSelectionBackground: #094771;
+  --vscode-list-activeSelectionForeground: #ffffff;
+  --vscode-badge-background: #2f6fb8;
+  --vscode-badge-foreground: #ffffff;
+  --vscode-editorHoverWidget-background: #252526;
+  --vscode-editorHoverWidget-foreground: #d4d4d4;
+  --vscode-editorHoverWidget-border: #454545;
+  --vscode-notifications-foreground: #e0e0e0;
+  --vscode-notifications-background: #252526;
+  --vscode-notifications-border: #454545;
+  --vscode-inputValidation-warningForeground: #e0e0e0;
+  --vscode-inputValidation-warningBackground: #3a3000;
+  --vscode-inputValidation-warningBorder: #b89500;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 body {

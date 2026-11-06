@@ -2,6 +2,11 @@
 
 ## 0.2.1 - unreleased
 
+- Windows: sessions can be spread over several windows, as in ACS. Drag a tab out of the window to detach it into a window of its own, drag it onto another window of the app to merge it there, drag within the bar to reorder (Window menu: New Window, Move Tab to New Window, Merge Tab into Main Window). The session keeps running throughout: every session lives in one hidden page of the app, the windows only show them. Closing a window hands its sessions to the main window.
+- Connections panel: each saved session shows its open tabs underneath (in any window) with their state; click one to bring it to the front. Tabs of quick connects sit under "Other connections".
+- Status bar: click it (or View > Session Log) and the session log grows up out of it; the arrow or Esc minimises it. Notifications go to the log too.
+- View > Appearance: System, Light or Dark for the whole app; the window background follows the system scheme while the page loads.
+
 - Fixed: Save Screen left the GUI windows out of the image, so a screen restored after a called program (Restore Screen) came back with the window borders as raw blue cells instead of windows. The image now carries every Create Window with the cells it shows, in order, and Remove GUI Window still uncovers the screen beneath.
 - Ported to Wails v3 (3.1.0): one process can own several windows, which the next entries build on. Same features, same settings file and saved passwords. Build metadata moved from `wails.json` to `build/config.yml`; the Linux build now uses GTK 4 + WebKitGTK 6.0 (Ubuntu 24.04+, Debian 13+). A second launch of the exe (`tn5250-terminal host[:port]`) now opens that session in the running window instead of only raising it.
 

@@ -18,7 +18,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --chrome-bg: #2b2b2b;
     --chrome-fg: #e0e0e0;
     --chrome-border: #3d3d3d;
@@ -31,6 +31,21 @@
     --side-bg: #232323;
     --status-bg: #262626;
   }
+}
+
+/* View > Appearance: Dark (the setting beats the system scheme). */
+:root[data-theme="dark"] {
+  --chrome-bg: #2b2b2b;
+  --chrome-fg: #e0e0e0;
+  --chrome-border: #3d3d3d;
+  --chrome-hover: #3a3a3a;
+  --menu-bg: #252526;
+  --menu-hover: #094771;
+  --tab-bg: #2f2f2f;
+  --tab-active-bg: #1e1e1e;
+  --tab-accent: #4d8fd8;
+  --side-bg: #232323;
+  --status-bg: #262626;
 }
 
 * {
