@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CodePage } from '../../src/engine/codepage';
+import { CodePage, UNPRINTABLE } from '../../src/engine/codepage';
 
 describe('CodePage 037', () => {
   const cp = CodePage.get(37);
@@ -14,10 +14,21 @@ describe('CodePage 037', () => {
     expect(cp.decode(0x7c)).toBe('@');
   });
 
-  it('decodes nulls and controls as blanks', () => {
+  it('decodes nulls and the attribute range as blanks', () => {
     expect(cp.decode(0x00)).toBe(' ');
-    expect(cp.decode(0x1f)).toBe(' ');
+    expect(cp.decode(0x20)).toBe(' ');
     expect(cp.decode(0x3f)).toBe(' ');
+  });
+
+  it('shows control bytes written as data as a box, like ACS (report data with bad conversions)', () => {
+    expect(cp.decode(0x01)).toBe(UNPRINTABLE);
+    expect(cp.decode(0x1f)).toBe(UNPRINTABLE);
+    expect(cp.decode(0xff)).toBe(UNPRINTABLE);
+    expect(CodePage.get(273).decode(0x15)).toBe(UNPRINTABLE);
+    expect(cp.decodeBytes(Uint8Array.from([0xc2, 0x81, 0x1a, 0xa2]))).toBe(`Ba${UNPRINTABLE}s`);
+    // Printable non-ASCII stays itself.
+    expect(cp.decode(0x51)).toBe('\u00e9');
+    expect(cp.decode(0x41)).toBe('\u00a0');
   });
 
   it('encodes and round-trips printable ASCII', () => {

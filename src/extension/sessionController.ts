@@ -176,6 +176,14 @@ export class SessionController {
     return this.status === 'connected';
   }
 
+  /**
+   * The current connection state, for a webview that loads while the session is already
+   * running (a tab moved to another window): status events only report changes.
+   */
+  get connectionState(): { status: ConnectionStatus; detail: string; info: ConnectionInfo } {
+    return { status: this.status, detail: this.lastDetail, info: { attempt: this.reconnectAttempt } };
+  }
+
   async connect(): Promise<void> {
     if (this.status === 'connecting' || this.status === 'connected') return;
     this.wantConnected = true;

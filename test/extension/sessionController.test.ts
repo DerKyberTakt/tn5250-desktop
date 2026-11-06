@@ -381,6 +381,16 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
     expect(h.failed).toEqual([]);
   });
 
+  it('connectionState reports the current status and detail for a webview that loads late', async () => {
+    const h = harness();
+    expect(h.controller.connectionState.status).toBe('idle');
+    await h.start();
+    expect(h.controller.connectionState).toEqual({ status: 'connected', detail: 'pub400.com:23', info: { attempt: 0 } });
+    h.controller.disconnect();
+    expect(h.controller.connectionState.status).toBe('disconnected');
+    expect(h.controller.connectionState.detail).toBe('disconnected');
+  });
+
   describe('bypass sign-on gate (QMAXSIGN)', () => {
     const REFUSED = 'CPF1120 - User USER1 does not exist or password not correct for user profile.';
     const sent = (h: ReturnType<typeof harness>): boolean => h.logs.some((l) => l.startsWith('bypass sign-on sent'));

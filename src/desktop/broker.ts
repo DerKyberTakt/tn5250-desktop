@@ -145,6 +145,10 @@ class Broker {
         switch (m.type) {
           case 'ready':
             c.publish();
+            // A frame that loads while the session runs (tab moved to another window) must
+            // not sit on "Not connected": status events only report changes.
+            this.send(s.window, { type: 'tab:output', tab: s.tab, msg: { type: 'status', ...c.connectionState } });
+            this.send(s.window, { type: 'tab:state', tab: s.tab, status: s.status, detail: s.detail });
             if (s.profile.autoConnect !== false) void c.connect();
             break;
           case 'action':
