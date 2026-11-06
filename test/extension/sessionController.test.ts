@@ -4,6 +4,9 @@ import { CertificateError } from '../../src/shared/tlsTrust';
 import { CodePage } from '../../src/engine/codepage';
 import { bytesToHex } from '../helpers/fixture';
 import { SessionController } from '../../src/extension/sessionController';
+import { signonGate } from '../../src/shared/signonGate';
+
+beforeEach(() => signonGate.reset());
 import type { ConnectionInfo, ConnectionStatus } from '../../src/shared/protocol';
 import { SETTINGS_DEFAULTS, type TerminalSettings } from '../../src/shared/settings';
 import { hexToBytes, loadCapture } from '../helpers/fixture';
@@ -299,7 +302,8 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
     vi.useRealTimers();
     const profile: TerminalSettings = { ...SETTINGS_DEFAULTS, host: 'pub400.com', port: 23, ...over };
     const logs: string[] = [];
-    const hints: Array<{ codePage: number; chars: string[] }> = [];
+    const hints: Array<{ codePage: number; chars: string[]; paused?: boolean }> = [];
+    const failed: string[] = [];
     let transport: FakeTransport | undefined;
     const controller = new SessionController(
       profile,
@@ -310,6 +314,7 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
         log: (m) => logs.push(m),
         password: async () => password,
         signonHint: (info) => hints.push(info),
+        signonFailed: (info) => failed.push(info.key),
       },
       (events) => (transport = new FakeTransport(events)),
     );
@@ -330,8 +335,10 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
       controller.press('enter');
       await tick();
     };
-    return { controller, logs, hints, start, host, signon, wire: () => (transport?.writes ?? []).map((b) => bytesToHex(b)).join(' ') };
+    return { controller, logs, hints, failed, start, host, signon, tick, wire: () => (transport?.writes ?? []).map((b) => bytesToHex(b)).join(' ') };
   }
+
+  beforeEach(() => signonGate.reset());
 
   it('a failed sign-on with ! in the password raises the hint once, naming the character and the code page', async () => {
     const h = harness();
@@ -340,7 +347,7 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
     await h.signon('pa!s');
     expect(h.wire()).toContain(e('pa!s'));
     await h.host(signonScreen('CPF1120 - User USER1 does not exist or password not correct for user profile.'));
-    expect(h.hints).toEqual([{ codePage: 37, chars: ['!'] }]);
+    expect(h.hints).toEqual([{ codePage: 37, chars: ['!'], paused: false }]);
     expect(h.logs.some((l) => l.includes('code page 37') && l.includes('(!)') && !l.includes('pa!s'))).toBe(true);
     // A second failure on the same connection stays quiet.
     await h.signon('pa!s');
@@ -370,7 +377,78 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
     await h.host(signonScreen('', 273));
     expect(h.wire()).toContain(e('ge!heim', 273));
     await h.host(signonScreen('CPF1120 - User USER1 does not exist or password not correct for user profile.', 273));
-    expect(h.hints).toEqual([{ codePage: 273, chars: ['!'] }]);
+    expect(h.hints).toEqual([{ codePage: 273, chars: ['!'], paused: true }]);
+    expect(h.failed).toEqual([]);
+  });
+
+  describe('bypass sign-on gate (QMAXSIGN)', () => {
+    const REFUSED = 'CPF1120 - User USER1 does not exist or password not correct for user profile.';
+    const sent = (h: ReturnType<typeof harness>): boolean => h.logs.some((l) => l.startsWith('bypass sign-on sent'));
+
+    it('a second session for the same user and host waits for the first attempt; after a refusal it stays quiet and says why', async () => {
+      const a = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      const b = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      await a.start();
+      await b.start();
+      await a.host(signonScreen());
+      await b.host(signonScreen());
+      expect(sent(a)).toBe(true);
+      expect(sent(b)).toBe(false);
+      await a.host(signonScreen(REFUSED));
+      await b.tick();
+      expect(a.failed).toEqual(['USER1@pub400.com']);
+      expect(a.logs.some((l) => l.includes('was refused: paused'))).toBe(true);
+      expect(sent(b)).toBe(false);
+      expect(b.wire()).not.toContain(e('Passw0rd'));
+      expect(b.logs.some((l) => l.includes('bypass sign-on not sent'))).toBe(true);
+      // A third session does not try either until something re-arms the gate.
+      const c = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      await c.start();
+      await c.host(signonScreen());
+      expect(sent(c)).toBe(false);
+      // Settings saved: one attempt again.
+      signonGate.rearmAll();
+      const d = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      await d.start();
+      await d.host(signonScreen());
+      expect(sent(d)).toBe(true);
+    });
+
+    it('after the first session signs on, the waiting ones go', async () => {
+      const a = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      const b = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      await a.start();
+      await b.start();
+      await a.host(signonScreen());
+      await b.host(signonScreen());
+      await a.host(menuScreen());
+      await b.tick();
+      expect(sent(b)).toBe(true);
+      expect(a.failed).toEqual([]);
+      expect(b.wire()).toContain(e('Passw0rd'));
+    });
+
+    it('another user on the same host is not held back', async () => {
+      const a = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      const b = harness({ autoSignon: true, signonUser: 'user2' }, 'Other1');
+      await a.start();
+      await b.start();
+      await a.host(signonScreen());
+      await b.host(signonScreen());
+      expect(sent(a)).toBe(true);
+      expect(sent(b)).toBe(true);
+    });
+
+    it('a reconnect by hand re-arms the gate for that user and host', async () => {
+      const a = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      await a.start();
+      await a.host(signonScreen());
+      await a.host(signonScreen(REFUSED));
+      expect(signonGate.isPaused('USER1@pub400.com')).toBe(true);
+      a.controller.disconnect();
+      a.controller.reconnectNow();
+      expect(signonGate.isPaused('USER1@pub400.com')).toBe(false);
+    });
   });
 
   it('a customised sign-on screen without the words "Sign On" (PUB400) still gets the hint', async () => {
@@ -381,7 +459,7 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
     await h.host(pub400());
     await h.signon('pa!s');
     await h.host(pub400('CPF1120 - User USER1 does not exist or password not correct for user profile.'));
-    expect(h.hints).toEqual([{ codePage: 37, chars: ['!'] }]);
+    expect(h.hints).toEqual([{ codePage: 37, chars: ['!'], paused: false }]);
   });
 
   it('a Change Password screen (three non-display fields) arms nothing', async () => {

@@ -9,6 +9,7 @@ import { expandDeviceName } from '../shared/deviceName';
 import type { PcCommandKind } from '../shared/pcCommand';
 import type { ConnectionStatus } from '../shared/protocol';
 import { buildTitle, resolveSettings, type TerminalSettings } from '../shared/settings';
+import { signonGate } from '../shared/signonGate';
 import { errorText, goApp, onRelay, relay, type SystemInfo } from './bridge';
 import { Credentials } from './credentials';
 import { GoTransport } from './goTransport';
@@ -130,6 +131,8 @@ class Broker {
       }
       case 'store:changed':
         await this.store.load();
+        // Settings saved or a password set: a paused bypass sign-on may try again, one session at a time.
+        signonGate.rearmAll();
         break;
       case 'tab:open':
         this.open(msg.tab, msg.window, msg.profile);
@@ -264,7 +267,8 @@ class Broker {
         pcCommandPolicy: () => this.liveSettings(s.profile).pcCommands,
         pcCommand: (kind, decision, wait) => this.handlePcCommand(s, kind, decision, wait),
         certificateRejected: (fingerprint, reason) => void this.offerTrust(s, fingerprint, reason),
-        signonHint: (info) => void this.signonHint(s, info.codePage, info.chars),
+        signonHint: (info) => void this.signonHint(s, info.codePage, info.chars, info.paused === true),
+        signonFailed: (info) => void this.signonFailed(s, info.key),
       },
       (events) => new GoTransport(events),
     );
@@ -302,11 +306,22 @@ class Broker {
     this.broadcastRegistry();
   }
 
-  private async signonHint(s: Session, codePage: number, chars: string[]): Promise<void> {
+  private async signonHint(s: Session, codePage: number, chars: string[], paused: boolean): Promise<void> {
     await this.ask(
       s,
       'Sign-on failed: check the code page',
-      `The password contains characters that are different in other code pages (${chars.join(' ')}). This session uses code page ${codePage}; the host reads what you type with its own CCSID (QCCSID or the user profile). If the user ID and password are right, set Host Code Page to the host's value. Each failed attempt counts toward QMAXSIGN.`,
+      `The password contains characters that are different in other code pages (${chars.join(' ')}). This session uses code page ${codePage}; the host reads what you type with its own CCSID (QCCSID or the user profile). If the user ID and password are right, set Host Code Page to the host's value. Each failed attempt counts toward QMAXSIGN.${paused ? ' Bypass sign-on is paused for this user and host in every session until the settings are saved.' : ''}`,
+      'Open Settings',
+      'openSettings',
+    );
+  }
+
+  /** A bypass sign-on was refused: it is paused for that user and host so QMAXSIGN is not used up. */
+  private async signonFailed(s: Session, key: string): Promise<void> {
+    await this.ask(
+      s,
+      'Bypass sign-on paused',
+      `The bypass sign-on for ${key} was refused (the host showed the sign-on screen again). Bypass sign-on is paused for this user and host in every session, so the failed attempts do not reach QMAXSIGN. Check the saved password and the user ID; saving the settings or setting the password tries again, one session at a time.`,
       'Open Settings',
       'openSettings',
     );

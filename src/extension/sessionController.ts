@@ -5,6 +5,7 @@ import { variantChars } from '../engine/variant';
 import type { KeyAction } from '../shared/keymap';
 import { friendlyNetError } from '../shared/netErrors';
 import { isSignonScreen } from '../shared/screenText';
+import { SignonGate, signonGate } from '../shared/signonGate';
 import { classifyPcCommand, decidePcCommand, type PcCommandDecision, type PcCommandKind, type PcCommandPolicy } from '../shared/pcCommand';
 import type { ConnectionInfo, ConnectionStatus, OiaState, ScreenSnapshot } from '../shared/protocol';
 import type { TerminalSettings } from '../shared/settings';
@@ -26,6 +27,12 @@ export interface SessionControllerEvents {
   pcCommandPolicy?(): PcCommandPolicy;
   /** Password for bypass sign-on, if one is stored. */
   password?(): Promise<string | undefined>;
+  /**
+   * A bypass sign-on was refused (the host showed the sign-on screen again) and the
+   * password had no code-page variant characters (otherwise signonHint reports it).
+   * Bypass sign-on is now paused for that USER@host in every session.
+   */
+  signonFailed?(info: { key: string }): void;
   /**
    * The current bypass sign-on settings. A tab keeps the connection settings it was
    * opened with, but Bypass signon and the user ID should follow the settings page
@@ -53,6 +60,8 @@ export interface SessionControllerEvents {
 export interface SignonHint {
   codePage: number;
   chars: string[];
+  /** It was a bypass sign-on: bypass is now paused for that user and host. */
+  paused?: boolean;
 }
 
 /**
@@ -89,8 +98,11 @@ export class SessionController {
   private wantConnected = false;
   private signonDone = false;
   private signonSkipLogged = false;
-  /** Enter was pressed on a sign-on screen whose password field holds variant characters. */
-  private pendingSignon: { chars: string[]; screens: number } | undefined;
+  /**
+   * Enter was pressed on a sign-on screen: the variant characters of the password field
+   * (for the code page hint), and the gate key when it was a bypass sign-on to report.
+   */
+  private pendingSignon: { chars: string[]; screens: number; gate?: string } | undefined;
   private signonHintShown = false;
   private screensReceived = 0;
   private connectedAt = 0;
@@ -171,7 +183,7 @@ export class SessionController {
     this.session = this.createSession();
     this.signonDone = false;
     this.signonSkipLogged = false;
-    this.pendingSignon = undefined;
+    this.dropPendingSignon();
     this.signonHintShown = false;
     this.trace = [];
     this.traceStart = Date.now();
@@ -254,6 +266,7 @@ export class SessionController {
   disconnect(): void {
     this.wantConnected = false;
     this.clearTimers();
+    this.dropPendingSignon();
     const c = this.connection;
     this.connection = undefined;
     c?.close();
@@ -261,11 +274,19 @@ export class SessionController {
     this.publish();
   }
 
-  /** Connects now, skipping the wait for a scheduled reconnect. */
+  /** Connects now, skipping the wait for a scheduled reconnect. The user asked, so a paused bypass sign-on may try again. */
   reconnectNow(): void {
     if (this.status === 'connecting' || this.status === 'connected') return;
     this.clearTimers();
+    const user = (this.events.signon?.() ?? this.profile).signonUser.trim();
+    if (user) signonGate.rearm(SignonGate.key(user, this.profile.host));
     void this.connect();
+  }
+
+  /** A sign-on attempt whose answer will never come (new connection): the gate moves on. */
+  private dropPendingSignon(): void {
+    if (this.pendingSignon?.gate) signonGate.release(this.pendingSignon.gate);
+    this.pendingSignon = undefined;
   }
 
   dispose(): void {
@@ -287,12 +308,15 @@ export class SessionController {
    * that differ between code pages, so a failed attempt can point at the code page.
    * Only the list of such characters is kept, never the field's content.
    */
-  private armSignon(): void {
-    this.pendingSignon = undefined;
+  private armSignon(gate?: string): void {
+    this.dropPendingSignon();
     const passwordField = this.signonPasswordField();
-    if (!passwordField) return;
+    if (!passwordField) {
+      if (gate) signonGate.release(gate);
+      return;
+    }
     const chars = variantChars(this.session.screen.fieldBytes(passwordField), this.session.codePage);
-    if (chars.length) this.pendingSignon = { chars, screens: 0 };
+    if (chars.length || gate) this.pendingSignon = { chars, screens: 0, gate };
   }
 
   /** Entry fields of a sign-on screen beyond user and password (program, menu, library ...). */
@@ -318,15 +342,23 @@ export class SessionController {
     const pending = this.pendingSignon;
     if (!pending) return;
     if (this.session.state.inputInhibited !== 'none') {
-      if (++pending.screens > SessionController.SIGNON_ANSWER_SCREENS) this.pendingSignon = undefined;
+      if (++pending.screens > SessionController.SIGNON_ANSWER_SCREENS) this.dropPendingSignon();
       return;
     }
     this.pendingSignon = undefined;
-    if (!this.signonPasswordField() || this.signonHintShown) return;
+    const failed = !!this.signonPasswordField();
+    if (pending.gate) {
+      signonGate.report(pending.gate, !failed);
+      if (failed) {
+        this.events.log(`bypass sign-on for ${pending.gate} was refused: paused for this user and host in every session (QMAXSIGN); saving the settings, setting the password or reconnecting by hand tries again`);
+        if (!pending.chars.length) this.events.signonFailed?.({ key: pending.gate });
+      }
+    }
+    if (!failed || !pending.chars.length || this.signonHintShown) return;
     this.signonHintShown = true;
     const codePage = this.session.codePage.ccsid;
     this.events.log(`sign-on failed and the password has characters that differ between code pages (${pending.chars.join(' ')}); this session uses code page ${codePage}: check Host Code Page against the host's CCSID (README > Troubleshooting)`);
-    this.events.signonHint?.({ codePage, chars: pending.chars });
+    this.events.signonHint?.({ codePage, chars: pending.chars, paused: !!pending.gate });
   }
 
   type(text: string): void {
@@ -398,11 +430,22 @@ export class SessionController {
       return;
     }
     if (!this.connected) return;
+    // One attempt per user and host at a time; none after a refused one (QMAXSIGN).
+    const key = SignonGate.key(user, this.profile.host);
+    const verdict = await signonGate.acquire(key);
+    if (verdict === 'paused') {
+      this.events.log(`bypass sign-on not sent: an attempt for ${key} was refused and bypass sign-on is paused for this user and host; sign on by hand, or save the settings / set the password and reconnect`);
+      return;
+    }
+    if (!this.connected || this.session.state.inputInhibited !== 'none' || !this.signonPasswordField()) {
+      if (verdict === 'try') signonGate.release(key);
+      return;
+    }
     s.cursor = userField.start;
     this.session.type(user);
     s.cursor = passwordField.start;
     this.session.type(password);
-    this.armSignon();
+    this.armSignon(verdict === 'try' ? key : undefined);
     this.session.press('enter');
     this.events.log(`bypass sign-on sent (code page ${this.session.codePage.ccsid})`);
   }

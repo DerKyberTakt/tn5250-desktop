@@ -2,6 +2,8 @@
 
 ## 0.2.1 - unreleased
 
+- Bypass sign-on guards QMAXSIGN: sessions for the same user profile and host sign on one at a time, and after the host refuses one the others do not send the password at all (a log line and one dialog say so). Saving the settings, setting the password or reconnecting by hand tries again. Five tabs reloaded with a wrong code page, or a stale saved password on an auto-reconnect loop, no longer disable the profile. The session log names the code page in use on every connect.
+
 - Windows: sessions can be spread over several windows, as in ACS. Drag a tab out of the window to detach it into a window of its own, drag it onto another window of the app to merge it there, drag within the bar to reorder (Window menu: New Window, Move Tab to New Window, Merge Tab into Main Window). The session keeps running throughout: every session lives in one hidden page of the app, the windows only show them. Closing a window hands its sessions to the main window.
 - Connections panel: each saved session shows its open tabs underneath (in any window) with their state; click one to bring it to the front. Tabs of quick connects sit under "Other connections".
 - Status bar: click it (or View > Session Log) and the session log grows up out of it; the arrow or Esc minimises it. Notifications go to the log too.
