@@ -298,9 +298,10 @@ func (a *App) ClipboardSet(text string) error {
 }
 
 func (a *App) ClipboardGet() (string, error) {
+	// An empty clipboard, or one holding no text, pastes nothing; it is not an error.
 	text, ok := a.wails.Clipboard.Text()
 	if !ok {
-		return "", errors.New("clipboard not available")
+		return "", nil
 	}
 	return text, nil
 }

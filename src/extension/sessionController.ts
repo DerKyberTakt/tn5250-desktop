@@ -245,6 +245,7 @@ export class SessionController {
     this.screensReceived = 0;
     this.connectedAt = Date.now();
     this.setStatus('connected', `${this.profile.host}:${this.profile.port}`);
+    this.events.log(`session code page ${this.session.codePage.ccsid}, screen ${this.profile.screenSize}${this.profile.deviceName ? `, workstation ${this.profile.deviceName}` : ''}`);
     this.publish();
     this.touch();
   }
@@ -403,7 +404,7 @@ export class SessionController {
     this.session.type(password);
     this.armSignon();
     this.session.press('enter');
-    this.events.log('bypass sign-on sent');
+    this.events.log(`bypass sign-on sent (code page ${this.session.codePage.ccsid})`);
   }
 
   /** The byte trace of the current connection (tn5250-trace-*.json); non-display field data is blanked. */
