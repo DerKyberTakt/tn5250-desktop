@@ -411,12 +411,12 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
       expect(sent(b)).toBe(false);
       expect(b.wire()).not.toContain(e('Passw0rd'));
       expect(b.logs.some((l) => l.includes('bypass sign-on not sent'))).toBe(true);
-      // A third session does not try either until something re-arms the gate.
-      const c = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
-      await c.start();
-      await c.host(signonScreen());
-      expect(sent(c)).toBe(false);
-      // Settings saved: one attempt again.
+      // b reconnecting on its own (auto-reconnect) does not try again...
+      b.controller.disconnect();
+      await b.start();
+      await b.host(signonScreen());
+      expect(b.logs.filter((l) => l.startsWith('bypass sign-on sent'))).toHaveLength(0);
+      // ...while settings saved re-arm the gate: one attempt again.
       signonGate.rearmAll();
       const d = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
       await d.start();
@@ -447,6 +447,28 @@ describe('SessionController sign-on hint (issue #5: variant characters and the c
       await b.host(signonScreen());
       expect(sent(a)).toBe(true);
       expect(sent(b)).toBe(true);
+    });
+
+    it('a session opened later by the user tries again; rapid opens still queue behind the attempt in flight', async () => {
+      const a = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      await a.start();
+      await a.host(signonScreen());
+      await a.host(signonScreen(REFUSED));
+      expect(signonGate.isPaused('USER1@pub400.com')).toBe(true);
+      const b = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      await b.start();
+      expect(signonGate.isPaused('USER1@pub400.com')).toBe(false);
+      await b.host(signonScreen());
+      expect(sent(b)).toBe(true);
+      // c opens while b's attempt is unanswered: it waits, and b's refusal pauses it.
+      const c = harness({ autoSignon: true, signonUser: 'user1' }, 'Passw0rd');
+      await c.start();
+      await c.host(signonScreen());
+      expect(sent(c)).toBe(false);
+      await b.host(signonScreen(REFUSED));
+      await c.tick();
+      expect(sent(c)).toBe(false);
+      expect(c.logs.some((l) => l.includes('bypass sign-on not sent'))).toBe(true);
     });
 
     it('a reconnect by hand re-arms the gate for that user and host', async () => {

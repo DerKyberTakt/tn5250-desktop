@@ -7,7 +7,7 @@
  * Passwords saved by earlier versions (per session name, or IFS-only) are still found
  * and moved to the shared key the first time they are used.
  */
-import { goApp } from './bridge';
+import { goApp, relay } from './bridge';
 import type { Store } from './store';
 
 export interface Credential {
@@ -53,6 +53,9 @@ export class Credentials {
   async save(user: string, host: string, password: string): Promise<void> {
     await goApp().SecretSet(credentialKey(user, host), password);
     await this.store.addCredential({ user: user.trim().toUpperCase(), host: host.trim().toLowerCase() });
+    // A password set again under an existing key changes no settings, but the broker must
+    // still hear of it: a paused bypass sign-on tries again with the new password.
+    void relay('broker', { type: 'store:changed' }).catch(() => undefined);
   }
 
   /** Forgets the password, including copies under the keys of earlier versions. */

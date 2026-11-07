@@ -325,7 +325,7 @@ class Broker {
     await this.ask(
       s,
       'Bypass sign-on paused',
-      `The bypass sign-on for ${key} was refused (the host showed the sign-on screen again). Bypass sign-on is paused for this user and host in every session, so the failed attempts do not reach QMAXSIGN. Check the saved password and the user ID; saving the settings or setting the password tries again, one session at a time.`,
+      `The bypass sign-on for ${key} was refused (the host showed the sign-on screen again). Bypass sign-on is paused for this user and host in every session, so the failed attempts do not reach QMAXSIGN. Check the saved password and the user ID; setting the password, saving the settings or opening the session again tries again, one session at a time.`,
       'Open Settings',
       'openSettings',
     );

@@ -98,6 +98,7 @@ export class SessionController {
   private wantConnected = false;
   private signonDone = false;
   private signonSkipLogged = false;
+  private everConnected = false;
   /**
    * Enter was pressed on a sign-on screen: the variant characters of the password field
    * (for the code page hint), and the gate key when it was a bypass sign-on to report.
@@ -186,6 +187,13 @@ export class SessionController {
 
   async connect(): Promise<void> {
     if (this.status === 'connecting' || this.status === 'connected') return;
+    if (!this.everConnected) {
+      // A session the user opened is their decision to try again after a paused bypass
+      // sign-on; reconnects of a running session are not.
+      this.everConnected = true;
+      const user = (this.events.signon?.() ?? this.profile).signonUser.trim();
+      if (user) signonGate.rearm(SignonGate.key(user, this.profile.host));
+    }
     this.wantConnected = true;
     this.clearTimers();
     this.session = this.createSession();
@@ -358,7 +366,7 @@ export class SessionController {
     if (pending.gate) {
       signonGate.report(pending.gate, !failed);
       if (failed) {
-        this.events.log(`bypass sign-on for ${pending.gate} was refused: paused for this user and host in every session (QMAXSIGN); saving the settings, setting the password or reconnecting by hand tries again`);
+        this.events.log(`bypass sign-on for ${pending.gate} was refused: paused for this user and host in every session (QMAXSIGN); saving the settings, setting the password, opening the session again or reconnecting by hand tries again`);
         if (!pending.chars.length) this.events.signonFailed?.({ key: pending.gate });
       }
     }
@@ -442,7 +450,7 @@ export class SessionController {
     const key = SignonGate.key(user, this.profile.host);
     const verdict = await signonGate.acquire(key);
     if (verdict === 'paused') {
-      this.events.log(`bypass sign-on not sent: an attempt for ${key} was refused and bypass sign-on is paused for this user and host; sign on by hand, or save the settings / set the password and reconnect`);
+      this.events.log(`bypass sign-on not sent: an attempt for ${key} was refused and bypass sign-on is paused for this user and host; sign on by hand, or set the password / save the settings and open the session again`);
       return;
     }
     if (!this.connected || this.session.state.inputInhibited !== 'none' || !this.signonPasswordField()) {
