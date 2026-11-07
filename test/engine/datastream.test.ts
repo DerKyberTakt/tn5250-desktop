@@ -193,6 +193,19 @@ describe('DataStreamProcessor commands', () => {
     expect(bytesToHex(data)).toBe('0204f1' + '110202' + e('hi'));
   });
 
+  it('Read Screen (to Print) after the Print key answers the screen image like Read Screen (the host spools it)', () => {
+    const t = setup();
+    t.proc.process(hexToBytes('04110008' + '110305' + e('Name:') + '04520000'));
+    const plain = t.proc.process(hexToBytes('0462'));
+    const toPrint = t.proc.process(hexToBytes('0466'));
+    expect(toPrint).toHaveLength(1);
+    expect(toPrint[0]?.opcode).toBe(0x00);
+    expect(bytesToHex(toPrint[0]?.data as Uint8Array)).toBe(bytesToHex(plain[0]?.data as Uint8Array));
+    expect(bytesToHex(toPrint[0]?.data as Uint8Array)).toContain(e('Name:'));
+    const ext = t.proc.process(hexToBytes('046e'));
+    expect(bytesToHex(ext[0]?.data as Uint8Array)).toBe(bytesToHex(t.proc.process(hexToBytes('0464'))[0]?.data as Uint8Array));
+  });
+
   it('Save Screen returns a restorable stream that rebuilds fields', () => {
     const a = setup();
     a.proc.process(hexToBytes('04110008' + '110305' + e('Name:') + '1d4000200008' + e('Alex') + '20' + '130307'));

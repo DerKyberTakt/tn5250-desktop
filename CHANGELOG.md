@@ -2,6 +2,8 @@
 
 ## 0.2.1 - unreleased
 
+- Fixed: Actions > Print (host) left the session in X SYSTEM. The host answers the Print key with Read Screen (to Print), X'66', which was not recognised; it now gets the screen image like Read Screen, and the host spools it.
+
 - Fixed: bytes the host sends that are not printable characters (X'01'-X'1F', X'FF': control bytes in file data from bad character conversions) showed as blanks; they now show as a box, as on ACS. Copy and Print Screen show the box too.
 - Fixed: a session tab moved to another window said "Not connected" while the session was running, until the connection state changed (reported by thomprl). The connection state is sent again whenever a terminal view loads.
 

@@ -19,6 +19,9 @@ export const CMD_READ_IMMEDIATE = 0x72;
 export const CMD_READ_IMMEDIATE_ALT = 0x83;
 export const CMD_READ_SCREEN = 0x62;
 export const CMD_READ_SCREEN_EXT = 0x64;
+/** Read Screen (to Print): the host wants the image after a Print key (AID F6) to spool it; same answer as Read Screen. */
+export const CMD_READ_SCREEN_TO_PRINT = 0x66;
+export const CMD_READ_SCREEN_EXT_TO_PRINT = 0x6e;
 export const CMD_SAVE_SCREEN = 0x02;
 export const CMD_SAVE_PARTIAL_SCREEN = 0x03;
 export const CMD_RESTORE_SCREEN = 0x12;
@@ -199,9 +202,12 @@ export class DataStreamProcessor {
           out.push({ opcode: OP_PUT_GET, data: this.readResponse('mdtAlt', 0x00) });
           break;
         case CMD_READ_SCREEN:
+        case CMD_READ_SCREEN_TO_PRINT:
+          // Without an answer the host keeps the keyboard locked (X SYSTEM) after the Print key.
           out.push({ opcode: OP_NOOP, data: this.screen.buffer.slice() });
           break;
         case CMD_READ_SCREEN_EXT:
+        case CMD_READ_SCREEN_EXT_TO_PRINT:
           out.push({ opcode: OP_NOOP, data: this.readScreenExtended() });
           break;
         case CMD_SAVE_SCREEN:
