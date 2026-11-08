@@ -51,6 +51,37 @@ func TestExpandHome(t *testing.T) {
 	}
 }
 
+func TestManagedSettings(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "company.json")
+	t.Setenv("TN5250_MANAGED_SETTINGS", file)
+	if got := managedSettingsPath(); got != file {
+		t.Fatalf("env override: got %q", got)
+	}
+	var a App
+	// No file yet: nothing managed, no error.
+	if got, err := a.ManagedSettingsLoad(); err != nil || got != "" {
+		t.Fatalf("missing file: %q, %v", got, err)
+	}
+	if p := a.SettingsPaths(); p.Managed != file || p.ManagedExists {
+		t.Fatalf("paths before: %+v", p)
+	}
+	if err := os.WriteFile(file, []byte(`{"version":1,"sessions":[{"name":"Prod","host":"h"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := a.ManagedSettingsLoad(); err != nil || got != `{"version":1,"sessions":[{"name":"Prod","host":"h"}]}` {
+		t.Fatalf("present file: %q, %v", got, err)
+	}
+	if p := a.SettingsPaths(); !p.ManagedExists || p.User == "" {
+		t.Fatalf("paths after: %+v", p)
+	}
+	// A folder in the way is "not a file", not a crash.
+	t.Setenv("TN5250_MANAGED_SETTINGS", dir)
+	if p := a.SettingsPaths(); p.ManagedExists {
+		t.Fatalf("folder counted as a file: %+v", p)
+	}
+}
+
 func TestPreloadedSettings(t *testing.T) {
 	dir := t.TempDir()
 	saved := preloadedSettingsPaths

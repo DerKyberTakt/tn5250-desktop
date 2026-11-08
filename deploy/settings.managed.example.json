@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "checkForUpdates": false,
+  "defaults": {
+    "codePage": 37,
+    "screenSize": "27x132"
+  },
+  "sessions": [
+    { "name": "Production", "host": "ibmi.example.com", "port": 992, "tls": true },
+    { "name": "Test", "host": "ibmi-test.example.com", "port": 23, "tls": false, "screenSize": "24x80" }
+  ],
+  "macros": [
+    {
+      "id": "company-wrkactjob",
+      "name": "Active jobs",
+      "key": "Ctrl+Alt+1",
+      "steps": [
+        { "type": "text", "text": "wrkactjob" },
+        { "type": "key", "action": "enter" },
+        { "type": "waitInput" }
+      ]
+    }
+  ]
+}

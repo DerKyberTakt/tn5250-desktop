@@ -7,6 +7,13 @@
  */
 import { Application, Browser, Call, Events, Window } from '@wailsio/runtime';
 
+export interface SettingsPaths {
+  user: string;
+  managed: string;
+  managedExists: boolean;
+  preload: string;
+}
+
 export interface ConnectOptionsDto {
   host: string;
   port: number;
@@ -152,6 +159,9 @@ interface GoApp {
   SettingsLoad(): Promise<string>;
   SettingsSave(text: string): Promise<void>;
   SettingsFilePath(): Promise<string>;
+  /** The administrator's machine-wide settings file, '' when there is none. */
+  ManagedSettingsLoad(): Promise<string>;
+  SettingsPaths(): Promise<SettingsPaths>;
   SecretGet(key: string): Promise<string>;
   SecretSet(key: string, value: string): Promise<void>;
   SecretDelete(key: string): Promise<void>;

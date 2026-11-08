@@ -71,9 +71,10 @@ Get the latest release from
 
 Builds are not code-signed yet, so Windows SmartScreen may say "Windows protected your
 PC" the first time: choose **More info > Run anyway**. Settings are kept in
-`%APPDATA%\tn5250-terminal` and survive updates and uninstalls. For a rollout, put a `settings.json`
-with the sessions and defaults everyone should start with in `%ProgramData%\tn5250-terminal`
-(or a `settings.default.json` next to the exe): users who have no settings yet start from it.
+`%APPDATA%\tn5250-terminal` and survive updates and uninstalls. For a rollout to many PCs,
+put the company's connections, defaults and macros in `%ProgramData%\tn5250-terminal\settings.json`:
+every user of the machine sees them read-only next to their own, and a change there reaches
+everyone at their next start. [DEPLOYMENT.md](DEPLOYMENT.md) has the details and an example file.
 
 **Linux (x86_64, GTK 4 + WebKitGTK 6.0)**
 

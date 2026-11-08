@@ -154,28 +154,80 @@ func (a *App) SettingsLoad() (string, error) {
 	return string(b), err
 }
 
-// preloadedSettingsPaths lists where an IT rollout can leave a settings.json for every user
-// of the machine, most specific first: next to the executable (settings.default.json, for a
-// portable copy or an MSI payload), then the machine-wide application data folder
-// (Windows %ProgramData%	n5250-terminal, Linux /etc/tn5250-terminal, macOS
-// /Library/Application Support/tn5250-terminal). The file is only read until the user
-// saves settings of their own; nothing is written there.
+// preloadedSettingsPaths lists the files a user who has no settings of their own yet
+// starts from: settings.default.json next to the executable (a portable copy, or a seed
+// an installer drops beside the exe). The file is only read until the user saves settings
+// of their own; nothing is written there. Settings every user must keep getting belong in
+// the managed file instead (managedSettingsPath).
 var preloadedSettingsPaths = func() []string {
 	var paths []string
 	if exe, err := os.Executable(); err == nil {
 		paths = append(paths, filepath.Join(filepath.Dir(exe), "settings.default.json"))
 	}
+	return paths
+}
+
+// managedSettingsPath is the machine-wide settings file an administrator maintains:
+// the TN5250_MANAGED_SETTINGS environment variable when set (a local path or a network
+// share), otherwise %ProgramData%\tn5250-terminal\settings.json on Windows,
+// /Library/Application Support/tn5250-terminal/settings.json on macOS and
+// /etc/tn5250-terminal/settings.json elsewhere. It is read at every start and layered
+// under the user's own file (defaults, read-only company sessions, company macros, the
+// update check); the app never writes to it.
+var managedSettingsPath = func() string {
+	if p := os.Getenv("TN5250_MANAGED_SETTINGS"); p != "" {
+		return expandHome(p)
+	}
 	switch runtime.GOOS {
 	case "windows":
 		if pd := os.Getenv("ProgramData"); pd != "" {
-			paths = append(paths, filepath.Join(pd, appDirName, "settings.json"))
+			return filepath.Join(pd, appDirName, "settings.json")
 		}
+		return ""
 	case "darwin":
-		paths = append(paths, filepath.Join("/Library/Application Support", appDirName, "settings.json"))
+		return filepath.Join("/Library/Application Support", appDirName, "settings.json")
 	default:
-		paths = append(paths, filepath.Join("/etc", appDirName, "settings.json"))
+		return filepath.Join("/etc", appDirName, "settings.json")
 	}
-	return paths
+}
+
+// ManagedSettingsLoad returns the managed settings file text, or "" when there is none.
+// A file that exists but cannot be read is an error the shell reports and goes on without.
+func (a *App) ManagedSettingsLoad() (string, error) {
+	p := managedSettingsPath()
+	if p == "" {
+		return "", nil
+	}
+	b, err := os.ReadFile(p)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	return string(b), err
+}
+
+// SettingsPaths tells the user (Help > Settings File Location) where everything lives.
+type SettingsPaths struct {
+	// The user's own file.
+	User string `json:"user"`
+	// The managed file, "" when the platform has no place for one.
+	Managed       string `json:"managed"`
+	ManagedExists bool   `json:"managedExists"`
+	// The first-start seed next to the executable, "" when unknown.
+	Preload string `json:"preload"`
+}
+
+func (a *App) SettingsPaths() SettingsPaths {
+	out := SettingsPaths{Managed: managedSettingsPath()}
+	out.User, _ = settingsPath()
+	if out.Managed != "" {
+		if st, err := os.Stat(out.Managed); err == nil && !st.IsDir() {
+			out.ManagedExists = true
+		}
+	}
+	if paths := preloadedSettingsPaths(); len(paths) > 0 {
+		out.Preload = paths[0]
+	}
+	return out
 }
 
 // preloadedSettings returns the first preloaded settings file that exists and is not empty.

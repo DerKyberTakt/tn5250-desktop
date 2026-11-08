@@ -499,6 +499,12 @@ input {
   background: transparent;
 }
 
+#sessions li.managed .lock {
+  margin-right: 5px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 #sessions ul.children {
   list-style: none;
   margin: 4px -8px -5px;

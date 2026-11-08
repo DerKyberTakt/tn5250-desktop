@@ -2,7 +2,7 @@
 
 ## 0.2.2 - unreleased
 
-- IT rollout: a `settings.json` in the machine-wide folder (Windows `%ProgramData%	n5250-terminal`, Linux `/etc/tn5250-terminal`, macOS `/Library/Application Support/tn5250-terminal`) or a `settings.default.json` next to the executable is used by every user who has no settings of their own yet (sessions, defaults, theme); the first save writes the user's own file as before.
+- IT rollout, two files. A `settings.json` in the machine-wide folder (Windows `%ProgramData%\tn5250-terminal`, Linux `/etc/tn5250-terminal`, macOS `/Library/Application Support/tn5250-terminal`, or the path in `TN5250_MANAGED_SETTINGS`) is read at every start and layered under each user's own settings: its defaults are the base the user's defaults override, its sessions show read-only under "Company connections" (right-click: connect, or copy one to your own list), its macros run but cannot be changed, and `"checkForUpdates": false` turns the startup update check off for everyone. A `settings.default.json` next to the executable seeds a user who has no settings yet. Help > Settings File Location lists all three. See DEPLOYMENT.md.
 - Macros can be exported to and imported from a `.json` file (Actions > Macros…), the same format the VS Code extension reads and writes.
 - Fixed: settings, sessions or macros saved in one window of the app did not show in the other open windows until they were reopened; every window now reloads when another saves.
 - Fixed: characters typed with AltGr (@, the euro sign, [ ] { } on German and other layouts) were dropped: Windows reports AltGr as Ctrl+Alt and the terminal treated the chord as a shortcut. They are typed now; Ctrl+Alt chords with a letter or digit stay shortcuts.

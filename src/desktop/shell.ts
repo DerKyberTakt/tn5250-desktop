@@ -81,6 +81,8 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     log: (line) => this.log(line),
   });
   private selectedSession = -1;
+  /** The administrator's session selected in the panel (by name), when no own session is. */
+  private selectedManaged = '';
   private readonly logLines: string[] = [];
   private statusTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -110,6 +112,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     } catch (err) {
       this.log(`settings file not readable, starting with defaults: ${errorText(err)}`);
     }
+    if (this.store.managedError) this.log(`company settings file ${this.store.managedError} (Help > Settings File Location)`);
     try {
       this.system = await goApp().SystemInfo();
     } catch (err) {
@@ -307,10 +310,8 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
    */
   private async openIfs(retry?: { host: string; user: string; reason: string }): Promise<void> {
     const t = this.activeTerminal();
-    const sessions = this.store.readSessions();
-    const picked = this.selectedSession >= 0 ? sessions[this.selectedSession] : undefined;
     const defaults = this.store.readDefaults();
-    const base = t?.profile ?? (picked ? resolveSettings(defaults, picked) : this.store.resolvedSessions()[0]) ?? defaults;
+    const base = t?.profile ?? this.pickedSession() ?? this.store.resolvedSessions()[0] ?? defaults;
     const last = this.store.ifsLast;
     let host = retry?.host ?? (base.host || last?.host || '');
     let user = retry?.user ?? (base.signonUser.trim() || (last?.host === host ? last.user : '') || '');
@@ -445,10 +446,8 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
    */
   private async signonFor(title: string, note: string): Promise<{ request: SqlConnectRequest; onSignon: (error?: unknown) => void } | undefined> {
     const t = this.activeTerminal();
-    const sessions = this.store.readSessions();
-    const picked = this.selectedSession >= 0 ? sessions[this.selectedSession] : undefined;
     const defaults = this.store.readDefaults();
-    const base = t?.profile ?? (picked ? resolveSettings(defaults, picked) : this.store.resolvedSessions()[0]) ?? defaults;
+    const base = t?.profile ?? this.pickedSession() ?? this.store.resolvedSessions()[0] ?? defaults;
     let host = base.host || this.store.ifsLast?.host || '';
     let user = base.signonUser.trim() || (this.store.ifsLast?.host === host ? this.store.ifsLast.user : '');
     let password = host && user ? await this.credentials.find(user, host, sameName(base, host)) : '';
@@ -692,6 +691,15 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     this.syncSettingsTabs();
   }
 
+  /** The session selected in the Connections panel, the user's own or the administrator's. */
+  private pickedSession(): TerminalSettings | undefined {
+    if (this.selectedSession >= 0) {
+      const s = this.store.readSessions()[this.selectedSession];
+      return s ? resolveSettings(this.store.readDefaults(), s) : undefined;
+    }
+    return this.selectedManaged ? this.store.managedSessions().find((s) => s.name === this.selectedManaged) : undefined;
+  }
+
   private savedProfile(tab: TerminalTab): TerminalSettings | undefined {
     const p = tab.profile;
     if (!p) return undefined;
@@ -801,7 +809,8 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   }
 
   private macroRow(m: Macro): string {
-    return `${m.name}${m.key ? `   [${m.key}]` : ''}   ${m.steps.length} step${m.steps.length === 1 ? '' : 's'}`;
+    const company = this.store.isManagedMacro(m.id) ? '   (company)' : '';
+    return `${m.name}${m.key ? `   [${m.key}]` : ''}   ${m.steps.length} step${m.steps.length === 1 ? '' : 's'}${company}`;
   }
 
   /** Actions > Macros: the list with Run / Edit / Delete, New and Record. */
@@ -834,6 +843,16 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
         if (tab && !tab.isDemo) this.runMacro(m, tab);
         else this.notify('Open a session first');
         return;
+      }
+      if (this.store.isManagedMacro(m.id)) {
+        // Company macros come from the administrator's file: run them, or take a copy to change.
+        const choice = await choiceDialog(
+          `Company macro: ${m.name}`,
+          ['Your administrator maintains this macro in the machine-wide settings file; it cannot be changed or deleted here.', 'A copy of your own can be changed; it needs a key of its own.'],
+          ['Copy to my macros', 'Close'],
+        );
+        if (choice === 'Copy to my macros') await this.editMacro({ ...m, id: newMacroId(), name: `${m.name} (copy)`, key: '', steps: m.steps.map((s) => ({ ...s })) });
+        continue;
       }
       if (pick.action === 'Edit') await this.editMacro(m);
       if (pick.action === 'Delete' && (await confirmDialog('Delete macro', `Delete "${m.name}"?`, 'Delete'))) {
@@ -997,13 +1016,15 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   private renderSessions(): void {
     const defaults = this.store.readDefaults();
     const sessions = this.store.readSessions().map((s) => resolveSettings(defaults, s));
-    const tree = buildTree(sessions, this.registry);
+    const managed = this.store.managedSessions();
+    // One tree so open tabs of the administrator's sessions group under them too.
+    const tree = buildTree([...sessions, ...managed], this.registry);
     this.sessionList.replaceChildren();
-    if (!sessions.length && !tree.others.length) {
+    if (!sessions.length && !managed.length && !tree.others.length) {
       this.sessionList.append(el('li', 'none', 'No saved sessions'));
       return;
     }
-    for (const row of tree.rows) {
+    for (const row of tree.rows.filter((r) => r.index < sessions.length)) {
       const r = row.profile;
       const i = row.index;
       const li = el('li', i === this.selectedSession ? 'selected' : undefined, r.name || r.host || '(no host)');
@@ -1013,6 +1034,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       li.title = 'Double-click to connect, right-click to edit';
       li.addEventListener('click', () => {
         this.selectedSession = i;
+        this.selectedManaged = '';
         this.renderSessions();
       });
       li.addEventListener('dblclick', () => {
@@ -1026,10 +1048,55 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       if (row.tabs.length) li.append(this.renderChildren(row.tabs));
       this.sessionList.append(li);
     }
+    const company = tree.rows.filter((r) => r.index >= sessions.length);
+    if (company.length) {
+      const head = el('li', 'group', 'Company connections');
+      head.title = 'Set by your administrator in the machine-wide settings file';
+      this.sessionList.append(head);
+    }
+    for (const row of company) {
+      const r = row.profile;
+      const li = el('li', this.selectedSession < 0 && r.name === this.selectedManaged ? 'selected managed' : 'managed', r.name || r.host);
+      li.prepend(el('span', 'lock', '\u{1F512}'));
+      const badge = tabsBadge(row);
+      if (badge) li.prepend(el('span', 'badge', badge));
+      li.append(el('small', undefined, `${r.host}:${r.port}${r.tls ? ' TLS' : ''}`));
+      li.title = 'Set by your administrator. Double-click to connect, right-click for options';
+      li.addEventListener('click', () => {
+        this.selectedSession = -1;
+        this.selectedManaged = r.name;
+        this.renderSessions();
+      });
+      li.addEventListener('dblclick', () => this.openSession(r));
+      li.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        void this.managedSessionMenu(r);
+      });
+      if (row.tabs.length) li.append(this.renderChildren(row.tabs));
+      this.sessionList.append(li);
+    }
     if (tree.others.length) {
       const li = el('li', 'group', 'Other connections');
       li.append(this.renderChildren(tree.others));
       this.sessionList.append(li);
+    }
+  }
+
+  /** Right-click on one of the administrator's sessions: connect, or take a copy of your own. */
+  private async managedSessionMenu(r: TerminalSettings): Promise<void> {
+    const choice = await choiceDialog(
+      `Company connection: ${r.name}`,
+      [
+        `${r.host}:${r.port}${r.tls ? ' TLS' : ''}, ${r.screenSize}, code page ${r.codePage}`,
+        'Your administrator maintains this connection in the machine-wide settings file; it cannot be changed here. A copy in your own connections can be, and it then takes the place of this one in your list.',
+      ],
+      ['Connect', 'Copy to my connections', 'Close'],
+    );
+    if (choice === 'Connect') this.openSession(r);
+    else if (choice === 'Copy to my connections') {
+      await this.store.saveSession(-1, r);
+      this.selectedManaged = '';
+      this.openSettings(this.store.readSessions().length - 1);
     }
   }
 
@@ -1396,6 +1463,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
             label: 'Check for Updates at Startup',
             run: () => void this.store.setCheckForUpdates(!this.store.checkForUpdates),
             checked: () => this.store.checkForUpdates,
+            enabled: () => !this.store.updatesLocked,
           },
           '-',
           { label: `About ${APP_NAME}`, run: () => void this.about() },
@@ -1520,7 +1588,15 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   }
 
   private async showSettingsPath(): Promise<void> {
-    await messageDialog('Settings file', [await goApp().SettingsFilePath(), 'Passwords are kept in the operating system credential store, not in this file.']);
+    const p = await goApp().SettingsPaths();
+    const lines = [`Your settings: ${p.user}`];
+    if (p.managed) {
+      const state = this.store.managedError ? `present but ${this.store.managedError}` : p.managedExists ? 'present' : 'not present';
+      lines.push(`Company settings, read at every start and never changed by the app: ${p.managed} (${state})`);
+    }
+    if (p.preload) lines.push(`First-start seed for a user without settings: ${p.preload}`);
+    lines.push('Passwords are kept in the operating system credential store, not in these files.');
+    await messageDialog('Settings files', lines);
   }
 
   private async about(): Promise<void> {
