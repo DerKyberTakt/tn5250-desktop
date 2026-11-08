@@ -5,6 +5,9 @@ import {
   describeStep,
   keyMatches,
   macroProblems,
+  macrosFromJson,
+  macrosToJson,
+  mergeMacros,
   runMacro,
   sanitizeMacro,
   type Macro,
@@ -182,5 +185,30 @@ describe('macro helpers', () => {
     expect(macroProblems(macro([], 'Ctrl+Shift+1'), others)).toEqual(['The macro has no steps.', 'Ctrl+Shift+1 already runs "Other".']);
     expect(macroProblems({ ...macro([{ type: 'waitInput' }]), name: ' ' }, [])).toEqual(['The macro needs a name.']);
     expect(macroProblems(macro([{ type: 'waitInput' }], 'Ctrl+Shift+2'), others)).toEqual([]);
+  });
+});
+
+describe('macro files', () => {
+  const a: Macro = { id: 'a', name: 'A', key: 'Ctrl+Alt+1', steps: [{ type: 'key', action: 'enter' }] };
+  const b: Macro = { id: 'b', name: 'B', key: '', steps: [{ type: 'text', text: 'x' }] };
+
+  it('writes and reads the export format, dropping what is malformed', () => {
+    const text = macrosToJson([a, b]);
+    expect(text.startsWith('{\n  "tn5250Macros": 1,')).toBe(true);
+    expect(macrosFromJson(text)).toEqual([a, b]);
+    expect(macrosFromJson('﻿' + text)).toEqual([a, b]);
+    expect(macrosFromJson(JSON.stringify([a, { id: 'bad' }]))).toEqual([a]);
+    expect(macrosFromJson('not json')).toBeUndefined();
+    expect(macrosFromJson('{"other": 1}')).toBeUndefined();
+  });
+
+  it('merges imported macros: same id replaces, a taken key is dropped, the saved list is not changed', () => {
+    const saved = [a];
+    const r = mergeMacros(saved, [{ ...b, key: 'Ctrl+Alt+1' }, { ...a, name: 'A2' }]);
+    expect(r.added).toBe(1);
+    expect(r.replaced).toBe(1);
+    expect(r.keysDropped).toEqual(['B']);
+    expect(r.macros).toEqual([{ ...a, name: 'A2' }, { ...b, key: '' }]);
+    expect(saved).toEqual([a]);
   });
 });

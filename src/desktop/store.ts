@@ -186,6 +186,12 @@ export class Store {
     await this.persist();
   }
 
+  /** Replaces the whole list (import). */
+  async replaceMacros(macros: Macro[]): Promise<void> {
+    this.file.macros = macros.length ? macros : undefined;
+    await this.persist();
+  }
+
   async removeMacro(id: string): Promise<void> {
     const list = this.file.macros ?? [];
     const next = list.filter((m) => m.id !== id);

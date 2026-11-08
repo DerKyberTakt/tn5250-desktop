@@ -2,6 +2,8 @@
 
 ## 0.2.2 - unreleased
 
+- IT rollout: a `settings.json` in the machine-wide folder (Windows `%ProgramData%	n5250-terminal`, Linux `/etc/tn5250-terminal`, macOS `/Library/Application Support/tn5250-terminal`) or a `settings.default.json` next to the executable is used by every user who has no settings of their own yet (sessions, defaults, theme); the first save writes the user's own file as before.
+- Macros can be exported to and imported from a `.json` file (Actions > Macros…), the same format the VS Code extension reads and writes.
 - Fixed: settings, sessions or macros saved in one window of the app did not show in the other open windows until they were reopened; every window now reloads when another saves.
 - Fixed: characters typed with AltGr (@, the euro sign, [ ] { } on German and other layouts) were dropped: Windows reports AltGr as Ctrl+Alt and the terminal treated the chord as a shortcut. They are typed now; Ctrl+Alt chords with a letter or digit stay shortcuts.
 - Macros (Actions menu and two toolbar buttons): record what you type and press in a session, or build a macro step by step in an editor modelled on gaming-keyboard macro editors (type text, press a key, wait for the host to accept input, wait a while, wait for a text on the screen, ask for a value and type it); drag the steps to reorder them; give it a name and a key (a function key or a chord with Ctrl, Alt or Win) and it runs in the active session when that key is pressed. The recorder puts a wait for input after every key the host answers, so a macro never types into a locked keyboard; Actions > Stop Macro stops one. Macros are kept in the settings file; passwords belong in a prompt step, never in the macro.

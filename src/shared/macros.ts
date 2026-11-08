@@ -294,3 +294,56 @@ export function macroProblems(macro: Macro, others: Macro[]): string[] {
   }
   return problems;
 }
+
+/** The file format of an export: one object, so a future version can add fields. */
+export const MACRO_FILE_VERSION = 1;
+
+/** Macros as the text of a .json file to share (desktop app and VS Code extension read the same file). */
+export function macrosToJson(macros: Macro[]): string {
+  return JSON.stringify({ tn5250Macros: MACRO_FILE_VERSION, macros }, null, 2) + '\n';
+}
+
+/** Macros from an exported file; undefined when the text is not such a file. Malformed macros are dropped. */
+export function macrosFromJson(text: string): Macro[] | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
+  } catch {
+    return undefined;
+  }
+  const list = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' && Array.isArray((parsed as { macros?: unknown }).macros) ? (parsed as { macros: unknown[] }).macros : undefined;
+  if (!list) return undefined;
+  return list.map(sanitizeMacro).filter((m): m is Macro => !!m);
+}
+
+export interface MergeMacrosResult {
+  macros: Macro[];
+  added: number;
+  replaced: number;
+  /** Imported macros whose key another macro already had: they come in without a key. */
+  keysDropped: string[];
+}
+
+/** Adds imported macros to the saved ones: the same id replaces, a key already taken by another macro is dropped. */
+export function mergeMacros(saved: Macro[], incoming: Macro[]): MergeMacrosResult {
+  const macros = saved.map((m) => ({ ...m }));
+  let added = 0;
+  let replaced = 0;
+  const keysDropped: string[] = [];
+  for (const raw of incoming) {
+    const m: Macro = { ...raw, steps: raw.steps.map((s) => ({ ...s })) };
+    if (m.key && macros.some((o) => o.id !== m.id && o.key === m.key)) {
+      keysDropped.push(m.name);
+      m.key = '';
+    }
+    const at = macros.findIndex((o) => o.id === m.id);
+    if (at >= 0) {
+      macros[at] = m;
+      replaced++;
+    } else {
+      macros.push(m);
+      added++;
+    }
+  }
+  return { macros, added, replaced, keysDropped };
+}

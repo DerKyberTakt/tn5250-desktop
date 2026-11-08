@@ -50,3 +50,38 @@ func TestExpandHome(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestPreloadedSettings(t *testing.T) {
+	dir := t.TempDir()
+	saved := preloadedSettingsPaths
+	defer func() { preloadedSettingsPaths = saved }()
+	first := filepath.Join(dir, "settings.default.json")
+	second := filepath.Join(dir, "machine", "settings.json")
+	preloadedSettingsPaths = func() []string { return []string{first, second} }
+
+	if got := preloadedSettings(); got != "" {
+		t.Fatalf("nothing preloaded, got %q", got)
+	}
+	if err := os.MkdirAll(filepath.Dir(second), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte(`{"version":1,"defaults":{},"sessions":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := preloadedSettings(); got != `{"version":1,"defaults":{},"sessions":[]}` {
+		t.Fatalf("machine-wide file: got %q", got)
+	}
+	// An empty file next to the exe does not shadow the machine-wide one; a real one wins.
+	if err := os.WriteFile(first, []byte("  \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := preloadedSettings(); got != `{"version":1,"defaults":{},"sessions":[]}` {
+		t.Fatalf("empty file shadowed: got %q", got)
+	}
+	if err := os.WriteFile(first, []byte(`{"version":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := preloadedSettings(); got != `{"version":1}` {
+		t.Fatalf("exe-side file: got %q", got)
+	}
+}

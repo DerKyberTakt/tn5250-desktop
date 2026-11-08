@@ -139,7 +139,9 @@ func settingsPath() (string, error) {
 	return filepath.Join(dir, "settings.json"), nil
 }
 
-// SettingsLoad returns the settings file text, or "" when there is none yet.
+// SettingsLoad returns the settings file text; a user without one yet gets the
+// preloaded settings an administrator may have put in place (see preloadedSettingsPaths),
+// or "" when there is nothing at all.
 func (a *App) SettingsLoad() (string, error) {
 	p, err := settingsPath()
 	if err != nil {
@@ -147,9 +149,44 @@ func (a *App) SettingsLoad() (string, error) {
 	}
 	b, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
+		return preloadedSettings(), nil
 	}
 	return string(b), err
+}
+
+// preloadedSettingsPaths lists where an IT rollout can leave a settings.json for every user
+// of the machine, most specific first: next to the executable (settings.default.json, for a
+// portable copy or an MSI payload), then the machine-wide application data folder
+// (Windows %ProgramData%	n5250-terminal, Linux /etc/tn5250-terminal, macOS
+// /Library/Application Support/tn5250-terminal). The file is only read until the user
+// saves settings of their own; nothing is written there.
+var preloadedSettingsPaths = func() []string {
+	var paths []string
+	if exe, err := os.Executable(); err == nil {
+		paths = append(paths, filepath.Join(filepath.Dir(exe), "settings.default.json"))
+	}
+	switch runtime.GOOS {
+	case "windows":
+		if pd := os.Getenv("ProgramData"); pd != "" {
+			paths = append(paths, filepath.Join(pd, appDirName, "settings.json"))
+		}
+	case "darwin":
+		paths = append(paths, filepath.Join("/Library/Application Support", appDirName, "settings.json"))
+	default:
+		paths = append(paths, filepath.Join("/etc", appDirName, "settings.json"))
+	}
+	return paths
+}
+
+// preloadedSettings returns the first preloaded settings file that exists and is not empty.
+func preloadedSettings() string {
+	for _, p := range preloadedSettingsPaths() {
+		b, err := os.ReadFile(p)
+		if err == nil && len(strings.TrimSpace(string(b))) > 0 {
+			return string(b)
+		}
+	}
+	return ""
 }
 
 // SettingsSave replaces the settings file atomically.

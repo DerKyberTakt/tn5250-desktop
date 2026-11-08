@@ -16,7 +16,7 @@ import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
 import { TabDrag, reorder, type Point } from './tabDrag';
 import { ACS_EMULATOR_DIR, HOD_FILTERS, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
-import { MacroRecorder, describeStep, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
+import { MacroRecorder, describeStep, macrosFromJson, macrosToJson, mergeMacros, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
 import { macroEditorDialog } from './macroEditor';
 
 const APP_NAME = 'TN5250 Terminal';
@@ -813,12 +813,14 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
         'A macro types and presses keys into the active session. Record one, or build it step by step.',
         macros.map((m) => this.macroRow(m)),
         ['Run', 'Edit', 'Delete'],
-        ['New', 'Record'],
+        ['New', 'Record', 'Import…', 'Export…'],
         'No macros yet.',
       );
       if (!pick) return;
       if (pick.row < 0) {
         if (pick.action === 'New') await this.editMacro({ id: newMacroId(), name: '', key: '', steps: [] });
+        else if (pick.action === 'Import…') await this.importMacros();
+        else if (pick.action === 'Export…') await this.exportMacros(macros);
         else {
           this.startRecording();
           return;
@@ -838,6 +840,32 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
         await this.store.removeMacro(m.id);
       }
     }
+  }
+
+  /** Writes every macro to a .json file the VS Code extension and other installs can import. */
+  private async exportMacros(macros: Macro[]): Promise<void> {
+    if (!macros.length) {
+      this.notify('No macros to export');
+      return;
+    }
+    const saved = await goApp().SaveTextFile('Export macros', 'tn5250-macros.json', macrosToJson(macros), [{ name: 'TN5250 macros', patterns: '*.json' }]);
+    if (saved) this.notify(`${macros.length} macro${macros.length === 1 ? '' : 's'} exported`);
+  }
+
+  /** Reads a macros .json file: the same id replaces, a key another macro has is dropped. */
+  private async importMacros(): Promise<void> {
+    const app = goApp();
+    const file = await app.PickFile('Import macros', [{ name: 'TN5250 macros', patterns: '*.json' }, { name: 'All files', patterns: '*.*' }]);
+    if (!file) return;
+    const incoming = macrosFromJson(await app.ReadTextFile(file));
+    if (!incoming) {
+      await messageDialog('Import macros', ['That file is not a macros export.']);
+      return;
+    }
+    const r = mergeMacros(this.store.macros, incoming);
+    await this.store.replaceMacros(r.macros);
+    const dropped = r.keysDropped.length ? ` The key of ${r.keysDropped.join(', ')} was already taken and was left off.` : '';
+    this.notify(`${r.added} macro${r.added === 1 ? '' : 's'} added, ${r.replaced} replaced.${dropped}`);
   }
 
   /** Actions > Run Macro: pick one for the active session. */
