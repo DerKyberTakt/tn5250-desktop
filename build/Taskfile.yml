@@ -185,7 +185,7 @@ tasks:
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true{{if eq .OBFUSCATED "true"}} -obfuscated{{end}} -ts -i
 
   generate:icons:
-    summary: Generates Windows `.ico` and Mac `.icns` from an image. (No Icon Composer `.icon` file: `-iconcomposerinput` would run Xcode's actool, which fails on the CI runner.)
+    summary: Generates Windows .ico and Mac .icns from an image (no Icon Composer .icon file - the -iconcomposerinput option runs Xcode's actool, which fails on the CI runner)
     run: once
     dir: build
     sources:
