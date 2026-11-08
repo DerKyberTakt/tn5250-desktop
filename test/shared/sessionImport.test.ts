@@ -43,7 +43,22 @@ describe('mergeImported', () => {
     expect(r.sessions).toEqual([s('Dev', 'dev.example.com', { port: 992 })]);
     expect(r.added).toHaveLength(1);
     expect(r.replaced).toEqual([]);
+    expect(r.skipped).toEqual([]);
     expect(r.touched).toEqual([0]);
+  });
+
+  it('leaves every saved connection alone with updateSaved false and only adds the new ones', () => {
+    const saved = [s('Prod', 'prod.example.com', { port: 23, colorGreen: '#00ff00' })];
+    const r = mergeImported(saved, [s('Prod', 'prod.example.com', { port: 992, tls: true }), s('Dev', 'dev.example.com')], { updateSaved: false });
+    expect(r.sessions).toEqual([s('Prod', 'prod.example.com', { port: 23, colorGreen: '#00ff00' }), s('Dev', 'dev.example.com')]);
+    expect(r.skipped).toEqual([s('Prod', 'prod.example.com', { port: 992, tls: true })]);
+    expect(r.replaced).toEqual([]);
+    expect(r.added).toEqual([s('Dev', 'dev.example.com')]);
+    expect(r.touched).toEqual([1]);
+    // A duplicate inside the same import still merges into the entry this import added.
+    const twice = mergeImported([], [s('Dev', 'd'), s('Dev', 'd', { port: 992 })], { updateSaved: false });
+    expect(twice.sessions).toEqual([s('Dev', 'd', { port: 992 })]);
+    expect(twice.skipped).toEqual([]);
   });
 
   it('does not change the list it was given', () => {

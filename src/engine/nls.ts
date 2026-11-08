@@ -6,7 +6,8 @@
  * CHARSET is the graphic character set id of the CCSID; KBDTYPE the 3-letter keyboard
  * type of IBM's "National language keyboard types and SBCS code pages" table (CRTDEVDSP
  * KBDTYPE). The euro code pages 1140-1149 are the same character sets with the euro sign
- * (GCSGID 695); their keyboard types are those of the code pages they replace. Several
+ * (GCSGID 695) and the euro keyboard types CRTDEVDSP lists for them (USE, AGE, DME, FNE, ITE,
+ * SPE, UKE, FAE, ICE); 1148 keeps INB, IBM lists no euro keyboard for International. Several
  * countries share a code page (500, 277, 278, 284, 297 ...): the first keyboard IBM lists
  * is the default, the Keyboard type setting overrides it.
  */
@@ -34,16 +35,16 @@ const NLS: Record<number, HostNls> = {
   880: { charset: '960', kbdType: 'CYB' },
   1025: { charset: '1150', kbdType: 'BGB' },
   1026: { charset: '1152', kbdType: 'TKB' },
-  1140: { charset: '695', kbdType: 'USB' },
-  1141: { charset: '695', kbdType: 'AGB' },
-  1142: { charset: '695', kbdType: 'DMB' },
-  1143: { charset: '695', kbdType: 'FNB' },
-  1144: { charset: '695', kbdType: 'ITB' },
-  1145: { charset: '695', kbdType: 'SPB' },
-  1146: { charset: '695', kbdType: 'UKB' },
-  1147: { charset: '695', kbdType: 'FAB' },
+  1140: { charset: '695', kbdType: 'USE' },
+  1141: { charset: '695', kbdType: 'AGE' },
+  1142: { charset: '695', kbdType: 'DME' },
+  1143: { charset: '695', kbdType: 'FNE' },
+  1144: { charset: '695', kbdType: 'ITE' },
+  1145: { charset: '695', kbdType: 'SPE' },
+  1146: { charset: '695', kbdType: 'UKE' },
+  1147: { charset: '695', kbdType: 'FAE' },
   1148: { charset: '695', kbdType: 'INB' },
-  1149: { charset: '695', kbdType: 'ICB' },
+  1149: { charset: '695', kbdType: 'ICE' },
 };
 
 /**

@@ -78,8 +78,15 @@ export function unreadableNote(unreadable: number): string {
 
 /** The status line after an import. */
 export function importMessage(merged: MergeResult, unreadable: number): string {
-  const replaced = merged.replaced.length ? ` (${merged.replaced.length} replaced saved ones)` : '';
-  return `${plural(merged.touched.length, 'connection')} imported${replaced}.${unreadableNote(unreadable)}`;
+  const replaced = merged.replaced.length ? ` (${merged.replaced.length} updated)` : '';
+  const skipped = merged.skipped.length ? ` ${plural(merged.skipped.length, 'saved connection')} left as ${merged.skipped.length === 1 ? 'it was' : 'they were'}.` : '';
+  return `${plural(merged.touched.length, 'connection')} imported${replaced}.${skipped}${unreadableNote(unreadable)}`;
+}
+
+/** What an import that changed nothing says. */
+export function nothingImported(merged: MergeResult): string {
+  const n = merged.skipped.length;
+  return `Nothing imported: the ${plural(n, 'selected connection')} ${n === 1 ? 'is' : 'are'} already saved.`;
 }
 
 export { mergeImported };

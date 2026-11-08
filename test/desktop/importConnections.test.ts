@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileName, importMessage, importRows, mergeImported, readProfiles, unreadableNote } from '../../src/desktop/importConnections';
+import { fileName, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote } from '../../src/desktop/importConnections';
 
 const hod = (lines: string[]): string => ['[Host On-Demand Session File][4.00]', '[HostPrintTerminal]', '[Terminal]', ...lines].join('\r\n');
 
@@ -45,7 +45,10 @@ describe('importRows', () => {
 describe('importMessage', () => {
   it('counts what was imported, replaced and unreadable', () => {
     const merged = mergeImported([{ name: 'Prod', host: 'h' }], [{ name: 'Prod', host: 'h', port: 992 }, { name: 'Dev', host: 'd' }]);
-    expect(importMessage(merged, 0)).toBe('2 connections imported (1 replaced saved ones).');
+    expect(importMessage(merged, 0)).toBe('2 connections imported (1 updated).');
+    const kept = mergeImported([{ name: 'Prod', host: 'h' }], [{ name: 'Prod', host: 'h', port: 992 }, { name: 'Dev', host: 'd' }], { updateSaved: false });
+    expect(importMessage(kept, 0)).toBe('1 connection imported. 1 saved connection left as it was.');
+    expect(nothingImported(mergeImported([{ name: 'Prod', host: 'h' }], [{ name: 'Prod', host: 'h' }], { updateSaved: false }))).toBe('Nothing imported: the 1 selected connection is already saved.');
     expect(importMessage(mergeImported([], [{ name: 'Dev', host: 'd' }]), 2)).toBe('1 connection imported. 2 files could not be read.');
     expect(unreadableNote(1)).toBe(' 1 file could not be read.');
     expect(unreadableNote(0)).toBe('');

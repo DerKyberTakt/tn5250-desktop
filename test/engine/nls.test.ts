@@ -6,7 +6,8 @@ describe('NEW-ENVIRON keyboard type and character set by code page', () => {
     expect(hostNls(37)).toEqual({ charset: '697', kbdType: 'USB' });
     expect(hostNls(273)).toEqual({ charset: '697', kbdType: 'AGB' });
     expect(hostNls(500)).toEqual({ charset: '697', kbdType: 'INB' });
-    expect(hostNls(1141)).toEqual({ charset: '695', kbdType: 'AGB' });
+    expect(hostNls(1141)).toEqual({ charset: '695', kbdType: 'AGE' }); // euro keyboard type, CRTDEVDSP KBDTYPE
+    expect(hostNls(1140)).toEqual({ charset: '695', kbdType: 'USE' });
     expect(hostNls(1148)).toEqual({ charset: '695', kbdType: 'INB' });
   });
 

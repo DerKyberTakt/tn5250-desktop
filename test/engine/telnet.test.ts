@@ -66,7 +66,7 @@ describe('TelnetSession', () => {
     const latin = (h: ReturnType<typeof harness>): string => Buffer.from(h.sent[0] as string, 'hex').toString('latin1');
     const de = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 1141 } as never);
     de.telnet.feed(hexToBytes('fffa2701fff0'));
-    expect(latin(de)).toContain('KBDTYPEAGB');
+    expect(latin(de)).toContain('KBDTYPEAGE');
     expect(latin(de)).toContain('CODEPAGE1141');
     expect(latin(de)).toContain('CHARSET695');
     const uk = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 500, keyboardType: 'ukb' } as never);

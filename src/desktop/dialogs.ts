@@ -242,3 +242,37 @@ export function checkListDialog(title: string, note: string, rows: CheckRow[], o
     ok.focus();
   });
 }
+
+/**
+ * A message with a row of buttons; resolves with the label pressed, or undefined when the
+ * dialog is dismissed (Esc). The last button is the primary one.
+ */
+export function choiceDialog(title: string, lines: string[], buttons: string[]): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const dialog = el('dialog', 'modal');
+    const form = el('form');
+    form.method = 'dialog';
+    form.append(el('h2', undefined, title));
+    for (const l of lines) form.append(el('p', undefined, l));
+    const row = el('div', 'buttons');
+    let result: string | undefined;
+    buttons.forEach((label, i) => {
+      const b = el('button', i === buttons.length - 1 ? 'primary' : undefined, label);
+      b.type = 'button';
+      b.onclick = () => {
+        result = label;
+        dialog.close();
+      };
+      row.append(b);
+    });
+    form.append(row);
+    dialog.append(form);
+    document.body.append(dialog);
+    dialog.onclose = () => {
+      dialog.remove();
+      resolve(result);
+    };
+    dialog.showModal();
+    (row.lastElementChild as HTMLButtonElement | null)?.focus();
+  });
+}

@@ -4,7 +4,7 @@ import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
 import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
-import { checkListDialog, confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
+import { checkListDialog, choiceDialog, confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
@@ -15,7 +15,7 @@ import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow } fro
 import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
 import { TabDrag, reorder, type Point } from './tabDrag';
-import { ACS_EMULATOR_DIR, HOD_FILTERS, importMessage, importRows, mergeImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
+import { ACS_EMULATOR_DIR, HOD_FILTERS, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
 
 const APP_NAME = 'TN5250 Terminal';
 const PROJECT_URL = 'https://github.com/DerKyberTakt/tn5250-desktop';
@@ -751,11 +751,36 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       'Import',
     );
     if (!chosen?.length) return;
-    const merged = mergeImported(saved, chosen.map((i) => (found.sessions[i] as FoundSession).session));
+    // Nothing already saved changes without a word: ask first, and keep the old list for Undo.
+    const incoming = chosen.map((i) => (found.sessions[i] as FoundSession).session);
+    const alreadySaved = rows.filter((r, i) => r.tag && chosen.includes(i)).length;
+    let updateSaved = true;
+    if (alreadySaved) {
+      const one = alreadySaved === 1;
+      const answer = await choiceDialog(
+        'Import Connections',
+        [`${alreadySaved} of the selected connections ${one ? 'is' : 'are'} already saved.`, "Update: the profile's values win; a trusted certificate, demo mode and bypass sign-on stay. Keep: only the new connections are added, nothing already saved changes. Undo is offered afterwards."],
+        ['Cancel', one ? 'Keep it as it is' : 'Keep them as they are', one ? 'Update it from the profile' : 'Update them from the profiles'],
+      );
+      if (!answer || answer === 'Cancel') return;
+      updateSaved = answer.startsWith('Update');
+    }
+    const merged = mergeImported(saved, incoming, { updateSaved });
+    if (!merged.touched.length) {
+      this.notify(nothingImported(merged));
+      return;
+    }
     await this.store.writeSessions(merged.sessions);
-    this.notify(importMessage(merged, found.unreadable));
+    const message = importMessage(merged, found.unreadable);
+    this.notify(message);
+    const next = await choiceDialog('Import Connections', [message], ['Undo', 'Close', 'Open Settings']);
+    if (next === 'Undo') {
+      await this.store.writeSessions(saved);
+      this.notify('Import undone, the connections are as they were.');
+      return;
+    }
     const first = merged.touched[0];
-    if (first !== undefined) this.openSettings(first);
+    if (next === 'Open Settings' && first !== undefined) this.openSettings(first);
   }
 
   private async newConnection(): Promise<void> {

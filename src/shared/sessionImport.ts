@@ -29,25 +29,41 @@ export interface MergeResult {
   added: SessionOverrides[];
   /** The saved connections an import replaced, as they are now. */
   replaced: SessionOverrides[];
+  /** The imported connections left out because they were already saved (updateSaved false). */
+  skipped: SessionOverrides[];
   /** Index in `sessions` of every connection the import added or replaced, in import order. */
   touched: number[];
+}
+
+export interface MergeOptions {
+  /**
+   * What to do with an imported connection that is already saved: replace the saved entry
+   * (the default) or leave it exactly as it is and only add the new ones.
+   */
+  updateSaved?: boolean;
 }
 
 /**
  * Merges imported connections into the saved list. One that is already saved replaces the
  * saved entry in place: every value the import brings wins, and what only the emulator
  * has (a trusted certificate, demo mode, bypass sign-on ...) stays, as does the saved name.
+ * With `updateSaved: false` it is skipped instead, so nothing already saved changes.
  * A new one is appended; a name already used by a connection to another host gets " (2)",
- * " (3)" ... so every name stays unique.
+ * " (3)" ... so every name stays unique. The list given is never changed.
  */
-export function mergeImported(saved: SessionOverrides[], incoming: SessionOverrides[]): MergeResult {
+export function mergeImported(saved: SessionOverrides[], incoming: SessionOverrides[], options: MergeOptions = {}): MergeResult {
   const sessions = [...saved];
   const added: SessionOverrides[] = [];
   const replaced: SessionOverrides[] = [];
+  const skipped: SessionOverrides[] = [];
   const touched: number[] = [];
   const names = new Set(saved.map((s) => norm(s.name)));
   for (const s of incoming) {
     const at = savedIndex(sessions, s);
+    if (at >= 0 && at < saved.length && options.updateSaved === false) {
+      skipped.push(s);
+      continue;
+    }
     if (at >= 0) {
       const current = sessions[at] as SessionOverrides;
       const entry: SessionOverrides = { ...current, ...s, name: current.name ?? s.name };
@@ -67,5 +83,5 @@ export function mergeImported(saved: SessionOverrides[], incoming: SessionOverri
     added.push(entry);
     touched.push(sessions.length - 1);
   }
-  return { sessions, added, replaced, touched };
+  return { sessions, added, replaced, skipped, touched };
 }
