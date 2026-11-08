@@ -13,6 +13,11 @@ tasks:
   install:frontend:deps:
     summary: Install frontend dependencies
     run: once
+    # After go mod tidy, never alongside it. The platform build tasks run their deps in
+    # parallel, and a go mod tidy that walks node_modules while npm ci is still filling it
+    # fails with "no matching versions for query latest" for .../node_modules/<pkg>.
+    deps:
+      - go:mod:tidy
     cmds:
       - task: install:frontend:deps:{{.PACKAGE_MANAGER}}
 
