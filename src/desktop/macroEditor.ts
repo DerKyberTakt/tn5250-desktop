@@ -175,6 +175,7 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: { c
 
     form.append(el('h3', undefined, 'Steps'));
     const list = el('ol', 'macro-steps');
+    let dragFrom: number | undefined;
     const problems = el('p', 'problems');
     problems.hidden = true;
 
@@ -183,6 +184,37 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: { c
       if (!macro.steps.length) list.append(el('li', 'empty', 'No steps yet: add one below, or record a macro in a session.'));
       macro.steps.forEach((step, i) => {
         const li = el('li');
+        // Drag a row by its grip to reorder (the arrows do the same for the keyboard).
+        li.draggable = true;
+        li.ondragstart = (ev) => {
+          dragFrom = i;
+          li.classList.add('dragging');
+          ev.dataTransfer?.setData('text/plain', String(i));
+          if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
+        };
+        li.ondragend = () => {
+          dragFrom = undefined;
+          for (const row of list.children) row.classList.remove('dragging', 'drop-before', 'drop-after');
+        };
+        li.ondragover = (ev) => {
+          if (dragFrom === undefined) return;
+          ev.preventDefault();
+          const after = ev.offsetY > li.offsetHeight / 2;
+          for (const row of list.children) row.classList.remove('drop-before', 'drop-after');
+          li.classList.add(after ? 'drop-after' : 'drop-before');
+        };
+        li.ondrop = (ev) => {
+          if (dragFrom === undefined) return;
+          ev.preventDefault();
+          const after = ev.offsetY > li.offsetHeight / 2;
+          const [moved] = macro.steps.splice(dragFrom, 1);
+          let to = i + (after ? 1 : 0);
+          if (dragFrom < to) to -= 1;
+          if (moved) macro.steps.splice(to, 0, moved);
+          dragFrom = undefined;
+          render();
+        };
+        li.append(el('span', 'grip', '⋮⋮'));
         li.append(el('span', 'icon', STEP_ICONS[step.type]));
         li.append(el('span', 'kind', STEP_KINDS.find((k) => k.type === step.type)?.label ?? step.type));
         li.append(stepFields(step, render));

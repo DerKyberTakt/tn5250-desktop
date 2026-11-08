@@ -999,6 +999,25 @@ dialog.modal.macro-editor .macro-steps li.empty {
   justify-content: center;
 }
 
+dialog.modal.macro-editor .macro-steps .grip {
+  cursor: grab;
+  opacity: 0.45;
+  letter-spacing: -3px;
+  user-select: none;
+}
+
+dialog.modal.macro-editor .macro-steps li.dragging {
+  opacity: 0.45;
+}
+
+dialog.modal.macro-editor .macro-steps li.drop-before {
+  box-shadow: inset 0 2px 0 var(--vscode-focusBorder, #4a90d9);
+}
+
+dialog.modal.macro-editor .macro-steps li.drop-after {
+  box-shadow: inset 0 -2px 0 var(--vscode-focusBorder, #4a90d9);
+}
+
 dialog.modal.macro-editor .macro-steps .icon {
   width: 24px;
   text-align: center;
