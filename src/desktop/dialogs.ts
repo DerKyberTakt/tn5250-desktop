@@ -121,17 +121,32 @@ export function messageDialog(title: string, lines: string[]): Promise<void> {
   });
 }
 
+/** The face colour of a keycap button; the letters light up in the matching colour. */
+export type KeyTone = 'esc' | 'grey' | 'green' | 'blue';
+
 /**
- * The ESC button of the full-page dialogs: a raised key in the top right corner that
- * slides onto its shadow on hover while its letters light up red one at a time.
+ * A keycap button: a raised key that drops onto its shadow on hover while its letters
+ * light up one at a time (the whole word within about 300 ms, letters at most 100 ms apart).
  */
-export function escButton(onClick: () => void, title = 'Close without saving (Esc)'): HTMLButtonElement {
-  const b = el('button', 'esc');
+export function keyButton(label: string, tone: KeyTone, onClick: () => void, className = ''): HTMLButtonElement {
+  const b = el('button', `keycap ${tone}${className ? ` ${className}` : ''}`);
   b.type = 'button';
+  const chars = [...label];
+  const step = chars.length > 1 ? Math.min(100, 300 / (chars.length - 1)) : 0;
+  chars.forEach((ch, i) => {
+    const s = el('span', undefined, ch);
+    if (i) s.style.transitionDelay = `${Math.round(i * step)}ms`;
+    b.append(s);
+  });
+  b.onclick = onClick;
+  return b;
+}
+
+/** The ESC key of the full-page dialogs, top right: closes without saving. */
+export function escButton(onClick: () => void, title = 'Close without saving (Esc)'): HTMLButtonElement {
+  const b = keyButton('ESC', 'esc', onClick, 'esc');
   b.title = title;
   b.setAttribute('aria-label', 'Cancel');
-  for (const ch of 'ESC') b.append(el('span', undefined, ch));
-  b.onclick = onClick;
   return b;
 }
 
@@ -199,6 +214,9 @@ export function iconListDialog(
     form.append(head, tools, list);
     // Enter must not submit (and close) the form; the buttons do everything.
     form.onsubmit = (ev) => ev.preventDefault();
+    // Focus starts on the form, not on a button: a button focused by script counts as
+    // keyboard focus and would open with its hover ring lit. Tab reaches the buttons.
+    form.tabIndex = -1;
     dialog.append(form);
     document.body.append(dialog);
     dialog.onclose = () => {
@@ -206,7 +224,7 @@ export function iconListDialog(
       resolve(result);
     };
     dialog.showModal();
-    (tools.querySelector('button') ?? list.querySelector('button'))?.focus();
+    form.focus();
   });
 }
 

@@ -262,6 +262,8 @@ describe('macroEditorDialog', () => {
     expect(labels()).toEqual(['0 ms']);
     button('Reset').click();
     expect(labels()).toEqual([]);
+    // The bottom buttons are keycaps like ESC.
+    expect([...dialog().querySelectorAll('.buttons button')].map((b) => b.className)).toEqual(['keycap grey reset', 'keycap green run', 'keycap blue primary']);
     const esc = dialog().querySelector('button.esc') as HTMLButtonElement;
     expect(esc.textContent).toBe('ESC');
     expect(esc.querySelectorAll('span')).toHaveLength(3); // one per letter, so they light up one at a time

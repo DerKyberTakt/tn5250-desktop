@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { escButton, iconListDialog, type IconAction } from '../../src/desktop/dialogs';
+import { escButton, iconListDialog, keyButton, type IconAction } from '../../src/desktop/dialogs';
 
 // jsdom has no showModal(): the dialogs only need open/close and the close event.
 beforeEach(() => {
@@ -25,16 +25,29 @@ const TOP: IconAction[] = [
   { id: 'record', label: 'Record', icon: 'record', tone: 'red' },
 ];
 
-describe('escButton', () => {
-  it('spells ESC one letter per span and runs the handler', () => {
+describe('keycap buttons', () => {
+  it('ESC spells its letters one per span, 100 ms apart, and runs the handler', () => {
     let clicks = 0;
     const b = escButton(() => clicks++);
+    expect(b.className).toBe('keycap esc esc');
     expect(b.textContent).toBe('ESC');
-    expect([...b.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['E', 'S', 'C']);
+    const spans = [...b.querySelectorAll('span')];
+    expect(spans.map((s) => s.textContent)).toEqual(['E', 'S', 'C']);
+    expect(spans.map((s) => s.style.transitionDelay)).toEqual(['', '100ms', '200ms']);
     expect(b.getAttribute('aria-label')).toBe('Cancel');
     expect(b.title).toContain('Esc');
     b.click();
     expect(clicks).toBe(1);
+  });
+
+  it('a long label lights up within about 300 ms (letters closer together)', () => {
+    const b = keyButton('Save and run', 'green', () => undefined, 'run');
+    expect(b.className).toBe('keycap green run');
+    expect(b.textContent).toBe('Save and run');
+    const spans = [...b.querySelectorAll('span')];
+    expect(spans).toHaveLength(12);
+    expect(spans[11]?.style.transitionDelay).toBe('300ms');
+    expect(spans[1]?.style.transitionDelay).toBe('27ms');
   });
 });
 
@@ -56,6 +69,8 @@ describe('iconListDialog (Macros)', () => {
     // No bottom Close button any more: ESC does that.
     expect([...d.querySelectorAll('button')].some((b) => b.textContent === 'Close')).toBe(false);
     expect(d.querySelector('p.note')).toBeNull();
+    // Nothing is focused on open (a script-focused button would show its hover ring); the form holds focus.
+    expect(document.activeElement).toBe(d.querySelector('form'));
   });
 
   it('resolves with the row and action id, { row: -1 } for a top button, undefined for ESC', async () => {

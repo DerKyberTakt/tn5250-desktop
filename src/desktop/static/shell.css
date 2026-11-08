@@ -839,28 +839,46 @@ dialog.modal button.primary {
   border-color: transparent;
 }
 
-/* --- ESC key: a raised key that drops onto its shadow on hover, letters lighting up one by one --- */
+/* --- keycap buttons: a raised key that drops onto its shadow on hover, letters lighting up one by one --- */
 dialog.modal {
+  --key-ink: #111111;
   --esc-bg: #fee6e3;
-  --esc-ink: #111111;
   --esc-hot: #e8242b;
+  --grey-bg: #ececec;
+  --grey-hot: #e0861a;
+  --green-bg: #dff5e6;
+  --green-hot: #1f9d4a;
+  --blue-bg: #dfeefc;
+  --blue-hot: #1f6fe0;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) dialog.modal {
+    --key-ink: #f2f2f2;
     --esc-bg: #3a1c1a;
-    --esc-ink: #f2f2f2;
     --esc-hot: #ff4d3d;
+    --grey-bg: #262626;
+    --grey-hot: #ffa030;
+    --green-bg: #15301f;
+    --green-hot: #3ad26f;
+    --blue-bg: #14263a;
+    --blue-hot: #4da3ff;
   }
 }
 
 :root[data-theme="dark"] dialog.modal {
+  --key-ink: #f2f2f2;
   --esc-bg: #3a1c1a;
-  --esc-ink: #f2f2f2;
   --esc-hot: #ff4d3d;
+  --grey-bg: #262626;
+  --grey-hot: #ffa030;
+  --green-bg: #15301f;
+  --green-hot: #3ad26f;
+  --blue-bg: #14263a;
+  --blue-hot: #4da3ff;
 }
 
-dialog.modal button.esc {
+dialog.modal button.keycap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -873,45 +891,59 @@ dialog.modal button.esc {
   font-weight: 700;
   letter-spacing: 2px;
   line-height: 1;
-  color: var(--esc-ink);
-  background: var(--esc-bg);
-  border: 2px solid var(--esc-ink);
+  white-space: pre;
+  color: var(--key-ink);
+  background: var(--key-bg);
+  border: 2px solid var(--key-ink);
   border-radius: 8px;
-  box-shadow: 6px 6px 0 0 var(--esc-ink);
+  box-shadow: 6px 6px 0 0 var(--key-ink);
   cursor: pointer;
   user-select: none;
   transform: translate(0, 0);
   transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
 }
 
-dialog.modal button.esc:hover,
-dialog.modal button.esc:focus-visible {
+dialog.modal button.keycap.esc {
+  --key-bg: var(--esc-bg);
+  --key-hot: var(--esc-hot);
+}
+
+dialog.modal button.keycap.grey {
+  --key-bg: var(--grey-bg);
+  --key-hot: var(--grey-hot);
+}
+
+dialog.modal button.keycap.green {
+  --key-bg: var(--green-bg);
+  --key-hot: var(--green-hot);
+}
+
+dialog.modal button.keycap.blue {
+  --key-bg: var(--blue-bg);
+  --key-hot: var(--blue-hot);
+}
+
+dialog.modal button.keycap:hover,
+dialog.modal button.keycap:focus-visible {
   outline: 0;
   transform: translate(4px, 4px);
-  box-shadow: 2px 2px 0 0 var(--esc-ink);
+  box-shadow: 2px 2px 0 0 var(--key-ink);
 }
 
-dialog.modal button.esc:active {
+dialog.modal button.keycap:active {
   transform: translate(6px, 6px);
-  box-shadow: 0 0 0 0 var(--esc-ink);
+  box-shadow: 0 0 0 0 var(--key-ink);
 }
 
-dialog.modal button.esc span {
+/* Each letter is a span; the button sets its transition-delay so the word lights up left to right. */
+dialog.modal button.keycap span {
   transition: color 0.16s ease, text-shadow 0.16s ease;
 }
 
-dialog.modal button.esc span:nth-child(2) {
-  transition-delay: 0.1s;
-}
-
-dialog.modal button.esc span:nth-child(3) {
-  transition-delay: 0.2s;
-}
-
-dialog.modal button.esc:hover span,
-dialog.modal button.esc:focus-visible span {
-  color: var(--esc-hot);
-  text-shadow: 0 0 7px rgb(232 36 43 / 70%);
+dialog.modal button.keycap:hover span,
+dialog.modal button.keycap:focus-visible span {
+  color: var(--key-hot);
+  text-shadow: 0 0 7px var(--key-hot);
 }
 
 /* --- icon list dialog (Macros): play / pencil / trash on each row, tools under the title --- */
@@ -919,6 +951,10 @@ dialog.modal.icon-list {
   min-width: 480px;
   max-width: 640px;
   padding: 18px 22px 16px;
+}
+
+dialog.modal.icon-list form:focus {
+  outline: none;
 }
 
 dialog.modal.icon-list .head {
@@ -1056,8 +1092,8 @@ dialog.modal.icon-list button.act.record .shape {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  dialog.modal button.esc,
-  dialog.modal button.esc span,
+  dialog.modal button.keycap,
+  dialog.modal button.keycap span,
   dialog.modal.icon-list button.act .ring,
   dialog.modal.icon-list button.act .shape,
   dialog.modal.icon-list button.act .lid {
@@ -1780,30 +1816,14 @@ dialog.modal.macro-editor .problems {
 
 dialog.modal.macro-editor .buttons {
   justify-content: center;
-  gap: 16px;
+  gap: 28px;
   margin: 0;
+  padding-bottom: 8px; /* room for the key shadows */
 }
 
-dialog.modal.macro-editor .buttons button {
+dialog.modal.macro-editor .buttons button.keycap {
   min-width: 200px;
-  padding: 10px 18px;
+  height: 40px;
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--ed-fg);
-  background: var(--ed-tile);
-  border: 1px solid var(--ed-tile-border);
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-dialog.modal.macro-editor .buttons button:hover {
-  filter: brightness(1.1);
-}
-
-dialog.modal.macro-editor .buttons button.primary {
-  color: #fff;
-  background: var(--ed-accent);
-  border-color: var(--ed-accent);
 }

@@ -1,6 +1,6 @@
 import { keyName, type KeyAction } from '../shared/keymap';
 import { EDITOR_ACTIONS, actionName, macroProblems, type Macro, type MacroStep } from '../shared/macros';
-import { escButton } from './dialogs';
+import { escButton, keyButton } from './dialogs';
 
 /**
  * The macro editor, modelled on the macro editors of gaming keyboards (Logitech G HUB):
@@ -692,27 +692,17 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
       result = { macro, action };
       dialog.close();
     };
-    const reset = el('button', 'reset', 'Reset');
-    reset.type = 'button';
-    reset.title = 'Back to the macro as it was when the editor opened';
-    reset.onclick = () => {
+    const reset = keyButton('Reset', 'grey', () => {
       macro = copy(original);
       name.value = macro.name;
       showKey();
       problems.hidden = true;
       select(undefined);
-    };
+    }, 'reset');
+    reset.title = 'Back to the macro as it was when the editor opened';
     buttons.append(reset);
-    if (options.canRun) {
-      const run = el('button', 'run', 'Save and run');
-      run.type = 'button';
-      run.onclick = () => finish('run');
-      buttons.append(run);
-    }
-    const save = el('button', 'primary', 'Save');
-    save.type = 'button';
-    save.onclick = () => finish('save');
-    buttons.append(save);
+    if (options.canRun) buttons.append(keyButton('Save and run', 'green', () => finish('run'), 'run'));
+    buttons.append(keyButton('Save', 'blue', () => finish('save'), 'primary'));
 
     const bottom = el('div', 'bottom');
     bottom.append(problems, buttons);
