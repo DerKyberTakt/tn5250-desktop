@@ -192,18 +192,35 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
     const name = textInput(macro.name, 'Macro name', (v) => (macro.name = v));
     name.className = 'name';
     name.setAttribute('aria-label', 'Macro name');
-    titleBox.append(name, el('div', 'sub', 'Steps run left to right. Click a step to change it, drag it to move it, Delete removes it. + adds after the selected step.'));
+    titleBox.append(name);
 
     const side = el('div', 'side');
     const keyLabel = el('label', 'option');
-    keyLabel.append(el('span', 'caption', 'Shortcut key'));
+    const caption = el('span', 'caption', 'Shortcut key');
+    const info = el('span', 'info', 'i');
+    info.setAttribute('role', 'img');
+    info.setAttribute('aria-label', 'About the shortcut key');
+    info.title = 'Launch the macro with a key combination: Ctrl, Alt or Win/Command/Super with a key, or a function key. Macro keybinds are checked before the terminal keybinds. Backspace in the field removes it.';
+    caption.append(info);
+    keyLabel.append(caption);
+    const keybar = el('div', 'keybar');
     const key = el('input');
     key.type = 'text';
     key.readOnly = true;
     key.className = 'keycapture';
+    const clearKey = el('button', 'clear', '✕');
+    clearKey.type = 'button';
+    clearKey.title = 'Remove the shortcut key';
+    clearKey.setAttribute('aria-label', 'Remove the shortcut key');
     const showKey = (): void => {
       key.value = macro.key || '';
-      key.placeholder = 'click, then press a key';
+      key.placeholder = 'e.g. Ctrl+R';
+      clearKey.hidden = !macro.key;
+    };
+    clearKey.onclick = () => {
+      macro.key = '';
+      showKey();
+      key.focus();
     };
     showKey();
     key.onkeydown = (ev) => {
@@ -223,7 +240,8 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
         showKey();
       }
     };
-    keyLabel.append(key, el('span', 'hint', 'A function key, or a combination with Ctrl, Alt or Win. The macro key wins over the keyboard map. Backspace clears it.'));
+    keybar.append(key, clearKey);
+    keyLabel.append(keybar);
     side.append(keyLabel);
     top.append(titleBox, side);
 
@@ -386,10 +404,45 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
       }
     };
 
+    /** The step each chip shows, to slide chips from where they were to where they go. */
+    const stepOf = new WeakMap<Element, MacroStep>();
+    const reducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    /** Moves the dragged step while the drag is still going: the other chips shuffle out of the way. */
+    const liveMove = (to: number): void => {
+      if (dragFrom === undefined || to === dragFrom || to < 0 || to >= macro.steps.length) return;
+      const [moved] = macro.steps.splice(dragFrom, 1);
+      if (moved) macro.steps.splice(to, 0, moved);
+      dragFrom = to;
+      selected = to;
+      render();
+    };
+
+    const dragDone = (): void => {
+      if (dragFrom === undefined) return;
+      dragFrom = undefined;
+      render();
+    };
+
     function renderTimeline(): void {
+      // FLIP: remember where every chip is, redraw, then slide each from its old place to the new one.
+      const before = new Map<MacroStep, DOMRect>();
+      for (const old of timeline.querySelectorAll('li.chip[data-index]')) {
+        const st = stepOf.get(old);
+        if (st) before.set(st, old.getBoundingClientRect());
+      }
       timeline.replaceChildren();
       macro.steps.forEach((step, i) => {
-        const li = el('li', `chip ${step.type}${i === selected ? ' selected' : ''}${i === editing ? ' editing' : ''}`);
+        if (i > 0) {
+          const arrow = el('li', 'arrow', '→');
+          arrow.setAttribute('aria-hidden', 'true');
+          arrow.addEventListener('dragover', (ev) => {
+            if (dragFrom !== undefined) ev.preventDefault();
+          });
+          timeline.append(arrow);
+        }
+        const li = el('li', `chip ${step.type}${i === selected ? ' selected' : ''}${i === editing ? ' editing' : ''}${menuAt === i ? ' menu-open' : ''}${dragFrom === i ? ' dragging' : ''}`);
+        stepOf.set(li, step);
         li.tabIndex = 0;
         li.setAttribute('role', 'button');
         li.dataset.index = String(i);
@@ -458,39 +511,34 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
             render();
           }
         });
-        // Drag a chip anywhere on the timeline (Alt+arrows do the same for the keyboard).
+        // Drag a chip anywhere on the timeline: the others shuffle aside as you go
+        // (Alt+arrows do the same for the keyboard).
         li.draggable = i !== editing;
         li.addEventListener('dragstart', (ev) => {
           dragFrom = i;
+          editing = undefined;
+          menuAt = undefined;
           li.classList.add('dragging');
           ev.dataTransfer?.setData('text/plain', String(i));
           if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
         });
-        li.addEventListener('dragend', () => {
-          dragFrom = undefined;
-          for (const c of timeline.children) c.classList.remove('dragging', 'drop-before', 'drop-after');
-        });
+        li.addEventListener('dragend', dragDone);
         li.addEventListener('dragover', (ev) => {
           if (dragFrom === undefined) return;
           ev.preventDefault();
-          const after = ev.offsetX > li.offsetWidth / 2;
-          for (const c of timeline.children) c.classList.remove('drop-before', 'drop-after');
-          li.classList.add(after ? 'drop-after' : 'drop-before');
-        });
-        li.addEventListener('drop', (ev) => {
-          if (dragFrom === undefined) return;
-          ev.preventDefault();
-          const after = ev.offsetX > li.offsetWidth / 2;
+          if (dragFrom === i) return;
+          const after = ev.clientX - li.getBoundingClientRect().left > li.offsetWidth / 2;
           let to = i + (after ? 1 : 0);
           if (dragFrom < to) to -= 1;
-          const from = dragFrom;
-          dragFrom = undefined;
-          move(from, to);
+          liveMove(to);
+        });
+        li.addEventListener('drop', (ev) => {
+          if (dragFrom !== undefined) ev.preventDefault();
         });
         timeline.append(li);
       });
       // The + tile: adds after the selected chip (at the end when nothing is selected);
-      // drop a chip on it to move it last.
+      // drag a chip over it to make it the last one.
       const end = el('li', `chip end${selected === undefined && macro.steps.length ? ' selected' : ''}${menuAt === 'end' ? ' open' : ''}`);
       end.tabIndex = 0;
       end.setAttribute('role', 'button');
@@ -521,15 +569,10 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
       end.addEventListener('dragover', (ev) => {
         if (dragFrom === undefined) return;
         ev.preventDefault();
-        end.classList.add('drop-before');
+        liveMove(macro.steps.length - 1);
       });
-      end.addEventListener('dragleave', () => end.classList.remove('drop-before'));
       end.addEventListener('drop', (ev) => {
-        if (dragFrom === undefined) return;
-        ev.preventDefault();
-        const from = dragFrom;
-        dragFrom = undefined;
-        move(from, macro.steps.length - 1);
+        if (dragFrom !== undefined) ev.preventDefault();
       });
       timeline.append(end);
       if (!macro.steps.length) timeline.append(el('li', 'empty', 'No steps yet. Press + to add one, or record in a session.'));
@@ -541,7 +584,33 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
         f?.focus();
         if (f instanceof HTMLInputElement && f.type === 'text') f.select();
       }
+      // Slide every chip that changed place from where it was (the shuffle).
+      if (before.size && !reducedMotion()) {
+        for (const li of timeline.querySelectorAll<HTMLElement>('li.chip[data-index]')) {
+          const st = stepOf.get(li);
+          const from = st && before.get(st);
+          if (!from) continue;
+          const now = li.getBoundingClientRect();
+          const dx = from.left - now.left;
+          const dy = from.top - now.top;
+          if (!dx && !dy) continue;
+          li.style.transition = 'none';
+          li.style.transform = `translate(${dx}px, ${dy}px)`;
+          requestAnimationFrame(() => {
+            li.style.transition = 'transform 180ms ease';
+            li.style.transform = '';
+            li.addEventListener('transitionend', () => (li.style.transition = ''), { once: true });
+          });
+        }
+      }
     }
+    // The drag source is redrawn while the drag goes on, so its dragend may be lost: the
+    // first drop or mouse move afterwards cleans up.
+    stage.addEventListener('drop', dragDone);
+    stage.addEventListener('mousemove', dragDone);
+    stage.addEventListener('dragover', (ev) => {
+      if (dragFrom !== undefined) ev.preventDefault();
+    });
 
     const buttons = el('div', 'buttons');
     const finish = (action: 'save' | 'run'): void => {

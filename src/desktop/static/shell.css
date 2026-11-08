@@ -1066,10 +1066,51 @@ dialog.modal.macro-editor input.name::placeholder {
   font-weight: 600;
 }
 
-dialog.modal.macro-editor .title .sub {
+dialog.modal.macro-editor .side .caption .info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 6px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  vertical-align: -2px;
+  color: var(--ed-bg);
+  background: var(--ed-muted);
+  border-radius: 50%;
+  cursor: help;
+}
+
+dialog.modal.macro-editor .side .keybar {
+  position: relative;
   margin-top: 6px;
-  font-size: 12px;
-  color: var(--ed-muted);
+}
+
+dialog.modal.macro-editor .side .keybar button.clear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  min-width: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: #fff;
+  background: #c4372c;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+dialog.modal.macro-editor .side .keybar button.clear:hover {
+  background: #e0463a;
 }
 
 dialog.modal.macro-editor .side .option {
@@ -1085,18 +1126,11 @@ dialog.modal.macro-editor .side .caption {
   text-transform: uppercase;
 }
 
-dialog.modal.macro-editor .side .hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--ed-muted);
-}
-
 dialog.modal.macro-editor input.keycapture {
   display: block;
   width: 100%;
-  margin-top: 6px;
-  padding: 6px 8px;
+  margin: 0;
+  padding: 6px 34px 6px 8px;
   font-family: var(--vscode-editor-font-family, monospace);
   color: var(--ed-fg);
   background: var(--ed-tile);
@@ -1127,6 +1161,14 @@ dialog.modal.macro-editor .macro-timeline {
   align-items: center;
   gap: 18px 14px;
   width: 100%;
+}
+
+/* The arrow between two steps. */
+dialog.modal.macro-editor .macro-timeline .arrow {
+  margin: 0 -4px;
+  font-size: 16px;
+  color: var(--ed-muted);
+  user-select: none;
 }
 
 dialog.modal.macro-editor .macro-timeline .empty {
@@ -1162,8 +1204,16 @@ dialog.modal.macro-editor .chip .label {
   text-overflow: ellipsis;
 }
 
-dialog.modal.macro-editor .chip:hover {
+/* Hover brightens a chip; not while its card or menu is open (a filter would make the chip a
+   stacking context and the neighbours would be drawn over the menu). */
+dialog.modal.macro-editor .chip:hover:not(.editing):not(.menu-open):not(.open) {
   filter: brightness(1.12);
+}
+
+dialog.modal.macro-editor .chip.editing,
+dialog.modal.macro-editor .chip.menu-open,
+dialog.modal.macro-editor .chip.end.open {
+  z-index: 5;
 }
 
 dialog.modal.macro-editor .chip:focus-visible,
@@ -1246,15 +1296,9 @@ dialog.modal.macro-editor .chip.end:hover {
 }
 
 dialog.modal.macro-editor .chip.dragging {
-  opacity: 0.4;
-}
-
-dialog.modal.macro-editor .chip.drop-before {
-  box-shadow: -8px 0 0 -3px var(--ed-accent);
-}
-
-dialog.modal.macro-editor .chip.drop-after {
-  box-shadow: 8px 0 0 -3px var(--ed-accent);
+  opacity: 0.35;
+  outline: 2px dashed var(--ed-accent);
+  outline-offset: 2px;
 }
 
 /* In-place fields: a delay or a text turns into its field, a key into a list. */

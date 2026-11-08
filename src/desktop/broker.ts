@@ -7,7 +7,7 @@
 import { SessionController } from '../extension/sessionController';
 import { expandDeviceName } from '../shared/deviceName';
 import type { PcCommandKind } from '../shared/pcCommand';
-import type { ConnectionStatus } from '../shared/protocol';
+import type { ConnectionStatus, WebviewToHost } from '../shared/protocol';
 import { buildTitle, resolveSettings, type TerminalSettings } from '../shared/settings';
 import { signonGate } from '../shared/signonGate';
 import { errorText, goApp, onRelay, relay, type SystemInfo } from './bridge';
@@ -142,39 +142,13 @@ class Broker {
       case 'tab:input': {
         const s = this.tabs.get(msg.tab);
         if (!s) break;
-        const c = s.controller;
-        const m = msg.msg;
-        switch (m.type) {
-          case 'ready':
-            c.publish();
-            // A frame that loads while the session runs (tab moved to another window) must
-            // not sit on "Not connected": status events only report changes.
-            this.send(s.window, { type: 'tab:output', tab: s.tab, msg: { type: 'status', ...c.connectionState } });
-            this.send(s.window, { type: 'tab:state', tab: s.tab, status: s.status, detail: s.detail });
-            if (s.profile.autoConnect !== false) void c.connect();
-            break;
-          case 'action':
-            c.press(m.action);
-            break;
-          case 'text':
-            c.type(m.text);
-            break;
-          case 'click':
-            c.setCursor(m.row, m.col);
-            break;
-          case 'scroll':
-            c.scrollBar(m.addr, m.forward, m.increment);
-            break;
-          case 'mouse':
-            c.mouseEvent(m.event, m.row, m.col);
-            break;
-          case 'reconnect':
-            c.reconnectNow();
-            break;
-          case 'cancelReconnect':
-            c.disconnect();
-            break;
-        }
+        this.input(s, msg.msg);
+        break;
+      }
+      case 'tab:inputs': {
+        const s = this.tabs.get(msg.tab);
+        if (!s) break;
+        for (const m of msg.msgs) this.input(s, m);
         break;
       }
       case 'tab:reload':
@@ -285,6 +259,42 @@ class Broker {
   }
 
   /** Save & Reload from a settings page: new connection values, reconnect. */
+  /** One input from a terminal frame (a key, text, a click…) to its session. */
+  private input(s: Session, m: WebviewToHost): void {
+    const c = s.controller;
+    switch (m.type) {
+      case 'ready':
+        c.publish();
+        // A frame that loads while the session runs (tab moved to another window) must
+        // not sit on "Not connected": status events only report changes.
+        this.send(s.window, { type: 'tab:output', tab: s.tab, msg: { type: 'status', ...c.connectionState } });
+        this.send(s.window, { type: 'tab:state', tab: s.tab, status: s.status, detail: s.detail });
+        if (s.profile.autoConnect !== false) void c.connect();
+        break;
+      case 'action':
+        c.press(m.action);
+        break;
+      case 'text':
+        c.type(m.text);
+        break;
+      case 'click':
+        c.setCursor(m.row, m.col);
+        break;
+      case 'scroll':
+        c.scrollBar(m.addr, m.forward, m.increment);
+        break;
+      case 'mouse':
+        c.mouseEvent(m.event, m.row, m.col);
+        break;
+      case 'reconnect':
+        c.reconnectNow();
+        break;
+      case 'cancelReconnect':
+        c.disconnect();
+        break;
+    }
+  }
+
   private reload(tab: string, profile: TerminalSettings): void {
     const s = this.tabs.get(tab);
     if (!s) return;

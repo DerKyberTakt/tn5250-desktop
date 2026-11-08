@@ -11,7 +11,7 @@ import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type OiaState, 
 import { buildTitle, type TerminalSettings } from '../shared/settings';
 import { errorText, goApp, relay, type SystemInfo } from './bridge';
 import type { Credentials } from './credentials';
-import { isSessionInput, newTabId, snapshotText, type ToWindow } from './relay';
+import { InputQueue, isSessionInput, newTabId, snapshotText, type ToWindow } from './relay';
 import type { Store } from './store';
 
 /** What a tab needs from the shell around it. */
@@ -32,7 +32,8 @@ export interface TabHost {
   /** The macro bound to a key the page reported, if any. */
   macroForKey(key: string): Macro | undefined;
   /** Plays a macro into the tab. */
-  runMacro(macro: Macro, tab: TerminalTab): void;
+  /** fromKey: the macro's shortcut key was pressed (pressed again while it runs, it stops the macro). */
+  runMacro(macro: Macro, tab: TerminalTab, fromKey?: boolean): void;
 }
 
 /** A tab handed over from another window: what the broker told us about it. */
@@ -196,7 +197,7 @@ export class TerminalTab {
   private macroKey(key: string): void {
     if (!this.profile) return;
     const macro = this.host.macroForKey(key);
-    if (macro) this.host.runMacro(macro, this);
+    if (macro) this.host.runMacro(macro, this, true);
     else this.host.log(`no macro on ${key}`);
   }
 
@@ -313,13 +314,19 @@ export class TerminalTab {
   }
 
   /** Sends a session input to the broker, holding it until the session exists. */
+  /** Keystrokes go to the broker in order, one message per tick (see InputQueue). */
+  private readonly inputs = new InputQueue<WebviewToHost>(
+    (msgs) => relay('broker', msgs.length === 1 ? { type: 'tab:input', tab: this.id, msg: msgs[0] as WebviewToHost } : { type: 'tab:inputs', tab: this.id, msgs }),
+    (err: unknown) => this.host.log(`session input lost: ${errorText(err)}`),
+  );
+
   private forward(msg: WebviewToHost): void {
     if (!this.profile) return;
     if (this.pending) {
       this.pending.push(msg);
       return;
     }
-    void relay('broker', { type: 'tab:input', tab: this.id, msg }).catch((err: unknown) => this.host.log(`session input lost: ${errorText(err)}`));
+    this.inputs.push(msg);
   }
 
   /** A message from the terminal frame. */

@@ -86,6 +86,8 @@ describe('macroEditorDialog', () => {
     const result = macroEditorDialog(macro, []);
     expect(labels()).toEqual(['"signoff"', 'Enter', 'wait for input']);
     expect(chips()[1]?.classList.contains('key')).toBe(true);
+    // An arrow between every two steps, none after the last.
+    expect(dialog().querySelectorAll('.macro-timeline li.arrow')).toHaveLength(2);
     const name = dialog().querySelector<HTMLInputElement>('input.name') as HTMLInputElement;
     expect(name.value).toBe('Sign off');
     setInput(name, 'Sign off now');
@@ -165,6 +167,7 @@ describe('macroEditorDialog', () => {
     chips()[2]?.dispatchEvent(key({ key: 'Delete', cancelable: true }));
     expect(labels()).toEqual(['"signoff"', 'Enter', 'ask: Order', '750 ms']);
     expect(selectedIndex()).toBe(2);
+    expect(dialog().querySelectorAll('.macro-timeline li.arrow')).toHaveLength(3);
     button('Save').click();
     const r = await result;
     expect(r?.macro.steps).toEqual([{ type: 'text', text: 'signoff' }, { type: 'key', action: 'enter' }, { type: 'prompt', label: 'Order', secret: true }, { type: 'wait', ms: 750 }]);
@@ -196,8 +199,17 @@ describe('macroEditorDialog', () => {
     const capture = dialog().querySelector<HTMLInputElement>('input.keycapture') as HTMLInputElement;
     capture.dispatchEvent(key({ key: 'a', code: 'KeyA', cancelable: true }));
     expect(capture.value).toBe('');
+    const clear = dialog().querySelector('button.clear') as HTMLButtonElement;
+    expect(clear.hidden).toBe(true);
+    expect(capture.placeholder).toBe('e.g. Ctrl+R');
     capture.dispatchEvent(key({ key: '2', code: 'Digit2', ctrlKey: true, altKey: true, cancelable: true }));
     expect(capture.value).toBe('Ctrl+Alt+2');
+    expect(clear.hidden).toBe(false);
+    // The red x removes it; a key press sets it again.
+    clear.click();
+    expect(capture.value).toBe('');
+    expect(clear.hidden).toBe(true);
+    capture.dispatchEvent(key({ key: '2', code: 'Digit2', ctrlKey: true, altKey: true, cancelable: true }));
     button('Save').click();
     expect(dialog().querySelector('.problems')?.textContent).toContain('already runs "Other"');
     capture.dispatchEvent(key({ key: 'Backspace', code: 'Backspace', cancelable: true }));

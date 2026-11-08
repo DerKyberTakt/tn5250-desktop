@@ -18,6 +18,8 @@ export type ToBroker =
   | { type: 'store:changed'; window?: string }
   | { type: 'tab:open'; tab: string; window: string; profile: TerminalSettings }
   | { type: 'tab:input'; tab: string; msg: WebviewToHost }
+  /** Several inputs from one tick, in order (a macro's TAB TAB "40"). */
+  | { type: 'tab:inputs'; tab: string; msgs: WebviewToHost[] }
   | { type: 'tab:reload'; tab: string; profile: TerminalSettings }
   | { type: 'tab:move'; tab: string; window: string }
   | { type: 'tab:close'; tab: string }
@@ -58,6 +60,44 @@ const SESSION_INPUTS = new Set<WebviewToHost['type']>(['ready', 'action', 'text'
 
 export function isSessionInput(msg: WebviewToHost): boolean {
   return SESSION_INPUTS.has(msg.type);
+}
+
+/**
+ * Session input from a window to the broker, in order. Every relay is its own binding call
+ * to Go, and those calls are not ordered: keys fired in one tick (a macro's TAB TAB "40")
+ * could reach the session as "40" TAB TAB. The queue gathers what one tick produces into
+ * one message and sends the next only after the previous one was dispatched.
+ */
+export class InputQueue<T> {
+  private batch: T[] = [];
+  private scheduled = false;
+  private chain: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly send: (msgs: T[]) => Promise<void>,
+    private readonly onError: (err: unknown) => void,
+    private readonly defer: (fn: () => void) => void = (fn) => queueMicrotask(fn),
+  ) {}
+
+  push(msg: T): void {
+    this.batch.push(msg);
+    if (this.scheduled) return;
+    this.scheduled = true;
+    this.defer(() => this.flush());
+  }
+
+  /** Sends what has gathered (the deferred call does this; tests call it by hand). */
+  flush(): void {
+    this.scheduled = false;
+    const msgs = this.batch.splice(0);
+    if (!msgs.length) return;
+    this.chain = this.chain.then(() => this.send(msgs)).catch(this.onError);
+  }
+
+  /** Settles when everything flushed so far has been sent. */
+  get idle(): Promise<void> {
+    return this.chain;
+  }
 }
 
 let counter = 0;

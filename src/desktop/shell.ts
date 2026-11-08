@@ -108,7 +108,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   /** Record from here: the macro being edited and where the recorded steps go. */
   private recordInto: { macro: Macro; insertAt: number } | undefined;
   /** The macro playing right now, and how to stop it. */
-  private macroRun: { macro: Macro; tab: TerminalTab; stop: AbortController } | undefined;
+  private macroRun: { macro: Macro; tab: TerminalTab; stop: AbortController; byKey: boolean } | undefined;
 
   async start(): Promise<void> {
     try {
@@ -734,8 +734,19 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     return this.store.macros.find((m) => m.key === key);
   }
 
-  runMacro(macro: Macro, tab: TerminalTab): void {
+  runMacro(macro: Macro, tab: TerminalTab, fromKey = false): void {
     if (this.macroRun) {
+      if (fromKey && this.macroRun.tab === tab) {
+        // The shortcut pressed again while a macro runs in this session: stop it, unlock the
+        // keyboard (Reset) and wipe what it typed (Erase Input).
+        const running = this.macroRun;
+        running.byKey = true;
+        running.stop.abort();
+        tab.press('reset');
+        tab.press('eraseInput');
+        this.notify(`Macro "${running.macro.name}" stopped by its key; input fields cleared`);
+        return;
+      }
       this.notify(`Macro "${this.macroRun.macro.name}" is still running (Actions > Stop Macro)`);
       return;
     }
@@ -744,7 +755,8 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       return;
     }
     const stop = new AbortController();
-    this.macroRun = { macro, tab, stop };
+    const run = { macro, tab, stop, byKey: false };
+    this.macroRun = run;
     this.notify(`Running macro "${macro.name}"…`);
     this.updateToolbar();
     const target: MacroTarget = {
@@ -757,7 +769,9 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     void runMacro(macro, target, { signal: stop.signal })
       .then((r) => {
         if (r.ok) this.notify(`Macro "${macro.name}" done`);
-        else {
+        else if (r.reason === 'stopped' && run.byKey) {
+          // Already said so when the key stopped it.
+        } else {
           const step = macro.steps[r.step];
           this.notify(`Macro "${macro.name}" stopped at step ${r.step + 1}${step ? ` (${describeStep(step)})` : ''}: ${r.reason}`);
         }
