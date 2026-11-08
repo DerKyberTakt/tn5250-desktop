@@ -2,6 +2,8 @@
 
 ## 0.2.2 - unreleased
 
+- Linux: the nfpm packaging (`wails3 task linux:generate:deb|rpm|aur`) names a post-install script that did not exist; it is there now and refreshes the desktop database and icon cache.
+- The euro code pages 1140-1149 announce the euro keyboard types CRTDEVDSP lists for them (USE, AGE, DME, FNE, ITE, SPE, UKE, FAE, ICE) instead of the plain ones; 1148 keeps INB.
 - File > Import Connections: reads ACS 5250 display session profiles (`.hod`) from `Documents\\IBM\\iAccessClient\\Emulator` or any `.hod` files you pick and adds the ones you select (connection, screen size, code page, workstation name, user profile, display, paste, hotspot, mouse wheel, sound and keyboard options, field colours); a connection already saved is updated from the profile or left alone, your choice, and Undo is offered after the import; passwords are never read. The readers are shared with the VS Code extension, where Juan Concepcion contributed them (tn5250-terminal #7).
 
 ## 0.2.1 - 2026-11-08
