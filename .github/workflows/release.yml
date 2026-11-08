@@ -257,7 +257,9 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" -ne 124 ]; then
-            echo "::error title=linux smoke test::exit $rc; $(tail -n 30 smoke.log | tr '\n' '|' | cut -c1-3500)"; exit 1
+            echo "::group::smoke.log (head)"; head -n 80 smoke.log; echo "::endgroup::"
+            echo "::group::smoke.log (crash)"; grep -n -m1 -B3 -A40 -E 'SIG[A-Z]+|panic:|fatal error' smoke.log || true; echo "::endgroup::"
+            echo "::error title=linux smoke test::exit $rc; $(grep -m1 -E 'SIG[A-Z]+|panic:|fatal error' smoke.log | cut -c1-300)"; exit 1
           fi
           echo "started and ran until the timeout (exit 124): ok"
 
