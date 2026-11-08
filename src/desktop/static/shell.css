@@ -1067,23 +1067,65 @@ dialog.modal.macro-editor input.name::placeholder {
 }
 
 dialog.modal.macro-editor .side .caption .info {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 15px;
   height: 15px;
   margin-left: 6px;
+  vertical-align: -2px;
+  color: var(--ed-bg);
+  background: var(--ed-muted);
+  border-radius: 50%;
+  outline: none;
+  cursor: default;
+}
+
+dialog.modal.macro-editor .side .caption .info .glyph {
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 11px;
   font-style: italic;
   font-weight: 700;
   letter-spacing: 0;
+  line-height: 1;
   text-transform: none;
-  vertical-align: -2px;
-  color: var(--ed-bg);
-  background: var(--ed-muted);
-  border-radius: 50%;
-  cursor: help;
+}
+
+dialog.modal.macro-editor .side .caption .info:hover,
+dialog.modal.macro-editor .side .caption .info:focus-visible {
+  background: var(--ed-fg);
+}
+
+/* The explanation, under the icon and away from the pointer. */
+dialog.modal.macro-editor .side .caption .info .tip {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: -8px;
+  z-index: 4;
+  width: 300px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-transform: none;
+  text-align: left;
+  color: var(--ed-fg);
+  background: var(--ed-card);
+  border: 1px solid var(--ed-tile-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+dialog.modal.macro-editor .side .caption .info:hover .tip,
+dialog.modal.macro-editor .side .caption .info:focus-visible .tip {
+  opacity: 1;
+  visibility: visible;
 }
 
 dialog.modal.macro-editor .side .keybar {
@@ -1094,23 +1136,33 @@ dialog.modal.macro-editor .side .keybar {
 dialog.modal.macro-editor .side .keybar button.clear {
   position: absolute;
   top: 50%;
-  right: 6px;
+  right: 4px;
   transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  font-size: 13px;
-  line-height: 1;
-  color: #fff;
-  background: #c4372c;
+  color: #c4372c;
+  background: transparent;
   border: 0;
   border-radius: 50%;
   cursor: pointer;
+  transition: color 120ms ease, filter 120ms ease, background 120ms ease;
 }
 
-dialog.modal.macro-editor .side .keybar button.clear:hover {
-  background: #e0463a;
+dialog.modal.macro-editor .side .keybar button.clear svg {
+  display: block;
+}
+
+dialog.modal.macro-editor .side .keybar button.clear:hover,
+dialog.modal.macro-editor .side .keybar button.clear:focus-visible {
+  color: #ff4d3d;
+  background: rgb(255 77 61 / 12%);
+  filter: drop-shadow(0 0 6px rgb(255 77 61 / 90%));
+  outline: none;
 }
 
 dialog.modal.macro-editor .side .option {
@@ -1178,9 +1230,16 @@ dialog.modal.macro-editor .macro-timeline .empty {
   color: var(--ed-muted);
 }
 
+dialog.modal.macro-editor.dragging-chip,
+dialog.modal.macro-editor.dragging-chip * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 dialog.modal.macro-editor .chip {
   position: relative;
   display: inline-flex;
+  touch-action: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -1295,10 +1354,14 @@ dialog.modal.macro-editor .chip.end:hover {
   background: var(--ed-tile-border);
 }
 
+/* The chip under the pointer while it is dragged: lifted, above the others, no hover effects. */
 dialog.modal.macro-editor .chip.dragging {
-  opacity: 0.35;
-  outline: 2px dashed var(--ed-accent);
+  z-index: 6;
+  opacity: 0.92;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 35%);
+  outline: 2px solid var(--ed-accent);
   outline-offset: 2px;
+  filter: none !important;
 }
 
 /* In-place fields: a delay or a text turns into its field, a key into a list. */

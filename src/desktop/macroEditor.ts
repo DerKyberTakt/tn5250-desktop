@@ -197,10 +197,16 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
     const side = el('div', 'side');
     const keyLabel = el('label', 'option');
     const caption = el('span', 'caption', 'Shortcut key');
-    const info = el('span', 'info', 'i');
+    const info = el('span', 'info');
+    info.tabIndex = 0;
     info.setAttribute('role', 'img');
     info.setAttribute('aria-label', 'About the shortcut key');
-    info.title = 'Launch the macro with a key combination: Ctrl, Alt or Win/Command/Super with a key, or a function key. Macro keybinds are checked before the terminal keybinds. Backspace in the field removes it.';
+    info.setAttribute('aria-describedby', 'macro-key-tip');
+    info.append(el('span', 'glyph', 'i'));
+    const tip = el('span', 'tip', 'Launch the macro with a key combination: Ctrl, Alt or Win/Command/Super with a key, or a function key. Macro keybinds are checked before the terminal keybinds. Backspace in the field removes it.');
+    tip.id = 'macro-key-tip';
+    tip.setAttribute('role', 'tooltip');
+    info.append(tip);
     caption.append(info);
     keyLabel.append(caption);
     const keybar = el('div', 'keybar');
@@ -208,8 +214,9 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
     key.type = 'text';
     key.readOnly = true;
     key.className = 'keycapture';
-    const clearKey = el('button', 'clear', '✕');
+    const clearKey = el('button', 'clear');
     clearKey.type = 'button';
+    clearKey.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
     clearKey.title = 'Remove the shortcut key';
     clearKey.setAttribute('aria-label', 'Remove the shortcut key');
     const showKey = (): void => {
@@ -418,10 +425,100 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
       render();
     };
 
-    const dragDone = (): void => {
+    /** The grab: where in the chip the pointer took hold, where the pointer is, the chip's resting place. */
+    let grab: { dx: number; dy: number; x: number; y: number; base?: DOMRect } | undefined;
+    /** A click right after a drag is the drag's release, not a click. */
+    let swallowClick = false;
+
+    /** Keeps the dragged chip under the pointer (its resting place is where the layout put it). */
+    const followPointer = (): void => {
+      if (dragFrom === undefined || !grab) return;
+      const li = timeline.querySelector<HTMLElement>(`li.chip[data-index="${dragFrom}"]`);
+      if (!li) return;
+      if (!grab.base) {
+        li.style.transform = '';
+        grab.base = li.getBoundingClientRect();
+      }
+      li.style.transition = 'none';
+      li.style.transform = `translate(${grab.x - grab.dx - grab.base.left}px, ${grab.y - grab.dy - grab.base.top}px)`;
+    };
+
+    /** The place the pointer is over: before or after the chip under it, or last over the + tile. */
+    const dropTargetAt = (x: number, y: number): number | undefined => {
+      for (const li of timeline.querySelectorAll<HTMLElement>('li.chip')) {
+        const idx = li.dataset.index === undefined ? undefined : Number(li.dataset.index);
+        if (idx === dragFrom) continue;
+        // Layout positions, not the animated ones (transforms are left out of offset*).
+        const r = timeline.getBoundingClientRect();
+        const left = r.left + li.offsetLeft - timeline.offsetLeft;
+        const top = r.top + li.offsetTop - timeline.offsetTop;
+        if (y < top || y > top + li.offsetHeight || x < left || x > left + li.offsetWidth) continue;
+        if (idx === undefined) return macro.steps.length - 1; // the + tile
+        let to = x < left + li.offsetWidth / 2 ? idx : idx + 1;
+        if (dragFrom !== undefined && dragFrom < to) to -= 1;
+        return to;
+      }
+      return undefined;
+    };
+
+    const onPointerMove = (ev: PointerEvent): void => {
+      if (!grab) return;
+      grab.x = ev.clientX;
+      grab.y = ev.clientY;
       if (dragFrom === undefined) return;
+      ev.preventDefault();
+      const to = dropTargetAt(ev.clientX, ev.clientY);
+      if (to !== undefined && to !== dragFrom) {
+        grab.base = undefined;
+        liveMove(to);
+      }
+      followPointer();
+    };
+
+    const endDrag = (): void => {
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', endDrag);
+      document.removeEventListener('pointercancel', endDrag);
+      dialog.classList.remove('dragging-chip');
+      const was = dragFrom;
+      grab = undefined;
       dragFrom = undefined;
-      render();
+      if (was !== undefined) {
+        swallowClick = true;
+        render(); // slides the chip from under the pointer into its slot
+        focusChip(was);
+      }
+    };
+
+    /** pointerdown on a chip: a drag starts once the pointer has moved a few pixels. */
+    const armDrag = (ev: PointerEvent, i: number): void => {
+      if (ev.button !== 0 || editing === i) return;
+      if (ev.target instanceof HTMLElement && ev.target.closest('.card, .add-menu, .inline')) return;
+      const li = ev.currentTarget as HTMLElement;
+      const rect = li.getBoundingClientRect();
+      const start = { x: ev.clientX, y: ev.clientY };
+      const begin = (mv: PointerEvent): void => {
+        if (Math.abs(mv.clientX - start.x) < 4 && Math.abs(mv.clientY - start.y) < 4) return;
+        document.removeEventListener('pointermove', begin);
+        document.removeEventListener('pointerup', cancel);
+        dragFrom = i;
+        editing = undefined;
+        menuAt = undefined;
+        selected = i;
+        grab = { dx: start.x - rect.left, dy: start.y - rect.top, x: mv.clientX, y: mv.clientY };
+        dialog.classList.add('dragging-chip');
+        render();
+        followPointer();
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', endDrag);
+        document.addEventListener('pointercancel', endDrag);
+      };
+      const cancel = (): void => {
+        document.removeEventListener('pointermove', begin);
+        document.removeEventListener('pointerup', cancel);
+      };
+      document.addEventListener('pointermove', begin);
+      document.addEventListener('pointerup', cancel);
     };
 
     function renderTimeline(): void {
@@ -436,9 +533,6 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
         if (i > 0) {
           const arrow = el('li', 'arrow', '→');
           arrow.setAttribute('aria-hidden', 'true');
-          arrow.addEventListener('dragover', (ev) => {
-            if (dragFrom !== undefined) ev.preventDefault();
-          });
           timeline.append(arrow);
         }
         const li = el('li', `chip ${step.type}${i === selected ? ' selected' : ''}${i === editing ? ' editing' : ''}${menuAt === i ? ' menu-open' : ''}${dragFrom === i ? ' dragging' : ''}`);
@@ -475,6 +569,10 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
         }
         if (menuAt === i) li.append(addMenu(i));
         li.addEventListener('click', (ev) => {
+          if (swallowClick) {
+            swallowClick = false;
+            return;
+          }
           if (ev.target instanceof HTMLElement && ev.target.closest('.card, .add-menu, .inline')) return;
           if (editing === i) return;
           if (step.type === 'waitInput') select(i);
@@ -511,30 +609,10 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
             render();
           }
         });
-        // Drag a chip anywhere on the timeline: the others shuffle aside as you go
-        // (Alt+arrows do the same for the keyboard).
-        li.draggable = i !== editing;
-        li.addEventListener('dragstart', (ev) => {
-          dragFrom = i;
-          editing = undefined;
-          menuAt = undefined;
-          li.classList.add('dragging');
-          ev.dataTransfer?.setData('text/plain', String(i));
-          if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
-        });
-        li.addEventListener('dragend', dragDone);
-        li.addEventListener('dragover', (ev) => {
-          if (dragFrom === undefined) return;
-          ev.preventDefault();
-          if (dragFrom === i) return;
-          const after = ev.clientX - li.getBoundingClientRect().left > li.offsetWidth / 2;
-          let to = i + (after ? 1 : 0);
-          if (dragFrom < to) to -= 1;
-          liveMove(to);
-        });
-        li.addEventListener('drop', (ev) => {
-          if (dragFrom !== undefined) ev.preventDefault();
-        });
+        // Drag a chip anywhere on the timeline with the pointer: the others shuffle aside as
+        // you go (Alt+arrows do the same for the keyboard). Not the browser's drag-and-drop:
+        // that one flashes its own cursors while the row is redrawn.
+        li.addEventListener('pointerdown', (ev) => armDrag(ev, i));
         timeline.append(li);
       });
       // The + tile: adds after the selected chip (at the end when nothing is selected);
@@ -566,14 +644,6 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
           focusChip(undefined);
         }
       });
-      end.addEventListener('dragover', (ev) => {
-        if (dragFrom === undefined) return;
-        ev.preventDefault();
-        liveMove(macro.steps.length - 1);
-      });
-      end.addEventListener('drop', (ev) => {
-        if (dragFrom !== undefined) ev.preventDefault();
-      });
       timeline.append(end);
       if (!macro.steps.length) timeline.append(el('li', 'empty', 'No steps yet. Press + to add one, or record in a session.'));
       // A menu that was just opened on a chip gets the keyboard.
@@ -584,9 +654,11 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
         f?.focus();
         if (f instanceof HTMLInputElement && f.type === 'text') f.select();
       }
-      // Slide every chip that changed place from where it was (the shuffle).
+      // Slide every chip that changed place from where it was (the shuffle). The dragged one
+      // stays under the pointer instead.
       if (before.size && !reducedMotion()) {
         for (const li of timeline.querySelectorAll<HTMLElement>('li.chip[data-index]')) {
+          if (Number(li.dataset.index) === dragFrom) continue;
           const st = stepOf.get(li);
           const from = st && before.get(st);
           if (!from) continue;
@@ -604,14 +676,6 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
         }
       }
     }
-    // The drag source is redrawn while the drag goes on, so its dragend may be lost: the
-    // first drop or mouse move afterwards cleans up.
-    stage.addEventListener('drop', dragDone);
-    stage.addEventListener('mousemove', dragDone);
-    stage.addEventListener('dragover', (ev) => {
-      if (dragFrom !== undefined) ev.preventDefault();
-    });
-
     const buttons = el('div', 'buttons');
     const finish = (action: 'save' | 'run'): void => {
       // Steps with nothing in them are a mistake, not a feature.

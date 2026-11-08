@@ -194,6 +194,26 @@ describe('macroEditorDialog', () => {
     expect(labels()).toEqual(['Enter', 'wait for input']);
   });
 
+  it('drags a chip with the pointer: a few pixels of movement start it, the release ends it and swallows the click', () => {
+    void macroEditorDialog(macro, []);
+    const pointer = (type: string, x: number, y: number): MouseEvent => new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
+    chips()[0]?.dispatchEvent(pointer('pointerdown', 10, 10));
+    // Two pixels: still a click in the making, nothing dragged.
+    document.dispatchEvent(pointer('pointermove', 12, 10));
+    expect(chips()[0]?.classList.contains('dragging')).toBe(false);
+    document.dispatchEvent(pointer('pointermove', 30, 10));
+    expect(chips()[0]?.classList.contains('dragging')).toBe(true);
+    expect(dialog().classList.contains('dragging-chip')).toBe(true);
+    document.dispatchEvent(pointer('pointerup', 30, 10));
+    expect(chips().some((c) => c.classList.contains('dragging'))).toBe(false);
+    expect(dialog().classList.contains('dragging-chip')).toBe(false);
+    // The click the release produces must not open the field.
+    chips()[0]?.click();
+    expect(inline()).toBeNull();
+    chips()[0]?.click();
+    expect(inline()).not.toBeNull();
+  });
+
   it('captures the key from a key press, refuses a plain letter, clears with Backspace, refuses a taken key', async () => {
     const result = macroEditorDialog(macro, [{ id: 'other', name: 'Other', key: 'Ctrl+Alt+2', steps: [{ type: 'waitInput' }] }]);
     const capture = dialog().querySelector<HTMLInputElement>('input.keycapture') as HTMLInputElement;
@@ -202,6 +222,8 @@ describe('macroEditorDialog', () => {
     const clear = dialog().querySelector('button.clear') as HTMLButtonElement;
     expect(clear.hidden).toBe(true);
     expect(capture.placeholder).toBe('e.g. Ctrl+R');
+    expect(dialog().querySelector('.info .tip')?.textContent).toContain('Macro keybinds are checked before the terminal keybinds');
+    expect(dialog().querySelector('.info')?.getAttribute('title')).toBeNull();
     capture.dispatchEvent(key({ key: '2', code: 'Digit2', ctrlKey: true, altKey: true, cancelable: true }));
     expect(capture.value).toBe('Ctrl+Alt+2');
     expect(clear.hidden).toBe(false);
