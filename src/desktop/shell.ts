@@ -4,7 +4,7 @@ import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
 import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
-import { checkListDialog, choiceDialog, confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
+import { checkListDialog, choiceDialog, confirmDialog, formDialog, listDialog, messageDialog, promptDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
@@ -16,6 +16,10 @@ import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
 import { TabDrag, reorder, type Point } from './tabDrag';
 import { ACS_EMULATOR_DIR, HOD_FILTERS, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
+import { keyName } from '../shared/keymap';
+import type { KeyEventInfo } from '../shared/protocol';
+import { MacroRecorder, describeStep, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
+import { macroEditorDialog } from './macroEditor';
 
 const APP_NAME = 'TN5250 Terminal';
 const PROJECT_URL = 'https://github.com/DerKyberTakt/tn5250-desktop';
@@ -96,6 +100,11 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   private readonly statusBar = byId<HTMLElement>('statusbar');
   private readonly statusText = byId<HTMLButtonElement>('status-text');
   private readonly statusRight = byId<HTMLSpanElement>('status-right');
+  private readonly statusRec = byId<HTMLSpanElement>('status-rec');
+  /** The tab a macro is being recorded in. */
+  private recordingTab: TerminalTab | undefined;
+  /** The macro playing right now, and how to stop it. */
+  private macroRun: { macro: Macro; tab: TerminalTab; stop: AbortController } | undefined;
 
   async start(): Promise<void> {
     try {
@@ -714,6 +723,141 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     else this.notify('No previous session yet');
   }
 
+  // --- macros ---
+
+  macroForKey(event: KeyEventInfo): Macro | undefined {
+    const name = keyName(event);
+    return this.store.macros.find((m) => m.key === name);
+  }
+
+  runMacro(macro: Macro, tab: TerminalTab): void {
+    if (this.macroRun) {
+      this.notify(`Macro "${this.macroRun.macro.name}" is still running (Actions > Stop Macro)`);
+      return;
+    }
+    if (this.recordingTab === tab) {
+      this.notify('Stop the recording before running a macro in this session');
+      return;
+    }
+    const stop = new AbortController();
+    this.macroRun = { macro, tab, stop };
+    this.notify(`Running macro "${macro.name}"…`);
+    this.updateToolbar();
+    const target: MacroTarget = {
+      type: (text) => tab.type(text),
+      press: (action) => tab.press(action),
+      inputAllowed: () => tab.inputAllowed(),
+      screenText: () => tab.screenText() ?? '',
+      prompt: (label, secret) => promptDialog(`Macro "${macro.name}"`, label || 'Value', { password: secret }),
+    };
+    void runMacro(macro, target, { signal: stop.signal })
+      .then((r) => {
+        if (r.ok) this.notify(`Macro "${macro.name}" done`);
+        else {
+          const step = macro.steps[r.step];
+          this.notify(`Macro "${macro.name}" stopped at step ${r.step + 1}${step ? ` (${describeStep(step)})` : ''}: ${r.reason}`);
+        }
+      })
+      .catch((err: unknown) => this.notify(`Macro "${macro.name}" failed: ${errorText(err)}`))
+      .finally(() => {
+        this.macroRun = undefined;
+        this.updateToolbar();
+        tab.focus();
+      });
+  }
+
+  private stopMacro(): void {
+    this.macroRun?.stop.abort();
+  }
+
+  private startRecording(): void {
+    const tab = this.activeTerminal();
+    if (!tab || tab.isDemo || this.recordingTab) return;
+    tab.recorder = new MacroRecorder();
+    this.recordingTab = tab;
+    this.statusRec.hidden = false;
+    this.notify('Recording: what you type and press goes into the macro. Actions > Stop Recording (or the record button) when done.');
+    this.updateToolbar();
+    tab.focus();
+  }
+
+  private async stopRecording(): Promise<void> {
+    const tab = this.recordingTab;
+    if (!tab) return;
+    const steps = tab.recorder?.finish() ?? [];
+    tab.recorder = undefined;
+    this.recordingTab = undefined;
+    this.statusRec.hidden = true;
+    this.updateToolbar();
+    if (!steps.length) {
+      this.notify('Nothing recorded');
+      return;
+    }
+    await this.editMacro({ id: newMacroId(), name: '', key: '', steps });
+  }
+
+  /** Opens the editor; saves the result, and runs it when asked. */
+  private async editMacro(macro: Macro): Promise<void> {
+    const active = this.activeTerminal();
+    const canRun = !!active && !active.isDemo;
+    const result = await macroEditorDialog(macro, this.store.macros, { canRun });
+    if (!result) return;
+    await this.store.saveMacro(result.macro);
+    this.notify(`Macro "${result.macro.name}" saved${result.macro.key ? ` (${result.macro.key})` : ''}`);
+    const tab = this.activeTerminal();
+    if (result.action === 'run' && tab && !tab.isDemo) this.runMacro(result.macro, tab);
+  }
+
+  private macroRow(m: Macro): string {
+    return `${m.name}${m.key ? `   [${m.key}]` : ''}   ${m.steps.length} step${m.steps.length === 1 ? '' : 's'}`;
+  }
+
+  /** Actions > Macros: the list with Run / Edit / Delete, New and Record. */
+  private async macrosDialog(): Promise<void> {
+    for (;;) {
+      const macros = this.store.macros;
+      const pick = await listDialog(
+        'Macros',
+        'A macro types and presses keys into the active session. Record one, or build it step by step.',
+        macros.map((m) => this.macroRow(m)),
+        ['Run', 'Edit', 'Delete'],
+        ['New', 'Record'],
+        'No macros yet.',
+      );
+      if (!pick) return;
+      if (pick.row < 0) {
+        if (pick.action === 'New') await this.editMacro({ id: newMacroId(), name: '', key: '', steps: [] });
+        else {
+          this.startRecording();
+          return;
+        }
+        continue;
+      }
+      const m = macros[pick.row];
+      if (!m) continue;
+      if (pick.action === 'Run') {
+        const tab = this.activeTerminal();
+        if (tab && !tab.isDemo) this.runMacro(m, tab);
+        else this.notify('Open a session first');
+        return;
+      }
+      if (pick.action === 'Edit') await this.editMacro(m);
+      if (pick.action === 'Delete' && (await confirmDialog('Delete macro', `Delete "${m.name}"?`, 'Delete'))) {
+        await this.store.removeMacro(m.id);
+      }
+    }
+  }
+
+  /** Actions > Run Macro: pick one for the active session. */
+  private async runMacroDialog(): Promise<void> {
+    const tab = this.activeTerminal();
+    if (!tab || tab.isDemo) return;
+    const macros = this.store.macros;
+    const pick = await listDialog('Run Macro', '', macros.map((m) => this.macroRow(m)), ['Run'], [], 'No macros yet.');
+    const m = pick && pick.row >= 0 ? macros[pick.row] : undefined;
+    if (m) this.runMacro(m, tab);
+  }
+
   /**
    * File > Import Connections: ACS 5250 session profiles (.hod) from the ACS folder or files
    * the user picks, into the saved sessions (shared readers in src/shared). A connection
@@ -1055,6 +1199,9 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       { icon: 'sysreq', title: 'System request', run: () => t()?.press('sysreq'), enabled: on },
       { icon: 'reset', title: 'Reset', run: () => t()?.press('reset'), enabled: on },
       '|',
+      { icon: 'record', title: 'Record a macro (click again to stop)', run: () => (this.recordingTab ? void this.stopRecording() : this.startRecording()), enabled: () => live() || !!this.recordingTab, pressed: () => !!this.recordingTab },
+      { icon: 'macro', title: 'Macros', run: () => void this.macrosDialog() },
+      '|',
       { icon: 'ifs', title: 'Integrated File System', run: () => void this.openIfs() },
       { icon: 'sql', title: 'Run SQL Scripts', run: () => void this.openSql() },
       { icon: 'console', title: 'Console: CL commands and Qshell', run: () => void this.openConsole('cl') },
@@ -1163,6 +1310,12 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
           { label: 'Help', run: press('help'), enabled: () => !!t()?.connected },
           { label: 'Clear', run: press('clear'), enabled: () => !!t()?.connected },
           { label: 'Print (host)', run: press('print'), enabled: () => !!t()?.connected },
+          '-',
+          { label: 'Macros…', run: () => void this.macrosDialog() },
+          { label: 'Run Macro…', run: () => void this.runMacroDialog(), enabled: () => live() && this.store.macros.length > 0 },
+          { label: 'Record Macro', run: () => this.startRecording(), enabled: () => live() && !this.recordingTab },
+          { label: 'Stop Recording', run: () => void this.stopRecording(), enabled: () => !!this.recordingTab },
+          { label: 'Stop Macro', run: () => this.stopMacro(), enabled: () => !!this.macroRun },
         ],
       },
       {

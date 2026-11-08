@@ -7,6 +7,7 @@ import {
   type TerminalSettings,
 } from '../shared/settings';
 import { goApp } from './bridge';
+import { sanitizeMacro, type Macro } from '../shared/macros';
 
 /**
  * settings.json in the user config directory (Windows: %APPDATA%\tn5250-terminal,
@@ -26,6 +27,8 @@ interface SettingsFile {
   ifsLast?: { host: string; user: string };
   /** Which USER@host passwords are saved in the credential store (names only, no passwords). */
   credentials?: Credential[];
+  /** Keystroke macros (Actions > Macros). */
+  macros?: Macro[];
 }
 
 type Listener = () => void;
@@ -56,6 +59,7 @@ export class Store {
         typeof parsed.ifsLast?.host === 'string' && typeof parsed.ifsLast?.user === 'string'
           ? { host: parsed.ifsLast.host, user: parsed.ifsLast.user }
           : undefined,
+      macros: Array.isArray(parsed.macros) ? parsed.macros.map(sanitizeMacro).filter((m): m is Macro => !!m) : undefined,
     };
   }
 
@@ -164,6 +168,29 @@ export class Store {
     const next = list.filter((x) => !(x.user === c.user && x.host === c.host));
     if (next.length === list.length) return;
     this.file.credentials = next;
+    await this.persist();
+  }
+
+  /** The macros, as copies (edit one and save it back with saveMacro). */
+  get macros(): Macro[] {
+    return (this.file.macros ?? []).map((m) => ({ ...m, steps: m.steps.map((s) => ({ ...s })) }));
+  }
+
+  /** Adds the macro, or replaces the one with its id. */
+  async saveMacro(macro: Macro): Promise<void> {
+    const list = this.file.macros ?? [];
+    const at = list.findIndex((m) => m.id === macro.id);
+    if (at >= 0) list[at] = macro;
+    else list.push(macro);
+    this.file.macros = list;
+    await this.persist();
+  }
+
+  async removeMacro(id: string): Promise<void> {
+    const list = this.file.macros ?? [];
+    const next = list.filter((m) => m.id !== id);
+    if (next.length === list.length) return;
+    this.file.macros = next.length ? next : undefined;
     await this.persist();
   }
 

@@ -30,6 +30,9 @@ It shares its TN5250 engine and terminal UI with the
   highlighted entry fields and programmable mouse buttons, as in ACS; an optional scroll
   bar beside every subfile (More... / Bottom). The Enhanced style draws the widgets, the
   Classic style shows the characters a character display shows.
+- **Macros**: record what you type and press, or build a macro in the editor (type text,
+  press a key, wait for the host, wait for a text, ask for a value), name it, give it a
+  key, run it in any session. Actions > Macros.
 - **Host PC commands**: `STRPCCMD` from a host program opens http(s) links in your
   browser; other commands ask first (or never run, by setting).
 - SEU syntax colouring for RPG/RPGLE, CL, DDS and DB2 SQL.

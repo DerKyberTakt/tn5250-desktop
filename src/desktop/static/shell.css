@@ -916,3 +916,163 @@ dialog.modal button.primary {
   margin: 0 5px;
   background: var(--chrome-border);
 }
+
+/* --- macros --- */
+#status-rec {
+  color: #e0463a;
+  font-weight: 600;
+  margin-right: 10px;
+  animation: rec-blink 1.2s steps(1) infinite;
+}
+
+@keyframes rec-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #status-rec {
+    animation: none;
+  }
+}
+
+dialog.modal.macro-editor {
+  min-width: 560px;
+  max-width: 720px;
+}
+
+dialog.modal.macro-editor .head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+dialog.modal.macro-editor .head .hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+dialog.modal.macro-editor input.keycapture {
+  cursor: pointer;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+dialog.modal.macro-editor input.keycapture:focus {
+  outline: 2px solid var(--vscode-focusBorder, #4a90d9);
+}
+
+dialog.modal.macro-editor h3 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+dialog.modal.macro-editor .macro-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+dialog.modal.macro-editor .macro-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+dialog.modal.macro-editor .macro-steps li:last-child {
+  border-bottom: none;
+}
+
+dialog.modal.macro-editor .macro-steps li.empty {
+  opacity: 0.7;
+  justify-content: center;
+}
+
+dialog.modal.macro-editor .macro-steps .icon {
+  width: 24px;
+  text-align: center;
+  opacity: 0.8;
+}
+
+dialog.modal.macro-editor .macro-steps .kind {
+  width: 120px;
+  flex: none;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+dialog.modal.macro-editor .macro-steps .fields {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+dialog.modal.macro-editor .macro-steps .fields input,
+dialog.modal.macro-editor .macro-steps .fields select {
+  display: inline-block;
+  width: auto;
+  flex: 1;
+  margin: 0;
+  padding: 3px 6px;
+}
+
+dialog.modal.macro-editor .macro-steps .fields input[type='number'] {
+  flex: none;
+  width: 80px;
+}
+
+dialog.modal.macro-editor .macro-steps .fields label.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+
+dialog.modal.macro-editor .macro-steps .fields label.check input {
+  width: auto;
+  margin: 0;
+}
+
+dialog.modal.macro-editor .macro-steps .fields .static {
+  opacity: 0.8;
+}
+
+dialog.modal.macro-editor .macro-steps .unit {
+  opacity: 0.7;
+}
+
+dialog.modal.macro-editor .macro-steps .tools button {
+  min-width: 0;
+  padding: 2px 7px;
+  margin-left: 2px;
+}
+
+dialog.modal.macro-editor .macro-steps .tools button.remove {
+  color: #e0463a;
+}
+
+dialog.modal.macro-editor .add-step {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+dialog.modal.macro-editor .add-step select {
+  flex: 1;
+  padding: 4px 6px;
+}
+
+dialog.modal.macro-editor .problems {
+  color: #e0463a;
+  margin-top: 8px;
+}

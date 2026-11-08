@@ -6,7 +6,8 @@
  */
 import { buildDemoScreen } from '../engine/demoScreen';
 import type { KeyAction } from '../shared/keymap';
-import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type ScreenSnapshot, type WebviewToHost } from '../shared/protocol';
+import type { Macro, MacroRecorder } from '../shared/macros';
+import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type KeyEventInfo, type OiaState, type ScreenSnapshot, type WebviewToHost } from '../shared/protocol';
 import { buildTitle, type TerminalSettings } from '../shared/settings';
 import { errorText, goApp, relay, type SystemInfo } from './bridge';
 import type { Credentials } from './credentials';
@@ -26,6 +27,10 @@ export interface TabHost {
   notify(text: string): void;
   /** Opens the Settings tab (select = index of the session to show, -1 for the defaults). */
   openSettings(select?: number): void;
+  /** The macro bound to a key pressed in the terminal, if any. */
+  macroForKey(event: KeyEventInfo): Macro | undefined;
+  /** Plays a macro into the tab. */
+  runMacro(macro: Macro, tab: TerminalTab): void;
 }
 
 /** A tab handed over from another window: what the broker told us about it. */
@@ -55,6 +60,9 @@ export class TerminalTab {
   private cols = 80;
   private keyOverlay = false;
   private lastScreen: ScreenSnapshot | undefined;
+  private oia: OiaState = DEFAULT_OIA;
+  /** Set while a macro is being recorded: every key and text the frame sends goes into it. */
+  recorder: MacroRecorder | undefined;
   /** Inputs the frame sent before the broker acknowledged the session. */
   private pending: WebviewToHost[] | undefined = [];
   private readonly traces = new Map<string, (trace: Record<string, unknown> | undefined) => void>();
@@ -75,6 +83,11 @@ export class TerminalTab {
     this.frame.className = 'terminal-frame';
     this.frame.src = 'terminal.html';
     this.frame.title = this.title;
+    // Macro keys are caught before the page's keyboard map sees them (same origin: the
+    // frame's document is ours). A key with no macro goes on untouched.
+    this.frame.addEventListener('load', () => {
+      this.frame.contentWindow?.addEventListener('keydown', (ev) => this.macroKey(ev), true);
+    });
 
     if (profile) {
       this.rows = profile.screenSize === '27x132' ? 27 : 24;
@@ -112,6 +125,7 @@ export class TerminalTab {
         break;
       case 'tab:output':
         if (msg.msg.type === 'screen') this.lastScreen = msg.msg.screen;
+        if (msg.msg.type === 'oia') this.oia = msg.msg.oia;
         this.post(msg.msg);
         break;
       case 'tab:state':
@@ -169,6 +183,25 @@ export class TerminalTab {
 
   press(action: KeyAction): void {
     this.forward({ type: 'action', action });
+  }
+
+  /** Types text at the cursor, as the keyboard would. */
+  type(text: string): void {
+    this.forward({ type: 'text', text });
+  }
+
+  /** True while the host accepts keystrokes (connected, keyboard not locked). */
+  inputAllowed(): boolean {
+    return this.connected && this.oia.inputInhibited === 'none';
+  }
+
+  private macroKey(ev: KeyboardEvent): void {
+    if (!this.profile || ev.isComposing || ev.repeat) return;
+    const macro = this.host.macroForKey({ key: ev.key, code: ev.code, ctrl: ev.ctrlKey, shift: ev.shiftKey, alt: ev.altKey, meta: ev.metaKey });
+    if (!macro) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    this.host.runMacro(macro, this);
   }
 
   /** The current screen as text, from the last snapshot the broker sent. */
@@ -302,6 +335,10 @@ export class TerminalTab {
       return;
     }
     if (isSessionInput(msg)) {
+      if (this.recorder) {
+        if (msg.type === 'text') this.recorder.text(msg.text);
+        else if (msg.type === 'action') this.recorder.key(msg.action);
+      }
       this.forward(msg);
       return;
     }

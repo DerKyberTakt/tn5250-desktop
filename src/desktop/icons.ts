@@ -22,6 +22,8 @@ export const ICONS = {
   print: svg(
     '<path d="M7 9V3.5h10V9" stroke="currentColor"/><rect x="3" y="9" width="18" height="8" rx="1.5" stroke="currentColor"/><path d="M7 14h10v6.5H7z" stroke="currentColor"/><circle cx="17.5" cy="12" r=".8" fill="#2e9b48" stroke="none"/>',
   ),
+  record: svg('<circle cx="12" cy="12" r="8" stroke="currentColor"/><circle cx="12" cy="12" r="4.5" fill="#c4372c" stroke="none"/>'),
+  macro: svg('<rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor"/><path d="M7 10h2M11 10h2M15 10h2M7 14h10" stroke="currentColor"/>'),
   connect: svg('<path d="M12 3v8" stroke="#2e9b48" stroke-width="2.2"/><path d="M7.5 6.5a7 7 0 1 0 9 0" stroke="#2e9b48" stroke-width="2.2"/>'),
   disconnect: svg('<path d="M12 3v8" stroke="#c4372c" stroke-width="2.2"/><path d="M7.5 6.5a7 7 0 1 0 9 0" stroke="#c4372c" stroke-width="2.2"/><path d="M4 20 20 4" stroke="#c4372c" stroke-width="2"/>'),
   attn: svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5" stroke="currentColor"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="700" font-family="Segoe UI, sans-serif" fill="#c4372c" stroke="none">ATTN</text>'),
