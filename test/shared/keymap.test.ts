@@ -77,6 +77,18 @@ describe('ACS keymap', () => {
     expect(isTextKey(k('Enter'))).toBe(false);
   });
 
+  it('types the characters AltGr produces (Windows reports AltGr as Ctrl+Alt), not Ctrl+Alt chords', () => {
+    // German keyboard: AltGr+Q = @, AltGr+E = EUR sign, AltGr+8 = [
+    expect(isTextKey(k('@', 'KeyQ', { ctrl: true, alt: true }))).toBe(true);
+    expect(isTextKey(k('\u20ac', 'KeyE', { ctrl: true, alt: true }))).toBe(true);
+    expect(isTextKey(k('[', 'Digit8', { ctrl: true, alt: true }))).toBe(true);
+    expect(classifyKey(k('@', 'KeyQ', { ctrl: true, alt: true }), ACS_KEYMAP)).toEqual({ kind: 'text', text: '@' });
+    // Ctrl+Alt+P is a chord (ACS: print screen), Ctrl+Alt+x nothing to type.
+    expect(classifyKey(k('p', 'KeyP', { ctrl: true, alt: true }), ACS_KEYMAP)).toEqual({ kind: 'action', action: 'printScreen' });
+    expect(isTextKey(k('x', 'KeyX', { ctrl: true, alt: true }))).toBe(false);
+    expect(isTextKey(k('@', 'KeyQ', { ctrl: true, alt: true, meta: true }))).toBe(false);
+  });
+
   it('lets the keymap win over typing (10-key)', () => {
     // Keypad + and - produce "+" / "-" but are Field+ / Field- (NumLock on or off).
     expect(classifyKey(k('+', 'NumpadAdd'), ACS_KEYMAP)).toEqual({ kind: 'action', action: 'fieldPlus' });

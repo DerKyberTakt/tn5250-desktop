@@ -7,7 +7,7 @@
 import { buildDemoScreen } from '../engine/demoScreen';
 import type { KeyAction } from '../shared/keymap';
 import type { Macro, MacroRecorder } from '../shared/macros';
-import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type KeyEventInfo, type OiaState, type ScreenSnapshot, type WebviewToHost } from '../shared/protocol';
+import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type OiaState, type ScreenSnapshot, type WebviewToHost } from '../shared/protocol';
 import { buildTitle, type TerminalSettings } from '../shared/settings';
 import { errorText, goApp, relay, type SystemInfo } from './bridge';
 import type { Credentials } from './credentials';
@@ -27,8 +27,10 @@ export interface TabHost {
   notify(text: string): void;
   /** Opens the Settings tab (select = index of the session to show, -1 for the defaults). */
   openSettings(select?: number): void;
-  /** The macro bound to a key pressed in the terminal, if any. */
-  macroForKey(event: KeyEventInfo): Macro | undefined;
+  /** The keys bound to macros (keyName form), for the page to report instead of handling. */
+  macroKeys(): string[];
+  /** The macro bound to a key the page reported, if any. */
+  macroForKey(key: string): Macro | undefined;
   /** Plays a macro into the tab. */
   runMacro(macro: Macro, tab: TerminalTab): void;
 }
@@ -83,11 +85,6 @@ export class TerminalTab {
     this.frame.className = 'terminal-frame';
     this.frame.src = 'terminal.html';
     this.frame.title = this.title;
-    // Macro keys are caught before the page's keyboard map sees them (same origin: the
-    // frame's document is ours). A key with no macro goes on untouched.
-    this.frame.addEventListener('load', () => {
-      this.frame.contentWindow?.addEventListener('keydown', (ev) => this.macroKey(ev), true);
-    });
 
     if (profile) {
       this.rows = profile.screenSize === '27x132' ? 27 : 24;
@@ -195,13 +192,12 @@ export class TerminalTab {
     return this.connected && this.oia.inputInhibited === 'none';
   }
 
-  private macroKey(ev: KeyboardEvent): void {
-    if (!this.profile || ev.isComposing || ev.repeat) return;
-    const macro = this.host.macroForKey({ key: ev.key, code: ev.code, ctrl: ev.ctrlKey, shift: ev.shiftKey, alt: ev.altKey, meta: ev.metaKey });
-    if (!macro) return;
-    ev.preventDefault();
-    ev.stopImmediatePropagation();
-    this.host.runMacro(macro, this);
+  /** The page reported a macro key (config.macroKeys). */
+  private macroKey(key: string): void {
+    if (!this.profile) return;
+    const macro = this.host.macroForKey(key);
+    if (macro) this.host.runMacro(macro, this);
+    else this.host.log(`no macro on ${key}`);
   }
 
   /** The current screen as text, from the last snapshot the broker sent. */
@@ -292,7 +288,7 @@ export class TerminalTab {
       }
     }
     void this.loadWatermark(settings).then((watermarkImageData) => {
-      this.post({ type: 'config', config: { settings, keyOverlay: this.keyOverlay, host: 'desktop', watermarkImageData } });
+      this.post({ type: 'config', config: { settings, keyOverlay: this.keyOverlay, host: 'desktop', watermarkImageData, macroKeys: this.profile ? this.host.macroKeys() : [] } });
     });
   }
 
@@ -351,6 +347,9 @@ export class TerminalTab {
         break;
       case 'printScreen':
         this.host.printScreen(this);
+        break;
+      case 'macro':
+        this.macroKey(msg.key);
         break;
       case 'openUrl':
         if (/^https?:\/\//i.test(msg.url)) void goApp().OpenURL(msg.url);

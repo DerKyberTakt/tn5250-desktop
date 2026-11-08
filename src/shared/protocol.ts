@@ -121,6 +121,8 @@ export interface TerminalConfig {
   watermarkImageData?: string;
   /** An imported font to register with @font-face before use. */
   fontFace?: { family: string; url: string };
+  /** Keys (keyName form) bound to macros: the page reports them as 'macro' instead of handling them. */
+  macroKeys?: string[];
 }
 
 export interface KeyEventInfo {
@@ -160,6 +162,8 @@ export type HostToWebview =
 export type WebviewToHost =
   | { type: 'ready' }
   | { type: 'key'; event: KeyEventInfo }
+  /** A key from config.macroKeys was pressed; the host runs the macro. */
+  | { type: 'macro'; key: string }
   | { type: 'action'; action: KeyAction }
   | { type: 'text'; text: string }
   | { type: 'click'; row: number; col: number }

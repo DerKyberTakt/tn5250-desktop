@@ -343,6 +343,19 @@ window.addEventListener(
       keyAnchor = undefined;
       keyEnd = undefined;
     }
+    // A macro key is the host's: it wins over the keyboard map and over pass-through.
+    if (config.macroKeys?.length && !isBareModifier(info)) {
+      const name = keyName(info);
+      if (config.macroKeys.includes(name)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.repeat) {
+          logKey(`${name}  -> macro`);
+          post({ type: 'macro', key: name });
+        }
+        return;
+      }
+    }
     if (isPassThrough(info, keymap, config.host)) {
       logKey(`${keyName(info)}  [${info.code}]  -> ${config.host === 'desktop' ? 'app' : 'VS Code'}`);
       return;

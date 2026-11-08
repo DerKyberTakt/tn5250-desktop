@@ -104,9 +104,19 @@ export function keyName(k: KeyEventInfo): string {
   return [...mods, base].join('+');
 }
 
+/**
+ * A character typed with AltGr: Windows reports the right Alt key as Ctrl+Alt, and the
+ * key is the character the layout puts there (@ on a German keyboard, € on most). A
+ * letter or digit with Ctrl+Alt is a chord (Ctrl+Alt+P), not AltGr.
+ */
+export function isAltGrChar(k: KeyEventInfo): boolean {
+  return k.ctrl && k.alt && !k.meta && k.key.length === 1 && !/[a-zA-Z0-9]/.test(k.key);
+}
+
 /** A plain character that should be typed into the field. */
 export function isTextKey(k: KeyEventInfo): boolean {
-  return k.key.length === 1 && !k.ctrl && !k.alt && !k.meta;
+  if (k.key.length !== 1 || k.meta) return false;
+  return (!k.ctrl && !k.alt) || isAltGrChar(k);
 }
 
 export function resolveAction(k: KeyEventInfo, keymap: Keymap): KeyAction | undefined {

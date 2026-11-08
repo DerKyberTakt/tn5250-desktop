@@ -16,8 +16,6 @@ import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
 import { TabDrag, reorder, type Point } from './tabDrag';
 import { ACS_EMULATOR_DIR, HOD_FILTERS, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
-import { keyName } from '../shared/keymap';
-import type { KeyEventInfo } from '../shared/protocol';
 import { MacroRecorder, describeStep, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
 import { macroEditorDialog } from './macroEditor';
 
@@ -725,9 +723,12 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
 
   // --- macros ---
 
-  macroForKey(event: KeyEventInfo): Macro | undefined {
-    const name = keyName(event);
-    return this.store.macros.find((m) => m.key === name);
+  macroKeys(): string[] {
+    return this.store.macros.map((m) => m.key).filter(Boolean);
+  }
+
+  macroForKey(key: string): Macro | undefined {
+    return this.store.macros.find((m) => m.key === key);
   }
 
   runMacro(macro: Macro, tab: TerminalTab): void {
