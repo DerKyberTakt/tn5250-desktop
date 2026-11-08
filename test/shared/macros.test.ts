@@ -13,6 +13,9 @@ import {
   type Macro,
   type MacroStep,
   type MacroTarget,
+  watchRecording,
+  RECORDING_IDLE_LIMIT_MS,
+  RECORDING_REMINDER_MS,
 } from '../../src/shared/macros';
 
 const macro = (steps: MacroStep[], key = ''): Macro => ({ id: 'm1', name: 'Test', key, steps });
@@ -210,5 +213,79 @@ describe('macro files', () => {
     expect(r.keysDropped).toEqual(['B']);
     expect(r.macros).toEqual([{ ...a, name: 'A2' }, { ...b, key: '' }]);
     expect(saved).toEqual([a]);
+  });
+});
+
+describe('watchRecording', () => {
+  /** A hand-driven clock and interval. */
+  function harness(): { tick: () => void; clock: { t: number }; timers: NonNullable<Parameters<typeof watchRecording>[1]['timers']>; cleared: () => boolean } {
+    const clock = { t: 0 };
+    let fn: (() => void) | undefined;
+    let cleared = false;
+    const timers = {
+      setInterval: (f: () => void) => {
+        fn = f;
+        return 1;
+      },
+      clearInterval: () => {
+        cleared = true;
+      },
+    };
+    return { tick: () => fn?.(), clock, timers, cleared: () => cleared };
+  }
+
+  it('reminds every reminder period and ends the recording after the idle limit', () => {
+    const h = harness();
+    const rec = new MacroRecorder(() => h.clock.t);
+    const reminders: number[] = [];
+    let idle = 0;
+    watchRecording(rec, { onIdle: () => idle++, onReminder: (m) => reminders.push(m), timers: h.timers, now: () => h.clock.t });
+    // Typing within the first minutes: nothing yet.
+    h.clock.t = 60_000;
+    rec.text('wrkactjob');
+    h.tick();
+    expect(reminders).toEqual([]);
+    // Five minutes in, still typing now and then: a reminder, no stop.
+    h.clock.t = RECORDING_REMINDER_MS;
+    rec.key('enter');
+    h.tick();
+    expect(reminders).toEqual([5]);
+    expect(idle).toBe(0);
+    h.clock.t = RECORDING_REMINDER_MS + 60_000;
+    h.tick();
+    expect(reminders).toEqual([5]); // not repeated inside the period
+    // Second reminder at ten minutes, with a keystroke at nine so the idle limit is not hit.
+    h.clock.t = 9 * 60_000;
+    rec.text('x');
+    h.clock.t = 2 * RECORDING_REMINDER_MS;
+    h.tick();
+    expect(reminders).toEqual([5, 10]);
+    expect(idle).toBe(0);
+    // Idle for the whole limit since that keystroke: the recording ends once and the watch stops.
+    h.clock.t = 9 * 60_000 + RECORDING_IDLE_LIMIT_MS + 1;
+    h.tick();
+    expect(idle).toBe(1);
+    expect(h.cleared()).toBe(true);
+    h.tick();
+    expect(idle).toBe(1);
+  });
+
+  it('stops watching when told to, and keystrokes reset the idle clock', () => {
+    const h = harness();
+    const rec = new MacroRecorder(() => h.clock.t);
+    let idle = 0;
+    const stop = watchRecording(rec, { onIdle: () => idle++, onReminder: () => undefined, idleMs: 1000, reminderMs: 100_000, timers: h.timers, now: () => h.clock.t });
+    h.clock.t = 900;
+    rec.text('a');
+    h.clock.t = 1800;
+    h.tick();
+    expect(idle).toBe(0); // 900 ms since the last keystroke
+    stop();
+    expect(h.cleared()).toBe(true);
+    h.clock.t = 5000;
+    h.tick();
+    expect(idle).toBe(0); // stopped: no callbacks
+    expect(rec.lastInputAt).toBe(900);
+    expect(rec.startedAt).toBe(0);
   });
 });

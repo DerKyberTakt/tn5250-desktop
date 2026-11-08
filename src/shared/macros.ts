@@ -126,9 +126,18 @@ export function describeStep(step: MacroStep): string {
  */
 export class MacroRecorder {
   readonly steps: MacroStep[] = [];
+  /** When the recording started and when the last keystroke arrived (ms clock), for watchRecording. */
+  readonly startedAt: number;
+  lastInputAt: number;
+
+  constructor(private readonly now: () => number = () => Date.now()) {
+    this.startedAt = now();
+    this.lastInputAt = this.startedAt;
+  }
 
   text(text: string): void {
     if (!text) return;
+    this.lastInputAt = this.now();
     const last = this.steps[this.steps.length - 1];
     if (last?.type === 'text') last.text += text;
     else this.steps.push({ type: 'text', text });
@@ -136,6 +145,7 @@ export class MacroRecorder {
 
   key(action: KeyAction): void {
     if (LOCAL_ACTIONS.has(action)) return;
+    this.lastInputAt = this.now();
     this.steps.push({ type: 'key', action });
     if (AID_ACTIONS.has(action)) this.steps.push({ type: 'waitInput' });
   }
@@ -146,6 +156,57 @@ export class MacroRecorder {
     while (steps.length && steps[steps.length - 1]?.type === 'waitInput') steps.pop();
     return steps;
   }
+}
+
+/** A recording nobody types into for this long ends by itself (the user forgot it). */
+export const RECORDING_IDLE_LIMIT_MS = 5 * 60_000;
+/** Every this long a running recording reminds the user that it is still on. */
+export const RECORDING_REMINDER_MS = 5 * 60_000;
+
+export interface RecordingWatchOptions {
+  /** Called once when the recording has seen no input for idleMs; the watch stops itself first. */
+  onIdle: () => void;
+  /** Called every reminderMs of recording with the minutes so far. */
+  onReminder: (minutes: number) => void;
+  idleMs?: number;
+  reminderMs?: number;
+  tickMs?: number;
+  timers?: { setInterval(fn: () => void, ms: number): unknown; clearInterval(id: unknown): void };
+  now?: () => number;
+}
+
+/**
+ * Guards a recording the user may have forgotten: a reminder every five minutes, and an
+ * end after five minutes without a keystroke. Returns the function that stops watching
+ * (call it when the recording stops).
+ */
+export function watchRecording(recorder: MacroRecorder, options: RecordingWatchOptions): () => void {
+  const idleMs = options.idleMs ?? RECORDING_IDLE_LIMIT_MS;
+  const reminderMs = options.reminderMs ?? RECORDING_REMINDER_MS;
+  const now = options.now ?? (() => Date.now());
+  const t = options.timers ?? timers;
+  let nextReminder = reminderMs;
+  let stopped = false;
+  const id = t.setInterval(() => {
+    if (stopped) return;
+    const at = now();
+    if (at - recorder.lastInputAt >= idleMs) {
+      stop();
+      options.onIdle();
+      return;
+    }
+    const elapsed = at - recorder.startedAt;
+    if (elapsed >= nextReminder) {
+      options.onReminder(Math.round(elapsed / 60_000));
+      nextReminder += reminderMs;
+    }
+  }, options.tickMs ?? 15_000);
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    t.clearInterval(id);
+  };
+  return stop;
 }
 
 /** What a macro plays into. */
@@ -166,7 +227,11 @@ export interface StopSignal {
 }
 
 /** Timers without assuming a DOM or Node typing in shared code. */
-const timers = globalThis as unknown as { setTimeout(fn: () => void, ms: number): unknown };
+const timers = globalThis as unknown as {
+  setTimeout(fn: () => void, ms: number): unknown;
+  setInterval(fn: () => void, ms: number): unknown;
+  clearInterval(id: unknown): void;
+};
 
 export interface RunOptions {
   signal?: StopSignal;

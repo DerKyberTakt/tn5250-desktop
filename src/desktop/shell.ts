@@ -16,7 +16,7 @@ import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
 import { TabDrag, reorder, type Point } from './tabDrag';
 import { ACS_EMULATOR_DIR, HOD_FILTERS, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
-import { MacroRecorder, describeStep, macrosFromJson, macrosToJson, mergeMacros, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
+import { watchRecording, MacroRecorder, describeStep, macrosFromJson, macrosToJson, mergeMacros, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
 import { macroEditorDialog } from './macroEditor';
 
 const APP_NAME = 'TN5250 Terminal';
@@ -103,6 +103,10 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   private readonly statusRec = byId<HTMLSpanElement>('status-rec');
   /** The tab a macro is being recorded in. */
   private recordingTab: TerminalTab | undefined;
+  /** Stops the forgotten-recording guard (reminder every 5 min, end after 5 idle min). */
+  private recordingWatch: (() => void) | undefined;
+  /** Record from here: the macro being edited and where the recorded steps go. */
+  private recordInto: { macro: Macro; insertAt: number } | undefined;
   /** The macro playing right now, and how to stop it. */
   private macroRun: { macro: Macro; tab: TerminalTab; stop: AbortController } | undefined;
 
@@ -775,6 +779,13 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     if (!tab || tab.isDemo || this.recordingTab) return;
     tab.recorder = new MacroRecorder();
     this.recordingTab = tab;
+    this.recordingWatch = watchRecording(tab.recorder, {
+      onIdle: () => {
+        this.notify('Recording stopped: nothing typed for 5 minutes');
+        void this.stopRecording();
+      },
+      onReminder: (minutes) => this.notify(`Still recording a macro (${minutes} min). Actions > Stop Recording when done.`),
+    });
     this.statusRec.hidden = false;
     this.notify('Recording: what you type and press goes into the macro. Actions > Stop Recording (or the record button) when done.');
     this.updateToolbar();
@@ -787,8 +798,19 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     const steps = tab.recorder?.finish() ?? [];
     tab.recorder = undefined;
     this.recordingTab = undefined;
+    this.recordingWatch?.();
+    this.recordingWatch = undefined;
     this.statusRec.hidden = true;
     this.updateToolbar();
+    const into = this.recordInto;
+    this.recordInto = undefined;
+    if (into) {
+      // Record from here: back into the editor with the new steps at the chosen place.
+      if (!steps.length) this.notify('Nothing recorded');
+      const at = Math.min(into.insertAt, into.macro.steps.length);
+      await this.editMacro({ ...into.macro, steps: [...into.macro.steps.slice(0, at), ...steps, ...into.macro.steps.slice(at)] });
+      return;
+    }
     if (!steps.length) {
       this.notify('Nothing recorded');
       return;
@@ -800,8 +822,13 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   private async editMacro(macro: Macro): Promise<void> {
     const active = this.activeTerminal();
     const canRun = !!active && !active.isDemo;
-    const result = await macroEditorDialog(macro, this.store.macros, { canRun });
+    const result = await macroEditorDialog(macro, this.store.macros, { canRun, canRecord: canRun && !this.recordingTab });
     if (!result) return;
+    if (result.action === 'record') {
+      this.recordInto = { macro: result.macro, insertAt: result.insertAt ?? result.macro.steps.length };
+      this.startRecording();
+      return;
+    }
     await this.store.saveMacro(result.macro);
     this.notify(`Macro "${result.macro.name}" saved${result.macro.key ? ` (${result.macro.key})` : ''}`);
     const tab = this.activeTerminal();

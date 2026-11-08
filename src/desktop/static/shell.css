@@ -978,125 +978,220 @@ dialog.modal.macro-editor h3 {
   font-weight: 600;
 }
 
-dialog.modal.macro-editor .macro-steps {
+dialog.modal.macro-editor h3 .hint {
+  display: block;
+  font-weight: 400;
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+/* The timeline: one chip per step, wrapping, like a gaming keyboard's macro editor. */
+dialog.modal.macro-editor .macro-timeline {
   list-style: none;
   margin: 0;
-  padding: 0;
-  max-height: 300px;
+  padding: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 58px;
+  max-height: 200px;
   overflow: auto;
   border: 1px solid var(--chrome-border);
   border-radius: 4px;
 }
 
-dialog.modal.macro-editor .macro-steps li {
-  display: flex;
+dialog.modal.macro-editor .chip {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  border-bottom: 1px solid var(--chrome-border);
-}
-
-dialog.modal.macro-editor .macro-steps li:last-child {
-  border-bottom: none;
-}
-
-dialog.modal.macro-editor .macro-steps li.empty {
-  opacity: 0.7;
-  justify-content: center;
-}
-
-dialog.modal.macro-editor .macro-steps .grip {
-  cursor: grab;
-  opacity: 0.45;
-  letter-spacing: -3px;
+  gap: 6px;
+  max-width: 230px;
+  padding: 6px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background: var(--vscode-input-background, rgba(127, 127, 127, 0.15));
+  font-size: 12px;
+  cursor: pointer;
   user-select: none;
 }
 
-dialog.modal.macro-editor .macro-steps li.dragging {
-  opacity: 0.45;
+dialog.modal.macro-editor .chip .icon {
+  opacity: 0.75;
 }
 
-dialog.modal.macro-editor .macro-steps li.drop-before {
-  box-shadow: inset 0 2px 0 var(--vscode-focusBorder, #4a90d9);
+dialog.modal.macro-editor .chip .label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-dialog.modal.macro-editor .macro-steps li.drop-after {
-  box-shadow: inset 0 -2px 0 var(--vscode-focusBorder, #4a90d9);
+dialog.modal.macro-editor .chip.key {
+  background: #7a1f2b;
+  border-color: #7a1f2b;
+  color: #fff;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
-dialog.modal.macro-editor .macro-steps .icon {
-  width: 24px;
-  text-align: center;
-  opacity: 0.8;
+dialog.modal.macro-editor .chip.key .icon {
+  display: none;
 }
 
-dialog.modal.macro-editor .macro-steps .kind {
-  width: 120px;
-  flex: none;
-  font-size: 0.9em;
-  opacity: 0.8;
+dialog.modal.macro-editor .chip.wait {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid currentcolor;
+  border-radius: 0;
+  padding: 3px 6px;
+  font-weight: 600;
 }
 
-dialog.modal.macro-editor .macro-steps .fields {
-  flex: 1;
+dialog.modal.macro-editor .chip.waitInput,
+dialog.modal.macro-editor .chip.waitText {
+  border-style: dashed;
+}
+
+dialog.modal.macro-editor .chip.prompt {
+  border-color: var(--vscode-focusBorder, #4a90d9);
+}
+
+dialog.modal.macro-editor .chip.end {
+  border-style: dashed;
+  opacity: 0.65;
+  padding: 2px 11px;
+  font-size: 16px;
+}
+
+dialog.modal.macro-editor .chip:hover {
+  filter: brightness(1.15);
+}
+
+dialog.modal.macro-editor .chip.selected {
+  outline: 2px solid var(--vscode-focusBorder, #4a90d9);
+  outline-offset: 1px;
+}
+
+dialog.modal.macro-editor .chip.dragging {
+  opacity: 0.4;
+}
+
+dialog.modal.macro-editor .chip.drop-before {
+  box-shadow: -4px 0 0 var(--vscode-focusBorder, #4a90d9);
+}
+
+dialog.modal.macro-editor .chip.drop-after {
+  box-shadow: 4px 0 0 var(--vscode-focusBorder, #4a90d9);
+}
+
+dialog.modal.macro-editor .step-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  margin-top: 8px;
 }
 
-dialog.modal.macro-editor .macro-steps .fields input,
-dialog.modal.macro-editor .macro-steps .fields select {
+dialog.modal.macro-editor .step-tools select {
+  padding: 4px 6px;
+  max-width: 240px;
+}
+
+dialog.modal.macro-editor .step-tools .spacer {
+  flex: 1;
+}
+
+dialog.modal.macro-editor .step-tools button {
+  min-width: 0;
+  padding: 3px 9px;
+}
+
+dialog.modal.macro-editor .step-tools button.remove {
+  color: #e0463a;
+}
+
+dialog.modal.macro-editor .step-tools button.record {
+  color: #e0463a;
+  font-weight: 600;
+}
+
+/* The selected step's fields. */
+dialog.modal.macro-editor .step-panel {
+  margin-top: 10px;
+  padding: 10px;
+  min-height: 46px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+dialog.modal.macro-editor .step-panel .muted {
+  margin: 0;
+  opacity: 0.7;
+}
+
+dialog.modal.macro-editor .step-panel .kind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+dialog.modal.macro-editor .step-panel .kind .icon {
+  opacity: 0.8;
+}
+
+dialog.modal.macro-editor .step-panel .fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+dialog.modal.macro-editor .step-panel .fields input,
+dialog.modal.macro-editor .step-panel .fields select {
   display: inline-block;
   width: auto;
   flex: 1;
+  min-width: 160px;
   margin: 0;
-  padding: 3px 6px;
+  padding: 4px 6px;
 }
 
-dialog.modal.macro-editor .macro-steps .fields input[type='number'] {
+dialog.modal.macro-editor .step-panel .fields input[type='number'] {
   flex: none;
-  width: 80px;
+  min-width: 0;
+  width: 90px;
 }
 
-dialog.modal.macro-editor .macro-steps .fields label.check {
+dialog.modal.macro-editor .step-panel .fields label.check {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin: 0;
 }
 
-dialog.modal.macro-editor .macro-steps .fields label.check input {
+dialog.modal.macro-editor .step-panel .fields label.check input {
   width: auto;
+  min-width: 0;
+  flex: none;
   margin: 0;
 }
 
-dialog.modal.macro-editor .macro-steps .fields .static {
+dialog.modal.macro-editor .step-panel .fields .static {
   opacity: 0.8;
 }
 
-dialog.modal.macro-editor .macro-steps .unit {
+dialog.modal.macro-editor .step-panel .fields .unit {
   opacity: 0.7;
 }
 
-dialog.modal.macro-editor .macro-steps .tools button {
-  min-width: 0;
-  padding: 2px 7px;
-  margin-left: 2px;
-}
-
-dialog.modal.macro-editor .macro-steps .tools button.remove {
-  color: #e0463a;
-}
-
-dialog.modal.macro-editor .add-step {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-dialog.modal.macro-editor .add-step select {
-  flex: 1;
-  padding: 4px 6px;
+dialog.modal.macro-editor .step-panel .fields .note {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 0.85em;
+  opacity: 0.7;
 }
 
 dialog.modal.macro-editor .problems {
