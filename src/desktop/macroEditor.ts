@@ -2,15 +2,17 @@ import { keyName, type KeyAction } from '../shared/keymap';
 import { EDITOR_ACTIONS, actionName, macroProblems, type Macro, type MacroStep } from '../shared/macros';
 
 /**
- * The macro editor: name, the key that runs it, and the steps on a timeline you work
- * like the macro editors of gaming keyboards. One chip per step (a key, a typed text, a
- * delay, a wait); click a chip to change it in the panel below, drag it to move it,
- * Delete to remove it. New steps, delays and a recording go in after the selected chip
- * (at the end when nothing is selected).
+ * The macro editor, modelled on the macro editors of gaming keyboards (Logitech G HUB):
+ * a full-screen dark page, the name as the title, the steps on one timeline, one chip per
+ * step. Keys are red keycaps, typed text a grey tile, a delay an underlined number with
+ * its unit below. Click a chip to change it in place (a delay or a text becomes a field,
+ * a key a list, a wait-for-text or a prompt a small card under the chip), drag it to move
+ * it, Delete removes it. The + tile at the end (and the right-click menu of a chip) adds
+ * a step after the selected chip, or at the end when nothing is selected.
  *
  * Delays are not recorded: on a 5250 the host sets the pace, and the recorder already
  * puts a "wait for input" after every key the host answers. A delay is a step the user
- * adds on purpose (Add delay, 0 ms to start, then set it).
+ * adds on purpose (0 ms to start, then set it).
  */
 
 export type EditorAction = 'save' | 'run' | 'record';
@@ -37,13 +39,14 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   return e;
 }
 
-/** What Add step offers; a delay has its own button. */
-const STEP_KINDS: Array<{ type: MacroStep['type']; label: string; make: () => MacroStep }> = [
-  { type: 'text', label: 'Type text', make: () => ({ type: 'text', text: '' }) },
-  { type: 'key', label: 'Press a key', make: () => ({ type: 'key', action: 'enter' }) },
-  { type: 'waitInput', label: 'Wait for the host to accept input', make: () => ({ type: 'waitInput' }) },
+/** What the + menu offers, in this order. */
+export const STEP_KINDS: Array<{ type: MacroStep['type']; label: string; make: () => MacroStep }> = [
+  { type: 'key', label: 'Key', make: () => ({ type: 'key', action: 'enter' }) },
+  { type: 'text', label: 'Text', make: () => ({ type: 'text', text: '' }) },
+  { type: 'wait', label: 'Delay', make: () => ({ type: 'wait', ms: 0 }) },
+  { type: 'waitInput', label: 'Wait for input', make: () => ({ type: 'waitInput' }) },
   { type: 'waitText', label: 'Wait for a text on the screen', make: () => ({ type: 'waitText', text: '' }) },
-  { type: 'prompt', label: 'Ask for a value and type it', make: () => ({ type: 'prompt', label: '' }) },
+  { type: 'prompt', label: 'Ask for a value', make: () => ({ type: 'prompt', label: '' }) },
 ];
 
 const KIND_LABELS: Record<MacroStep['type'], string> = {
@@ -53,15 +56,6 @@ const KIND_LABELS: Record<MacroStep['type'], string> = {
   waitInput: 'Wait for the host to accept input',
   waitText: 'Wait for a text on the screen',
   prompt: 'Ask for a value and type it',
-};
-
-const STEP_ICONS: Record<MacroStep['type'], string> = {
-  text: 'Aa',
-  key: '⌨',
-  wait: '⏱',
-  waitInput: '⏳',
-  waitText: '👁',
-  prompt: '?',
 };
 
 const excerpt = (s: string, max = 18): string => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
@@ -92,7 +86,7 @@ export function macroKeyFromEvent(ev: KeyboardEvent): string | undefined {
   return undefined;
 }
 
-function input(value: string, placeholder: string, onInput: (v: string) => void): HTMLInputElement {
+function textInput(value: string, placeholder: string, onInput: (v: string) => void): HTMLInputElement {
   const i = el('input');
   i.type = 'text';
   i.value = value;
@@ -119,41 +113,29 @@ function actionSelect(value: KeyAction, onChange: (a: KeyAction) => void): HTMLS
     s.append(o);
   }
   s.value = value;
-  s.onchange = () => onChange(s.value as KeyAction);
+  s.onchange = () => {
+    if ((EDITOR_ACTIONS as string[]).includes(s.value)) onChange(s.value as KeyAction);
+  };
   return s;
 }
 
-/** The fields of one step, for the panel under the timeline. */
-function stepFields(step: MacroStep, changed: () => void): HTMLElement {
+/** The fields of a step that needs a card under its chip (more than one thing to set). */
+function cardFields(step: MacroStep, changed: () => void): HTMLElement {
   const box = el('div', 'fields');
-  const note = (text: string): HTMLElement => el('p', 'note', text);
   switch (step.type) {
-    case 'text':
-      box.append(input(step.text, 'text to type', (v) => (step.text = v)));
-      break;
-    case 'key':
-      box.append(actionSelect(step.action, (a) => (step.action = a)));
-      break;
-    case 'wait':
-      box.append(numberInput(step.ms, (v) => (step.ms = v)), el('span', 'unit', 'ms'));
-      box.append(note('A pause before the next step. The host sets the pace through "wait for input"; a delay is for screens that keep drawing after they accept input.'));
-      break;
-    case 'waitInput':
-      box.append(el('span', 'static', 'Goes on when the keyboard is unlocked again. The recorder puts one after every key the host answers.'));
-      break;
     case 'waitText': {
-      box.append(input(step.text, 'text that must appear', (v) => (step.text = v)));
+      box.append(textInput(step.text, 'text that must appear', (v) => (step.text = v)));
       const t = numberInput(step.timeoutMs ?? 0, (v) => {
         if (v > 0) step.timeoutMs = v;
         else delete step.timeoutMs;
       });
       t.placeholder = 'timeout';
       t.title = 'How long to wait, in ms (0 = the default)';
-      box.append(t, el('span', 'unit', 'ms'));
+      box.append(el('span', 'unit', 'for up to'), t, el('span', 'unit', 'ms'));
       break;
     }
     case 'prompt': {
-      box.append(input(step.label, 'what to ask for', (v) => (step.label = v)));
+      box.append(textInput(step.label, 'what to ask for', (v) => (step.label = v)));
       const hidden = el('label', 'check');
       const c = el('input');
       c.type = 'checkbox';
@@ -161,17 +143,21 @@ function stepFields(step: MacroStep, changed: () => void): HTMLElement {
       c.onchange = () => {
         if (c.checked) step.secret = true;
         else delete step.secret;
-        changed();
       };
       hidden.append(c, el('span', undefined, 'hidden (a password)'));
       box.append(hidden);
       break;
     }
+    default:
+      break;
   }
   box.addEventListener('input', changed);
   box.addEventListener('change', changed);
   return box;
 }
+
+/** Steps that get a card under the chip; the others edit inline or have nothing to set. */
+const CARD_TYPES = new Set<MacroStep['type']>(['waitText', 'prompt']);
 
 /**
  * Opens the editor on a copy of the macro; resolves with the edited macro and what to do
@@ -180,26 +166,44 @@ function stepFields(step: MacroStep, changed: () => void): HTMLElement {
 export function macroEditorDialog(original: Macro, others: Macro[], options: EditorOptions = { canRun: false }): Promise<EditorResult | undefined> {
   const copy = (m: Macro): Macro => ({ ...m, steps: m.steps.map((s) => ({ ...s })) });
   let macro: Macro = copy(original);
-  /** The selected chip; undefined = nothing (new steps go at the end). */
+  /** The selected chip; undefined = the end (new steps go at the end). */
   let selected: number | undefined;
+  /** The chip being changed in place, if any. */
+  let editing: number | undefined;
+  /** Where the + menu is open: under a chip, under the end tile, or closed. */
+  let menuAt: number | 'end' | undefined;
+  let dragFrom: number | undefined;
+  let result: EditorResult | undefined;
+
   return new Promise((resolve) => {
     const dialog = el('dialog', 'modal macro-editor');
     const form = el('form');
     form.method = 'dialog';
-    form.append(el('h2', undefined, original.name ? `Macro: ${original.name}` : 'New macro'));
 
-    const head = el('div', 'head');
-    const nameLabel = el('label', undefined, 'Name');
-    const name = input(macro.name, 'what the macro does', (v) => (macro.name = v));
-    nameLabel.append(name);
-    const keyLabel = el('label', undefined, 'Key');
+    // --- top: close, name, shortcut key ---
+    const close = el('button', 'close', '✕');
+    close.type = 'button';
+    close.title = 'Close without saving (Esc)';
+    close.setAttribute('aria-label', 'Cancel');
+    close.onclick = () => dialog.close();
+
+    const top = el('div', 'top');
+    const titleBox = el('div', 'title');
+    const name = textInput(macro.name, 'Macro name', (v) => (macro.name = v));
+    name.className = 'name';
+    name.setAttribute('aria-label', 'Macro name');
+    titleBox.append(name, el('div', 'sub', 'Steps run left to right. Click a step to change it, drag it to move it, Delete removes it. + adds after the selected step.'));
+
+    const side = el('div', 'side');
+    const keyLabel = el('label', 'option');
+    keyLabel.append(el('span', 'caption', 'Shortcut key'));
     const key = el('input');
     key.type = 'text';
     key.readOnly = true;
     key.className = 'keycapture';
     const showKey = (): void => {
       key.value = macro.key || '';
-      key.placeholder = 'click, then press a key combination';
+      key.placeholder = 'click, then press a key';
     };
     showKey();
     key.onkeydown = (ev) => {
@@ -220,37 +224,32 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
       }
     };
     keyLabel.append(key, el('span', 'hint', 'A function key, or a combination with Ctrl, Alt or Win. The macro key wins over the keyboard map. Backspace clears it.'));
-    head.append(nameLabel, keyLabel);
-    form.append(head);
+    side.append(keyLabel);
+    top.append(titleBox, side);
 
-    const stepsHead = el('h3', undefined, 'Steps');
-    stepsHead.append(el('span', 'hint', 'Click a step to change it, drag it to move it, Delete removes it. New steps go after the selected one.'));
-    form.append(stepsHead);
-
+    // --- middle: the timeline ---
+    const stage = el('div', 'stage');
     const timeline = el('ol', 'macro-timeline');
-    const panel = el('div', 'step-panel');
+    stage.append(timeline);
+
+    // --- bottom: problems and buttons ---
     const problems = el('p', 'problems');
     problems.hidden = true;
-    let dragFrom: number | undefined;
 
     const insertAt = (): number => (selected === undefined ? macro.steps.length : Math.min(selected + 1, macro.steps.length));
 
-    const renderPanel = (): void => {
-      panel.replaceChildren();
-      const step = selected === undefined ? undefined : macro.steps[selected];
-      if (!step) {
-        panel.append(el('p', 'muted', macro.steps.length ? 'Select a step to change it. New steps go at the end.' : 'No steps yet: add one, add a delay, or record in a session.'));
-        return;
-      }
-      const title = el('div', 'kind');
-      title.append(el('span', 'icon', STEP_ICONS[step.type]), el('span', undefined, `Step ${(selected ?? 0) + 1}: ${KIND_LABELS[step.type]}`));
-      panel.append(title, stepFields(step, renderTimeline));
-    };
+    const render = (): void => renderTimeline();
 
     const select = (i: number | undefined): void => {
       selected = i;
-      renderTimeline();
-      renderPanel();
+      editing = undefined;
+      menuAt = undefined;
+      render();
+    };
+
+    const focusChip = (i: number | undefined): void => {
+      const target = i === undefined ? timeline.querySelector<HTMLElement>('li.chip.end') : timeline.querySelector<HTMLElement>(`li.chip[data-index="${i}"]`);
+      target?.focus();
     };
 
     const move = (from: number, to: number): void => {
@@ -258,35 +257,192 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
       const [moved] = macro.steps.splice(from, 1);
       if (moved) macro.steps.splice(to, 0, moved);
       select(to);
+      focusChip(to);
     };
 
     const removeAt = (i: number): void => {
       macro.steps.splice(i, 1);
-      select(macro.steps.length ? Math.min(i, macro.steps.length - 1) : undefined);
+      const next = macro.steps.length ? Math.min(i, macro.steps.length - 1) : undefined;
+      select(next);
+      focusChip(next);
     };
 
     const addStep = (step: MacroStep): void => {
       const at = insertAt();
       macro.steps.splice(at, 0, step);
-      select(at);
-      panel.querySelector<HTMLElement>('input, select')?.focus();
+      selected = at;
+      menuAt = undefined;
+      // A new chip opens for editing straight away, unless there is nothing to set.
+      editing = step.type === 'waitInput' ? undefined : at;
+      render();
+      if (editing === undefined) focusChip(at);
+    };
+
+    const startEdit = (i: number): void => {
+      if (macro.steps[i]?.type === 'waitInput') return;
+      selected = i;
+      editing = i;
+      menuAt = undefined;
+      render();
+    };
+
+    const endEdit = (): void => {
+      if (editing === undefined) return;
+      const i = editing;
+      editing = undefined;
+      render();
+      focusChip(i);
+    };
+
+    const recordFromHere = (): void => {
+      result = { macro, action: 'record', insertAt: insertAt() };
+      dialog.close();
+    };
+
+    // Clicking outside an open card or menu closes it.
+    const outside = (ev: MouseEvent): void => {
+      if (editing === undefined && menuAt === undefined) return;
+      const t = ev.target as Node | null;
+      if (t && (timeline.querySelector('.card')?.contains(t) || timeline.querySelector('.add-menu')?.contains(t) || timeline.querySelector('.inline')?.contains(t))) return;
+      if (editing !== undefined && t && timeline.querySelector(`li.chip[data-index="${editing}"]`)?.contains(t)) return;
+      editing = undefined;
+      menuAt = undefined;
+      render();
+    };
+    document.addEventListener('mousedown', outside, true);
+
+    /** The + menu under a chip (or the end tile): the step kinds, Record from here, Remove. */
+    const addMenu = (at: number | 'end'): HTMLElement => {
+      const menu = el('ul', 'add-menu');
+      menu.setAttribute('role', 'menu');
+      const item = (label: string, cls: string, onClick: () => void): void => {
+        const li = el('li');
+        const b = el('button', cls, label);
+        b.type = 'button';
+        b.setAttribute('role', 'menuitem');
+        b.onclick = (ev) => {
+          ev.stopPropagation();
+          onClick();
+        };
+        li.append(b);
+        menu.append(li);
+      };
+      for (const k of STEP_KINDS) item(k.label, `kind ${k.type}`, () => addStep(k.make()));
+      if (options.canRecord) item('Record from here', 'record', recordFromHere);
+      if (at !== 'end') item('Remove', 'remove', () => removeAt(at));
+      return menu;
+    };
+
+    /** The editor that replaces a chip's label while it is being changed. */
+    const inlineEditor = (step: MacroStep, i: number): HTMLElement[] => {
+      const finishKeys = (field: HTMLElement, revert: () => void): void => {
+        field.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === 'Tab') {
+            ev.preventDefault();
+            endEdit();
+          } else if (ev.key === 'Escape') {
+            ev.preventDefault();
+            revert();
+            endEdit();
+          }
+          ev.stopPropagation();
+        });
+        field.addEventListener('blur', () => {
+          // A blur because the whole chip was redrawn is not the user leaving the field.
+          if (editing === i) endEdit();
+        });
+      };
+      switch (step.type) {
+        case 'text': {
+          const was = step.text;
+          const f = textInput(step.text, 'text to type', (v) => {
+            step.text = v;
+            f.size = Math.max(6, v.length + 1);
+          });
+          f.className = 'inline';
+          f.size = Math.max(6, step.text.length + 1);
+          finishKeys(f, () => (step.text = was));
+          return [f];
+        }
+        case 'wait': {
+          const was = step.ms;
+          const f = numberInput(step.ms, (v) => (step.ms = v));
+          f.className = 'inline num';
+          finishKeys(f, () => (step.ms = was));
+          return [f, el('span', 'unit', 'ms')];
+        }
+        case 'key': {
+          const was = step.action;
+          const s = actionSelect(step.action, (a) => {
+            step.action = a;
+            endEdit();
+          });
+          s.className = 'inline';
+          finishKeys(s, () => (step.action = was));
+          return [s];
+        }
+        default:
+          return [];
+      }
     };
 
     function renderTimeline(): void {
       timeline.replaceChildren();
       macro.steps.forEach((step, i) => {
-        const li = el('li', `chip ${step.type}${i === selected ? ' selected' : ''}`);
+        const li = el('li', `chip ${step.type}${i === selected ? ' selected' : ''}${i === editing ? ' editing' : ''}`);
         li.tabIndex = 0;
         li.setAttribute('role', 'button');
         li.dataset.index = String(i);
-        li.title = `${KIND_LABELS[step.type]}. Click to change, drag to move, Delete to remove.`;
-        li.append(el('span', 'icon', STEP_ICONS[step.type]), el('span', 'label', chipLabel(step)));
-        li.addEventListener('click', () => select(i));
+        li.title = `${KIND_LABELS[step.type]}: ${chipLabel(step)}. Click to change, drag to move, Delete to remove, right-click for more.`;
+        const label = el('span', 'label', step.type === 'wait' ? String(step.ms) : chipLabel(step));
+        if (i === editing && !CARD_TYPES.has(step.type)) {
+          li.append(...inlineEditor(step, i));
+        } else {
+          li.append(label);
+          if (step.type === 'wait') li.append(el('span', 'unit', 'ms'));
+        }
+        if (i === editing && CARD_TYPES.has(step.type)) {
+          const card = el('div', 'card');
+          card.append(el('div', 'kind', KIND_LABELS[step.type]), cardFields(step, () => (label.textContent = chipLabel(step))));
+          const done = el('button', 'primary small', 'Done');
+          done.type = 'button';
+          done.onclick = (ev) => {
+            ev.stopPropagation();
+            endEdit();
+          };
+          card.append(done);
+          card.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Escape' || (ev.key === 'Enter' && ev.target instanceof HTMLInputElement && ev.target.type !== 'checkbox')) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              endEdit();
+            }
+          });
+          li.append(card);
+        }
+        if (menuAt === i) li.append(addMenu(i));
+        li.addEventListener('click', (ev) => {
+          if (ev.target instanceof HTMLElement && ev.target.closest('.card, .add-menu, .inline')) return;
+          if (editing === i) return;
+          if (step.type === 'waitInput') select(i);
+          else startEdit(i);
+        });
+        li.addEventListener('contextmenu', (ev) => {
+          ev.preventDefault();
+          selected = i;
+          editing = undefined;
+          menuAt = i;
+          render();
+        });
         li.addEventListener('keydown', (ev) => {
+          if (ev.target !== li) return;
           if (ev.key === 'Delete' || ev.key === 'Backspace') {
             ev.preventDefault();
             removeAt(i);
-          } else if (ev.key === 'Enter' || ev.key === ' ') {
+          } else if (ev.key === 'Enter' || ev.key === 'F2') {
+            ev.preventDefault();
+            startEdit(i);
+          } else if (ev.key === ' ') {
             ev.preventDefault();
             select(i);
           } else if (ev.key === 'ArrowLeft' && ev.altKey) {
@@ -295,10 +451,15 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
           } else if (ev.key === 'ArrowRight' && ev.altKey) {
             ev.preventDefault();
             move(i, i + 1);
+          } else if (ev.key === 'ContextMenu' || (ev.key === 'F10' && ev.shiftKey)) {
+            ev.preventDefault();
+            selected = i;
+            menuAt = i;
+            render();
           }
         });
         // Drag a chip anywhere on the timeline (Alt+arrows do the same for the keyboard).
-        li.draggable = true;
+        li.draggable = i !== editing;
         li.addEventListener('dragstart', (ev) => {
           dragFrom = i;
           li.classList.add('dragging');
@@ -328,12 +489,35 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
         });
         timeline.append(li);
       });
-      // The end marker: select it to put new steps at the end; drop a chip on it to move it last.
-      const end = el('li', `chip end${selected === undefined && macro.steps.length ? ' selected' : ''}`, '+');
+      // The + tile: adds after the selected chip (at the end when nothing is selected);
+      // drop a chip on it to move it last.
+      const end = el('li', `chip end${selected === undefined && macro.steps.length ? ' selected' : ''}${menuAt === 'end' ? ' open' : ''}`);
       end.tabIndex = 0;
       end.setAttribute('role', 'button');
-      end.title = 'New steps go at the end';
-      end.addEventListener('click', () => select(undefined));
+      end.setAttribute('aria-label', 'Add a step');
+      end.title = selected === undefined ? 'Add a step at the end' : `Add a step after step ${selected + 1} (click the + with nothing selected to add at the end)`;
+      end.append(el('span', 'label', '+'));
+      if (menuAt === 'end') end.append(addMenu('end'));
+      end.addEventListener('click', (ev) => {
+        if (ev.target instanceof HTMLElement && ev.target.closest('.add-menu')) return;
+        editing = undefined;
+        menuAt = menuAt === 'end' ? undefined : 'end';
+        render();
+        if (menuAt === 'end') timeline.querySelector<HTMLElement>('.add-menu button')?.focus();
+      });
+      end.addEventListener('keydown', (ev) => {
+        if (ev.target !== end) return;
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          end.click();
+        } else if (ev.key === 'Escape' && menuAt === 'end') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          menuAt = undefined;
+          render();
+          focusChip(undefined);
+        }
+      });
       end.addEventListener('dragover', (ev) => {
         if (dragFrom === undefined) return;
         ev.preventDefault();
@@ -348,83 +532,37 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
         move(from, macro.steps.length - 1);
       });
       timeline.append(end);
+      if (!macro.steps.length) timeline.append(el('li', 'empty', 'No steps yet. Press + to add one, or record in a session.'));
+      // A menu that was just opened on a chip gets the keyboard.
+      if (typeof menuAt === 'number') timeline.querySelector<HTMLElement>('.add-menu button')?.focus();
+      // An inline field that was just opened gets the keyboard and its text selected.
+      if (editing !== undefined) {
+        const f = timeline.querySelector<HTMLInputElement | HTMLSelectElement>('.inline, .card input');
+        f?.focus();
+        if (f instanceof HTMLInputElement && f.type === 'text') f.select();
+      }
     }
-
-    form.append(timeline);
-
-    const tools = el('div', 'step-tools');
-    const kind = el('select');
-    for (const k of STEP_KINDS) {
-      const o = el('option', undefined, k.label);
-      o.value = k.type;
-      kind.append(o);
-    }
-    const addButton = el('button', undefined, 'Add step');
-    addButton.type = 'button';
-    addButton.title = 'Adds the chosen step after the selected one';
-    addButton.onclick = () => {
-      const k = STEP_KINDS.find((x) => x.type === kind.value);
-      if (k) addStep(k.make());
-    };
-    const delayButton = el('button', 'delay', 'Add delay');
-    delayButton.type = 'button';
-    delayButton.title = 'Adds a 0 ms pause after the selected step; set it in the panel, drag it where it belongs';
-    delayButton.onclick = () => addStep({ type: 'wait', ms: 0 });
-    tools.append(kind, addButton, delayButton);
-    let result: EditorResult | undefined;
-    if (options.canRecord) {
-      const rec = el('button', 'record', 'Record from here');
-      rec.type = 'button';
-      rec.title = 'Closes the editor and records in the active session; what you type and press goes in after the selected step';
-      rec.onclick = () => {
-        result = { macro, action: 'record', insertAt: insertAt() };
-        dialog.close();
-      };
-      tools.append(rec);
-    }
-    tools.append(el('span', 'spacer'));
-    const left = el('button', undefined, '◀');
-    left.type = 'button';
-    left.title = 'Move the selected step left';
-    left.onclick = () => {
-      if (selected !== undefined) move(selected, selected - 1);
-    };
-    const right = el('button', undefined, '▶');
-    right.type = 'button';
-    right.title = 'Move the selected step right';
-    right.onclick = () => {
-      if (selected !== undefined) move(selected, selected + 1);
-    };
-    const remove = el('button', 'remove', 'Remove');
-    remove.type = 'button';
-    remove.title = 'Removes the selected step (Delete)';
-    remove.onclick = () => {
-      if (selected !== undefined) removeAt(selected);
-    };
-    tools.append(left, right, remove);
-    form.append(tools, panel, problems);
 
     const buttons = el('div', 'buttons');
     const finish = (action: 'save' | 'run'): void => {
       // Steps with nothing in them are a mistake, not a feature.
       macro.steps = macro.steps.filter((s) => !((s.type === 'text' || s.type === 'waitText') && !s.text));
       macro.name = macro.name.trim();
+      name.value = macro.name;
       const found = macroProblems(macro, others);
       if (found.length) {
         problems.textContent = found.join(' ');
         problems.hidden = false;
         if (selected !== undefined && selected >= macro.steps.length) selected = undefined;
-        renderTimeline();
-        renderPanel();
+        editing = undefined;
+        menuAt = undefined;
+        render();
         return;
       }
       result = { macro, action };
       dialog.close();
     };
-    const cancel = el('button', undefined, 'Cancel');
-    cancel.type = 'button';
-    cancel.onclick = () => dialog.close();
-    const reset = el('button', undefined, 'Reset');
+    const reset = el('button', 'reset', 'Reset');
     reset.type = 'button';
     reset.title = 'Back to the macro as it was when the editor opened';
     reset.onclick = () => {
@@ -434,9 +572,9 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
       problems.hidden = true;
       select(undefined);
     };
-    buttons.append(cancel, reset);
+    buttons.append(reset);
     if (options.canRun) {
-      const run = el('button', undefined, 'Save and run');
+      const run = el('button', 'run', 'Save and run');
       run.type = 'button';
       run.onclick = () => finish('run');
       buttons.append(run);
@@ -445,18 +583,33 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
     save.type = 'button';
     save.onclick = () => finish('save');
     buttons.append(save);
-    form.append(buttons);
+
+    const bottom = el('div', 'bottom');
+    bottom.append(problems, buttons);
+    form.append(close, top, stage, bottom);
+
     // Enter in a field must not submit (and close) the form; the buttons do that.
     form.onsubmit = (ev) => ev.preventDefault();
     form.onkeydown = (ev) => {
       if (ev.key === 'Enter' && ev.target instanceof HTMLInputElement && ev.target.type !== 'checkbox' && !ev.target.readOnly) ev.preventDefault();
     };
+    // Esc closes an open card or menu first, the editor second.
+    dialog.addEventListener('cancel', (ev) => {
+      if (editing !== undefined || menuAt !== undefined) {
+        ev.preventDefault();
+        const i = editing ?? (typeof menuAt === 'number' ? menuAt : undefined);
+        editing = undefined;
+        menuAt = undefined;
+        render();
+        focusChip(i);
+      }
+    });
 
-    renderTimeline();
-    renderPanel();
+    render();
     dialog.append(form);
     document.body.append(dialog);
     dialog.onclose = () => {
+      document.removeEventListener('mousedown', outside, true);
       dialog.remove();
       resolve(result);
     };

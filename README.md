@@ -30,10 +30,11 @@ It shares its TN5250 engine and terminal UI with the
   highlighted entry fields and programmable mouse buttons, as in ACS; an optional scroll
   bar beside every subfile (More... / Bottom). The Enhanced style draws the widgets, the
   Classic style shows the characters a character display shows.
-- **Macros**: record what you type and press, then tidy it on a timeline like a gaming
-  keyboard's macro editor: one chip per step (text, key, delay, wait for the host, wait for
-  a text, ask for a value), click to change, drag to move, add a delay or record more after
-  any step. Name it, give it a key, run it in any session. Actions > Macros.
+- **Macros**: record what you type and press, then tidy it in a full-screen editor like
+  Logitech G HUB's: one chip per step (red keycaps, text, a delay as an underlined number,
+  wait for the host, wait for a text, ask for a value), click to change in place, drag to
+  move, + to add a step or record more after any step. Name it, give it a key, run it in
+  any session. Actions > Macros.
 - **Host PC commands**: `STRPCCMD` from a host program opens http(s) links in your
   browser; other commands ask first (or never run, by setting).
 - SEU syntax colouring for RPG/RPGLE, CL, DDS and DB2 SQL.

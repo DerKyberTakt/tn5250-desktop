@@ -945,132 +945,304 @@ dialog.modal button.primary {
   }
 }
 
+/* --- macro editor: a full-screen page like a gaming keyboard's macro editor --- */
 dialog.modal.macro-editor {
-  min-width: 560px;
-  max-width: 720px;
+  --ed-bg: #f7f7f7;
+  --ed-fg: #141414;
+  --ed-muted: rgb(20 20 20 / 60%);
+  --ed-tile: #e3e3e3;
+  --ed-tile-border: #cfcfcf;
+  --ed-card: #ffffff;
+  --ed-key: #8b1e2d;
+  --ed-accent: #0f8fd6;
+  --ed-focus: #1f8fe0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--ed-bg);
+  color: var(--ed-fg);
+  box-shadow: none;
 }
 
-dialog.modal.macro-editor .head {
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) dialog.modal.macro-editor {
+    --ed-bg: #0c0c0c;
+    --ed-fg: #f2f2f2;
+    --ed-muted: rgb(242 242 242 / 60%);
+    --ed-tile: #1f1f1f;
+    --ed-tile-border: #333333;
+    --ed-card: #181818;
+    --ed-key: #7a1f2b;
+    --ed-accent: #12a3ec;
+  }
+}
+
+:root[data-theme="dark"] dialog.modal.macro-editor {
+  --ed-bg: #0c0c0c;
+  --ed-fg: #f2f2f2;
+  --ed-muted: rgb(242 242 242 / 60%);
+  --ed-tile: #1f1f1f;
+  --ed-tile-border: #333333;
+  --ed-card: #181818;
+  --ed-key: #7a1f2b;
+  --ed-accent: #12a3ec;
+}
+
+dialog.modal.macro-editor::backdrop {
+  background: transparent;
+}
+
+dialog.modal.macro-editor form {
+  position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  padding: 28px 40px 24px;
 }
 
-dialog.modal.macro-editor .head .hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.85em;
-  opacity: 0.7;
-}
-
-dialog.modal.macro-editor input.keycapture {
+dialog.modal.macro-editor button.close {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ed-fg);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
   cursor: pointer;
-  font-family: var(--vscode-editor-font-family, monospace);
 }
 
-dialog.modal.macro-editor input.keycapture:focus {
-  outline: 2px solid var(--vscode-focusBorder, #4a90d9);
+dialog.modal.macro-editor button.close:hover {
+  background: var(--ed-tile);
 }
 
-dialog.modal.macro-editor h3 {
-  margin: 14px 0 6px;
-  font-size: 13px;
+/* Top: the name as the title on the left, the options on the right. */
+dialog.modal.macro-editor .top {
+  display: grid;
+  grid-template-columns: 1fr minmax(260px, 340px);
+  gap: 24px 48px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+dialog.modal.macro-editor input.name {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 2px 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--ed-fg);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  outline: none;
+}
+
+dialog.modal.macro-editor input.name:hover {
+  border-bottom-color: var(--ed-tile-border);
+}
+
+dialog.modal.macro-editor input.name:focus {
+  border-bottom-color: var(--ed-accent);
+}
+
+dialog.modal.macro-editor input.name::placeholder {
+  color: var(--ed-muted);
   font-weight: 600;
 }
 
-dialog.modal.macro-editor h3 .hint {
-  display: block;
-  font-weight: 400;
-  font-size: 0.85em;
-  opacity: 0.7;
-  margin-top: 2px;
+dialog.modal.macro-editor .title .sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ed-muted);
 }
 
-/* The timeline: one chip per step, wrapping, like a gaming keyboard's macro editor. */
+dialog.modal.macro-editor .side .option {
+  display: block;
+  margin: 0;
+}
+
+dialog.modal.macro-editor .side .caption {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+dialog.modal.macro-editor .side .hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ed-muted);
+}
+
+dialog.modal.macro-editor input.keycapture {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--ed-fg);
+  background: var(--ed-tile);
+  border: 1px solid var(--ed-tile-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+dialog.modal.macro-editor input.keycapture:focus {
+  outline: 2px solid var(--ed-focus);
+  outline-offset: 1px;
+}
+
+/* Middle: the timeline, vertically centred like G HUB. */
+dialog.modal.macro-editor .stage {
+  display: flex;
+  align-items: center;
+  overflow: auto;
+  padding: 24px 0;
+}
+
 dialog.modal.macro-editor .macro-timeline {
   list-style: none;
   margin: 0;
-  padding: 10px;
+  padding: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  min-height: 58px;
-  max-height: 200px;
-  overflow: auto;
-  border: 1px solid var(--chrome-border);
-  border-radius: 4px;
+  gap: 18px 14px;
+  width: 100%;
+}
+
+dialog.modal.macro-editor .macro-timeline .empty {
+  flex-basis: 100%;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ed-muted);
 }
 
 dialog.modal.macro-editor .chip {
+  position: relative;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  max-width: 230px;
-  padding: 6px 10px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 6px;
-  background: var(--vscode-input-background, rgba(127, 127, 127, 0.15));
-  font-size: 12px;
+  justify-content: center;
+  min-height: 42px;
+  max-width: 260px;
+  padding: 10px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ed-fg);
+  background: var(--ed-tile);
+  border: 1px solid var(--ed-tile-border);
+  border-radius: 4px;
   cursor: pointer;
   user-select: none;
 }
 
-dialog.modal.macro-editor .chip .icon {
-  opacity: 0.75;
-}
-
 dialog.modal.macro-editor .chip .label {
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+dialog.modal.macro-editor .chip:hover {
+  filter: brightness(1.12);
+}
+
+dialog.modal.macro-editor .chip:focus-visible,
+dialog.modal.macro-editor .chip.selected {
+  outline: 2px solid var(--ed-focus);
+  outline-offset: 2px;
+}
+
+/* Red keycaps. */
 dialog.modal.macro-editor .chip.key {
-  background: #7a1f2b;
-  border-color: #7a1f2b;
+  background: var(--ed-key);
+  border-color: var(--ed-key);
   color: #fff;
-  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.4px;
 }
 
-dialog.modal.macro-editor .chip.key .icon {
-  display: none;
+/* Typed text: a tile with the text in quotes, monospaced. */
+dialog.modal.macro-editor .chip.text .label {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-weight: 500;
 }
 
+/* A delay: the number with the unit beneath, underlined, no tile. */
 dialog.modal.macro-editor .chip.wait {
+  min-height: 0;
+  padding: 2px 6px 0;
   background: transparent;
-  border: none;
-  border-bottom: 2px solid currentcolor;
+  border: 0;
   border-radius: 0;
-  padding: 3px 6px;
-  font-weight: 600;
 }
 
+dialog.modal.macro-editor .chip.wait .label {
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+dialog.modal.macro-editor .chip.wait .unit {
+  display: block;
+  min-width: 28px;
+  padding: 0 2px 2px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  border-bottom: 2px solid var(--ed-fg);
+}
+
+/* Waits for the host: dashed tiles. */
 dialog.modal.macro-editor .chip.waitInput,
 dialog.modal.macro-editor .chip.waitText {
+  font-size: 12px;
+  font-weight: 500;
   border-style: dashed;
+  color: var(--ed-muted);
+}
+
+dialog.modal.macro-editor .chip.waitText,
+dialog.modal.macro-editor .chip.prompt {
+  color: var(--ed-fg);
 }
 
 dialog.modal.macro-editor .chip.prompt {
-  border-color: var(--vscode-focusBorder, #4a90d9);
+  font-size: 13px;
+  border-color: var(--ed-accent);
 }
 
+/* The + tile. */
 dialog.modal.macro-editor .chip.end {
-  border-style: dashed;
-  opacity: 0.65;
-  padding: 2px 11px;
-  font-size: 16px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  font-size: 26px;
+  font-weight: 300;
+  line-height: 1;
 }
 
-dialog.modal.macro-editor .chip:hover {
-  filter: brightness(1.15);
-}
-
-dialog.modal.macro-editor .chip.selected {
-  outline: 2px solid var(--vscode-focusBorder, #4a90d9);
-  outline-offset: 1px;
+dialog.modal.macro-editor .chip.end.open,
+dialog.modal.macro-editor .chip.end:hover {
+  background: var(--ed-tile-border);
 }
 
 dialog.modal.macro-editor .chip.dragging {
@@ -1078,123 +1250,231 @@ dialog.modal.macro-editor .chip.dragging {
 }
 
 dialog.modal.macro-editor .chip.drop-before {
-  box-shadow: -4px 0 0 var(--vscode-focusBorder, #4a90d9);
+  box-shadow: -8px 0 0 -3px var(--ed-accent);
 }
 
 dialog.modal.macro-editor .chip.drop-after {
-  box-shadow: 4px 0 0 var(--vscode-focusBorder, #4a90d9);
+  box-shadow: 8px 0 0 -3px var(--ed-accent);
 }
 
-dialog.modal.macro-editor .step-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
+/* In-place fields: a delay or a text turns into its field, a key into a list. */
+dialog.modal.macro-editor .chip.editing {
+  cursor: default;
 }
 
-dialog.modal.macro-editor .step-tools select {
-  padding: 4px 6px;
-  max-width: 240px;
-}
-
-dialog.modal.macro-editor .step-tools .spacer {
-  flex: 1;
-}
-
-dialog.modal.macro-editor .step-tools button {
-  min-width: 0;
-  padding: 3px 9px;
-}
-
-dialog.modal.macro-editor .step-tools button.remove {
-  color: #e0463a;
-}
-
-dialog.modal.macro-editor .step-tools button.record {
-  color: #e0463a;
-  font-weight: 600;
-}
-
-/* The selected step's fields. */
-dialog.modal.macro-editor .step-panel {
-  margin-top: 10px;
-  padding: 10px;
-  min-height: 46px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 4px;
-}
-
-dialog.modal.macro-editor .step-panel .muted {
+dialog.modal.macro-editor .chip .inline {
+  display: inline-block;
+  width: auto;
   margin: 0;
-  opacity: 0.7;
+  padding: 2px 6px;
+  font: inherit;
+  color: var(--ed-fg);
+  background: var(--ed-card);
+  border: 1px solid var(--ed-accent);
+  border-radius: 3px;
+  outline: none;
 }
 
-dialog.modal.macro-editor .step-panel .kind {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
+dialog.modal.macro-editor .chip.key .inline {
+  text-transform: none;
+  letter-spacing: 0;
 }
 
-dialog.modal.macro-editor .step-panel .kind .icon {
-  opacity: 0.8;
+dialog.modal.macro-editor .chip.wait .inline.num {
+  width: 84px;
+  font-size: 16px;
+  text-align: center;
 }
 
-dialog.modal.macro-editor .step-panel .fields {
+dialog.modal.macro-editor .chip.text .inline {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-weight: 500;
+}
+
+/* The card under a chip for steps with more than one thing to set. */
+dialog.modal.macro-editor .chip .card,
+dialog.modal.macro-editor .chip .add-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 3;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ed-fg);
+  background: var(--ed-card);
+  border: 1px solid var(--ed-tile-border);
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 35%);
+  cursor: default;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+dialog.modal.macro-editor .chip .card {
+  min-width: 300px;
+  padding: 10px 12px;
+}
+
+dialog.modal.macro-editor .chip .card .kind {
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ed-muted);
+}
+
+dialog.modal.macro-editor .chip .card .fields {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
 }
 
-dialog.modal.macro-editor .step-panel .fields input,
-dialog.modal.macro-editor .step-panel .fields select {
+dialog.modal.macro-editor .chip .card .fields input,
+dialog.modal.macro-editor .chip .card .fields select {
   display: inline-block;
   width: auto;
   flex: 1;
-  min-width: 160px;
+  min-width: 150px;
   margin: 0;
   padding: 4px 6px;
+  color: var(--ed-fg);
+  background: var(--ed-tile);
+  border: 1px solid var(--ed-tile-border);
+  border-radius: 3px;
 }
 
-dialog.modal.macro-editor .step-panel .fields input[type='number'] {
+dialog.modal.macro-editor .chip .card .fields input[type='number'] {
   flex: none;
   min-width: 0;
-  width: 90px;
+  width: 84px;
 }
 
-dialog.modal.macro-editor .step-panel .fields label.check {
+dialog.modal.macro-editor .chip .card .fields .unit {
+  color: var(--ed-muted);
+}
+
+dialog.modal.macro-editor .chip .card .fields label.check {
   display: inline-flex;
+  flex-basis: 100%;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin: 0;
 }
 
-dialog.modal.macro-editor .step-panel .fields label.check input {
+dialog.modal.macro-editor .chip .card .fields label.check input {
+  flex: none;
   width: auto;
   min-width: 0;
-  flex: none;
   margin: 0;
 }
 
-dialog.modal.macro-editor .step-panel .fields .static {
-  opacity: 0.8;
+dialog.modal.macro-editor .chip .card button.small {
+  display: block;
+  margin: 10px 0 0 auto;
+  min-width: 0;
+  padding: 4px 14px;
 }
 
-dialog.modal.macro-editor .step-panel .fields .unit {
-  opacity: 0.7;
+/* The + menu. */
+dialog.modal.macro-editor .add-menu {
+  list-style: none;
+  min-width: 220px;
+  margin: 0;
+  padding: 6px 0;
 }
 
-dialog.modal.macro-editor .step-panel .fields .note {
-  flex-basis: 100%;
-  margin: 2px 0 0;
-  font-size: 0.85em;
-  opacity: 0.7;
+dialog.modal.macro-editor .add-menu button {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 14px;
+  text-align: left;
+  font: inherit;
+  color: var(--ed-fg);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+dialog.modal.macro-editor .add-menu button:hover,
+dialog.modal.macro-editor .add-menu button:focus-visible {
+  background: var(--ed-tile);
+  outline: none;
+}
+
+dialog.modal.macro-editor .add-menu button.kind.key::before,
+dialog.modal.macro-editor .add-menu button.kind.wait::before {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 10px;
+  vertical-align: -2px;
+  border-radius: 3px;
+  content: '';
+}
+
+dialog.modal.macro-editor .add-menu button.kind.key::before {
+  background: var(--ed-key);
+}
+
+dialog.modal.macro-editor .add-menu button.kind.wait::before {
+  height: 0;
+  margin-top: 10px;
+  border-bottom: 2px solid var(--ed-fg);
+  border-radius: 0;
+}
+
+dialog.modal.macro-editor .add-menu button.record {
+  color: #e0463a;
+  font-weight: 600;
+  border-top: 1px solid var(--ed-tile-border);
+}
+
+dialog.modal.macro-editor .add-menu button.remove {
+  color: #e0463a;
+  border-top: 1px solid var(--ed-tile-border);
+}
+
+/* Bottom: problems above centred buttons. */
+dialog.modal.macro-editor .bottom {
+  text-align: center;
 }
 
 dialog.modal.macro-editor .problems {
+  margin: 0 0 10px;
   color: #e0463a;
-  margin-top: 8px;
+}
+
+dialog.modal.macro-editor .buttons {
+  justify-content: center;
+  gap: 16px;
+  margin: 0;
+}
+
+dialog.modal.macro-editor .buttons button {
+  min-width: 200px;
+  padding: 10px 18px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ed-fg);
+  background: var(--ed-tile);
+  border: 1px solid var(--ed-tile-border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+dialog.modal.macro-editor .buttons button:hover {
+  filter: brightness(1.1);
+}
+
+dialog.modal.macro-editor .buttons button.primary {
+  color: #fff;
+  background: var(--ed-accent);
+  border-color: var(--ed-accent);
 }
