@@ -252,6 +252,11 @@ jobs:
 
       - name: Smoke test (the binary starts and stays up for 8 s under Xvfb)
         run: |
+          # WebKitGTK runs its web process in a bubblewrap sandbox. Ubuntu 24.04 runners restrict
+          # unprivileged user namespaces through AppArmor and have no bwrap profile, so the
+          # sandbox cannot start (bwrap: setting up uid map: Permission denied -> g_error).
+          # A desktop install of Ubuntu 24.04 ships that profile; the runner does not.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           set +e
           dbus-run-session -- xvfb-run -a timeout 8 build/bin/tn5250-terminal --demo > smoke.log 2>&1
           rc=$?
