@@ -69,7 +69,7 @@ PC" the first time: choose **More info > Run anyway**. Settings are kept in
 **Linux (x86_64, GTK 4 + WebKitGTK 6.0)**
 
 - `tn5250-terminal-x86_64.AppImage`: `chmod +x` and run; updates itself in place.
-- `tn5250-terminal_<version>_amd64.deb`: Debian 12+, Ubuntu 22.04+ and derivatives
+- `tn5250-terminal_<version>_amd64.deb`: Debian 13+, Ubuntu 24.04+ and derivatives
   (`sudo apt install ./tn5250-terminal_<version>_amd64.deb`).
 - `tn5250-terminal-linux-amd64.tar.gz`: the binary with a desktop file and icon;
   `./install.sh` puts them under `~/.local` for the current user. Needs the distribution's
@@ -115,7 +115,7 @@ It works the other way round too: a password set from a 037 session fails from a
 
 ## Building
 
-Requirements: Node.js 20+, Go 1.27+, and the Wails v3 CLI
+Requirements: Node.js 22+, Go 1.27+, and the Wails v3 CLI
 (`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0`; `wails3 doctor` checks the rest).
 
 ```

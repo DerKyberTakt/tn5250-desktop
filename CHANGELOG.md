@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.1 - unreleased
+## 0.2.1 - 2026-11-08
 
 - Fixed: Actions > Print (host) left the session in X SYSTEM. The host answers the Print key with Read Screen (to Print), X'66', which was not recognised; it now gets the screen image like Read Screen, and the host spools it.
 

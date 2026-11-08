@@ -1,7 +1,7 @@
 {
   "name": "tn5250-desktop",
   "description": "Standalone 5250 terminal emulator for IBM i (AS/400). Native app for Windows and Linux, no runtime to install.",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "license": "MIT",
   "private": true,
   "repository": {
