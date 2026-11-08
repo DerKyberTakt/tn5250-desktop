@@ -839,6 +839,232 @@ dialog.modal button.primary {
   border-color: transparent;
 }
 
+/* --- ESC key: a raised key that drops onto its shadow on hover, letters lighting up one by one --- */
+dialog.modal {
+  --esc-bg: #fee6e3;
+  --esc-ink: #111111;
+  --esc-hot: #e8242b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) dialog.modal {
+    --esc-bg: #3a1c1a;
+    --esc-ink: #f2f2f2;
+    --esc-hot: #ff4d3d;
+  }
+}
+
+:root[data-theme="dark"] dialog.modal {
+  --esc-bg: #3a1c1a;
+  --esc-ink: #f2f2f2;
+  --esc-hot: #ff4d3d;
+}
+
+dialog.modal button.esc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 14px;
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  line-height: 1;
+  color: var(--esc-ink);
+  background: var(--esc-bg);
+  border: 2px solid var(--esc-ink);
+  border-radius: 8px;
+  box-shadow: 6px 6px 0 0 var(--esc-ink);
+  cursor: pointer;
+  user-select: none;
+  transform: translate(0, 0);
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+dialog.modal button.esc:hover,
+dialog.modal button.esc:focus-visible {
+  outline: 0;
+  transform: translate(4px, 4px);
+  box-shadow: 2px 2px 0 0 var(--esc-ink);
+}
+
+dialog.modal button.esc:active {
+  transform: translate(6px, 6px);
+  box-shadow: 0 0 0 0 var(--esc-ink);
+}
+
+dialog.modal button.esc span {
+  transition: color 0.16s ease, text-shadow 0.16s ease;
+}
+
+dialog.modal button.esc span:nth-child(2) {
+  transition-delay: 0.1s;
+}
+
+dialog.modal button.esc span:nth-child(3) {
+  transition-delay: 0.2s;
+}
+
+dialog.modal button.esc:hover span,
+dialog.modal button.esc:focus-visible span {
+  color: var(--esc-hot);
+  text-shadow: 0 0 7px rgb(232 36 43 / 70%);
+}
+
+/* --- icon list dialog (Macros): play / pencil / trash on each row, tools under the title --- */
+dialog.modal.icon-list {
+  min-width: 480px;
+  max-width: 640px;
+  padding: 18px 22px 16px;
+}
+
+dialog.modal.icon-list .head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding-right: 6px;
+}
+
+dialog.modal.icon-list .head h2 {
+  margin: 0;
+}
+
+dialog.modal.icon-list .top-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+dialog.modal.icon-list .list-rows {
+  margin-bottom: 0;
+}
+
+dialog.modal.icon-list .list-rows li {
+  gap: 2px;
+  padding: 2px 0;
+}
+
+dialog.modal.icon-list .list-rows li .text {
+  margin-right: 8px;
+}
+
+dialog.modal.icon-list button.act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--chrome-fg);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+dialog.modal.icon-list button.act:focus-visible {
+  outline: 2px solid var(--tab-accent);
+  outline-offset: 1px;
+}
+
+dialog.modal.icon-list button.act svg {
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+}
+
+/* The ring is drawn from the top on hover, after the shape has lit up. */
+dialog.modal.icon-list button.act .ring {
+  stroke: var(--act-color);
+  stroke-width: 1.6;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transform: rotate(-90deg);
+  transform-origin: 12px 12px;
+  transform-box: view-box;
+  transition: stroke-dashoffset 0.35s ease;
+}
+
+dialog.modal.icon-list button.act .shape,
+dialog.modal.icon-list button.act .lid {
+  transition: color 0.15s ease, stroke-width 0.15s ease, filter 0.2s ease, transform 0.25s ease;
+}
+
+dialog.modal.icon-list button.act:hover .ring,
+dialog.modal.icon-list button.act:focus-visible .ring {
+  stroke-dashoffset: 0;
+  transition-delay: 0.12s;
+}
+
+dialog.modal.icon-list button.act:hover .shape,
+dialog.modal.icon-list button.act:hover .lid,
+dialog.modal.icon-list button.act:focus-visible .shape,
+dialog.modal.icon-list button.act:focus-visible .lid {
+  color: var(--act-color);
+  filter: drop-shadow(0 0 4px var(--act-glow));
+}
+
+/* Edit: the pencil gets bolder. */
+dialog.modal.icon-list button.act.pencil:hover .shape,
+dialog.modal.icon-list button.act.pencil:focus-visible .shape {
+  stroke-width: 2.6;
+}
+
+/* Delete: the lid swings open on its left hinge. */
+dialog.modal.icon-list button.act.trash .lid {
+  transform-box: view-box;
+  transform-origin: 6.5px 8px;
+}
+
+dialog.modal.icon-list button.act.trash:hover .lid,
+dialog.modal.icon-list button.act.trash:focus-visible .lid {
+  transform: translate(-0.6px, -1.4px) rotate(-22deg);
+}
+
+dialog.modal.icon-list button.act.green {
+  --act-color: #2fbf5b;
+  --act-glow: rgb(47 191 91 / 75%);
+}
+
+dialog.modal.icon-list button.act.yellow {
+  --act-color: #e6b422;
+  --act-glow: rgb(230 180 34 / 70%);
+}
+
+dialog.modal.icon-list button.act.red {
+  --act-color: #ff4d3d;
+  --act-glow: rgb(255 77 61 / 75%);
+}
+
+dialog.modal.icon-list button.act.blue {
+  --act-color: #2f9be6;
+  --act-glow: rgb(47 155 230 / 70%);
+}
+
+/* Record always shows its red dot; the ring is the hover. */
+dialog.modal.icon-list button.act.record .shape {
+  color: #c4372c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.modal button.esc,
+  dialog.modal button.esc span,
+  dialog.modal.icon-list button.act .ring,
+  dialog.modal.icon-list button.act .shape,
+  dialog.modal.icon-list button.act .lid {
+    transition: none;
+  }
+}
+
 /* --- print screen --- */
 #print-area {
   display: none;
@@ -914,6 +1140,17 @@ dialog.modal button.primary {
 
 @media (prefers-reduced-motion: reduce) {
   #toolbar .tool.update-available {
+    animation: none;
+  }
+}
+
+/* Recording: the dot of the record button blinks until it is pressed again. */
+#toolbar .tool-record[aria-pressed="true"] .dot {
+  animation: rec-blink 1s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #toolbar .tool-record[aria-pressed="true"] .dot {
     animation: none;
   }
 }
@@ -1006,26 +1243,10 @@ dialog.modal.macro-editor form {
   padding: 28px 40px 24px;
 }
 
-dialog.modal.macro-editor button.close {
+dialog.modal.macro-editor button.esc {
   position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 0;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  font-size: 20px;
-  line-height: 1;
-  color: var(--ed-fg);
-  background: transparent;
-  border: 0;
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-dialog.modal.macro-editor button.close:hover {
-  background: var(--ed-tile);
+  top: 18px;
+  right: 32px;
 }
 
 /* Top: the name as the title on the left, the options on the right. */
@@ -1033,6 +1254,7 @@ dialog.modal.macro-editor .top {
   display: grid;
   grid-template-columns: 1fr minmax(260px, 340px);
   gap: 24px 48px;
+  padding-right: 96px;
   align-items: start;
   margin-top: 14px;
 }

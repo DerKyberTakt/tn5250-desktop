@@ -1,5 +1,6 @@
 import { keyName, type KeyAction } from '../shared/keymap';
 import { EDITOR_ACTIONS, actionName, macroProblems, type Macro, type MacroStep } from '../shared/macros';
+import { escButton } from './dialogs';
 
 /**
  * The macro editor, modelled on the macro editors of gaming keyboards (Logitech G HUB):
@@ -180,12 +181,8 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
     const form = el('form');
     form.method = 'dialog';
 
-    // --- top: close, name, shortcut key ---
-    const close = el('button', 'close', '✕');
-    close.type = 'button';
-    close.title = 'Close without saving (Esc)';
-    close.setAttribute('aria-label', 'Cancel');
-    close.onclick = () => dialog.close();
+    // --- top: ESC, name, shortcut key ---
+    const close = escButton(() => dialog.close());
 
     const top = el('div', 'top');
     const titleBox = el('div', 'title');

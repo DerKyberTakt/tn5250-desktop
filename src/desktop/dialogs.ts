@@ -1,5 +1,7 @@
 /** Small modal dialogs drawn by the shell (the OS dialogs only cover files). */
 
+import { ACTION_ICONS, type ActionIconName } from './icons';
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   if (className) e.className = className;
@@ -116,6 +118,95 @@ export function messageDialog(title: string, lines: string[]): Promise<void> {
       resolve();
     };
     dialog.showModal();
+  });
+}
+
+/**
+ * The ESC button of the full-page dialogs: a raised key in the top right corner that
+ * slides onto its shadow on hover while its letters light up red one at a time.
+ */
+export function escButton(onClick: () => void, title = 'Close without saving (Esc)'): HTMLButtonElement {
+  const b = el('button', 'esc');
+  b.type = 'button';
+  b.title = title;
+  b.setAttribute('aria-label', 'Cancel');
+  for (const ch of 'ESC') b.append(el('span', undefined, ch));
+  b.onclick = onClick;
+  return b;
+}
+
+/** A button of the icon list dialog: `id` comes back as the action, the icon decides the look. */
+export interface IconAction {
+  id: string;
+  /** Tooltip and accessible name. */
+  label: string;
+  icon: ActionIconName;
+  /** Colour on hover: play is green, edit yellow, delete red. */
+  tone?: 'green' | 'yellow' | 'red' | 'blue';
+}
+
+function iconButton(a: IconAction): HTMLButtonElement {
+  const b = el('button', `act ${a.icon}${a.tone ? ` ${a.tone}` : ''}`);
+  b.type = 'button';
+  b.title = a.label;
+  b.setAttribute('aria-label', a.label);
+  b.dataset.action = a.id;
+  b.innerHTML = ACTION_ICONS[a.icon];
+  return b;
+}
+
+/**
+ * A list with icon buttons on each row, a row of icon buttons under the title (what the
+ * bottom buttons of listDialog do) and an ESC key in the corner. Resolves with the row
+ * index and the action id ({ row: -1 } for a top button), or undefined for Esc.
+ */
+export function iconListDialog(
+  title: string,
+  rows: string[],
+  rowActions: IconAction[],
+  topActions: IconAction[],
+  empty = 'Nothing here yet.',
+): Promise<{ row: number; action: string } | undefined> {
+  return new Promise((resolve) => {
+    const dialog = el('dialog', 'modal list-dialog icon-list');
+    const form = el('form');
+    form.method = 'dialog';
+    let result: { row: number; action: string } | undefined;
+    const pick = (row: number, action: string) => (): void => {
+      result = { row, action };
+      dialog.close();
+    };
+    const head = el('div', 'head');
+    head.append(el('h2', undefined, title), escButton(() => dialog.close(), 'Close (Esc)'));
+    const tools = el('div', 'top-actions');
+    for (const a of topActions) {
+      const b = iconButton(a);
+      b.onclick = pick(-1, a.id);
+      tools.append(b);
+    }
+    const list = el('ul', 'list-rows');
+    if (!rows.length) list.append(el('li', 'empty', empty));
+    rows.forEach((text, i) => {
+      const li = el('li');
+      li.append(el('span', 'text', text));
+      for (const a of rowActions) {
+        const b = iconButton(a);
+        b.onclick = pick(i, a.id);
+        li.append(b);
+      }
+      list.append(li);
+    });
+    form.append(head, tools, list);
+    // Enter must not submit (and close) the form; the buttons do everything.
+    form.onsubmit = (ev) => ev.preventDefault();
+    dialog.append(form);
+    document.body.append(dialog);
+    dialog.onclose = () => {
+      dialog.remove();
+      resolve(result);
+    };
+    dialog.showModal();
+    (tools.querySelector('button') ?? list.querySelector('button'))?.focus();
   });
 }
 

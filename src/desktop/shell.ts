@@ -4,7 +4,7 @@ import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
 import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
-import { checkListDialog, choiceDialog, confirmDialog, formDialog, listDialog, messageDialog, promptDialog } from './dialogs';
+import { checkListDialog, choiceDialog, confirmDialog, formDialog, iconListDialog, listDialog, messageDialog, promptDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
@@ -854,23 +854,31 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     return `${m.name}${m.key ? `   [${m.key}]` : ''}   ${m.steps.length} step${m.steps.length === 1 ? '' : 's'}${company}`;
   }
 
-  /** Actions > Macros: the list with Run / Edit / Delete, New and Record. */
+  /** Actions > Macros: the list with play / pencil / trash on each row, New, Record, Import and Export on top. */
   private async macrosDialog(): Promise<void> {
     for (;;) {
       const macros = this.store.macros;
-      const pick = await listDialog(
+      const pick = await iconListDialog(
         'Macros',
-        'A macro types and presses keys into the active session. Record one, or build it step by step.',
         macros.map((m) => this.macroRow(m)),
-        ['Run', 'Edit', 'Delete'],
-        ['New', 'Record', 'Import…', 'Export…'],
-        'No macros yet.',
+        [
+          { id: 'run', label: 'Run in the active session', icon: 'play', tone: 'green' },
+          { id: 'edit', label: 'Edit', icon: 'pencil', tone: 'yellow' },
+          { id: 'delete', label: 'Delete', icon: 'trash', tone: 'red' },
+        ],
+        [
+          { id: 'new', label: 'New macro', icon: 'newPage', tone: 'blue' },
+          { id: 'record', label: 'Record a macro in the active session', icon: 'record', tone: 'red' },
+          { id: 'import', label: 'Import macros from a file…', icon: 'importFile', tone: 'blue' },
+          { id: 'export', label: 'Export all macros to a file…', icon: 'exportFile', tone: 'blue' },
+        ],
+        'No macros yet. Record one, or build it step by step with New.',
       );
       if (!pick) return;
       if (pick.row < 0) {
-        if (pick.action === 'New') await this.editMacro({ id: newMacroId(), name: '', key: '', steps: [] });
-        else if (pick.action === 'Import…') await this.importMacros();
-        else if (pick.action === 'Export…') await this.exportMacros(macros);
+        if (pick.action === 'new') await this.editMacro({ id: newMacroId(), name: '', key: '', steps: [] });
+        else if (pick.action === 'import') await this.importMacros();
+        else if (pick.action === 'export') await this.exportMacros(macros);
         else {
           this.startRecording();
           return;
@@ -879,7 +887,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       }
       const m = macros[pick.row];
       if (!m) continue;
-      if (pick.action === 'Run') {
+      if (pick.action === 'run') {
         const tab = this.activeTerminal();
         if (tab && !tab.isDemo) this.runMacro(m, tab);
         else this.notify('Open a session first');
@@ -895,8 +903,8 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
         if (choice === 'Copy to my macros') await this.editMacro({ ...m, id: newMacroId(), name: `${m.name} (copy)`, key: '', steps: m.steps.map((s) => ({ ...s })) });
         continue;
       }
-      if (pick.action === 'Edit') await this.editMacro(m);
-      if (pick.action === 'Delete' && (await confirmDialog('Delete macro', `Delete "${m.name}"?`, 'Delete'))) {
+      if (pick.action === 'edit') await this.editMacro(m);
+      if (pick.action === 'delete' && (await confirmDialog('Delete macro', `Delete "${m.name}"?`, 'Delete'))) {
         await this.store.removeMacro(m.id);
       }
     }
@@ -1365,7 +1373,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
         bar.append(el('span', 'sep'));
         continue;
       }
-      const b = el('button', 'tool');
+      const b = el('button', `tool tool-${tool.icon}`);
       b.type = 'button';
       b.title = tool.title;
       b.setAttribute('aria-label', tool.title);

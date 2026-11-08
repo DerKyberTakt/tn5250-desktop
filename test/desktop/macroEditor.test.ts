@@ -242,7 +242,7 @@ describe('macroEditorDialog', () => {
     expect(r?.macro.key).toBe('F7');
   });
 
-  it('refuses a macro without a name or steps, drops empty text steps, resets to the original, closes with the X', async () => {
+  it('refuses a macro without a name or steps, drops empty text steps, resets to the original, closes with ESC', async () => {
     const blank: Macro = { id: 'm2', name: '', key: '', steps: [] };
     const result = macroEditorDialog(blank, [], { canRun: true });
     expect(dialog().querySelector('.macro-timeline .empty')?.textContent).toContain('No steps yet');
@@ -262,7 +262,11 @@ describe('macroEditorDialog', () => {
     expect(labels()).toEqual(['0 ms']);
     button('Reset').click();
     expect(labels()).toEqual([]);
-    (dialog().querySelector('button.close') as HTMLButtonElement).click();
+    const esc = dialog().querySelector('button.esc') as HTMLButtonElement;
+    expect(esc.textContent).toBe('ESC');
+    expect(esc.querySelectorAll('span')).toHaveLength(3); // one per letter, so they light up one at a time
+    expect(dialog().querySelector('button.close')).toBeNull();
+    esc.click();
     expect(await result).toBeUndefined();
     expect(document.querySelector('dialog')).toBeNull();
   });

@@ -22,8 +22,10 @@ export const ICONS = {
   print: svg(
     '<path d="M7 9V3.5h10V9" stroke="currentColor"/><rect x="3" y="9" width="18" height="8" rx="1.5" stroke="currentColor"/><path d="M7 14h10v6.5H7z" stroke="currentColor"/><circle cx="17.5" cy="12" r=".8" fill="#2e9b48" stroke="none"/>',
   ),
-  record: svg('<circle cx="12" cy="12" r="8" stroke="currentColor"/><circle cx="12" cy="12" r="4.5" fill="#c4372c" stroke="none"/>'),
-  macro: svg('<rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor"/><path d="M7 10h2M11 10h2M15 10h2M7 14h10" stroke="currentColor"/>'),
+  /** Record a macro; the dot blinks while recording (CSS on .dot). */
+  record: svg('<circle cx="12" cy="12" r="8" stroke="currentColor"/><circle class="dot" cx="12" cy="12" r="4.5" fill="#c4372c" stroke="none"/>'),
+  /** Macros: a green play button in a ring. */
+  macro: svg('<circle cx="12" cy="12" r="9.5" stroke="currentColor"/><path d="M9.5 7.5v9l7.5-4.5z" fill="#2e9b48" stroke="none"/>'),
   connect: svg('<path d="M12 3v8" stroke="#2e9b48" stroke-width="2.2"/><path d="M7.5 6.5a7 7 0 1 0 9 0" stroke="#2e9b48" stroke-width="2.2"/>'),
   disconnect: svg('<path d="M12 3v8" stroke="#c4372c" stroke-width="2.2"/><path d="M7.5 6.5a7 7 0 1 0 9 0" stroke="#c4372c" stroke-width="2.2"/><path d="M4 20 20 4" stroke="#c4372c" stroke-width="2"/>'),
   attn: svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5" stroke="currentColor"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="700" font-family="Segoe UI, sans-serif" fill="#c4372c" stroke="none">ATTN</text>'),
@@ -43,3 +45,29 @@ export const ICONS = {
 } as const;
 
 export type IconName = keyof typeof ICONS;
+
+/**
+ * Icons for the buttons of the macros dialog, 24x24 drawn for 22 px. The ring is drawn on
+ * hover (CSS animates its dash offset); the trash lid is a group of its own so it can open.
+ */
+const action = (body: string): string =>
+  `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle class="ring" cx="12" cy="12" r="11" pathLength="100"/>${body}</svg>`;
+
+export const ACTION_ICONS = {
+  /** Run: a play triangle. */
+  play: action('<path class="shape" d="M9.3 7.2v9.6l7.9-4.8z" fill="currentColor" stroke="none"/>'),
+  /** Edit: a pencil. */
+  pencil: action('<g class="shape"><path d="m14.6 6.4 3 3L9.4 17.6 6 18l.4-3.4z"/><path d="m13.2 7.8 3 3"/></g>'),
+  /** Delete: a trash can; the lid is its own group and swings open on hover. */
+  trash: action('<g class="lid"><path d="M6.5 8h11"/><path d="M9.8 8V6.6a1 1 0 0 1 1-1h2.4a1 1 0 0 1 1 1V8"/></g><g class="shape"><path d="M7.6 8.2 8.3 17a1.6 1.6 0 0 0 1.6 1.5h4.2A1.6 1.6 0 0 0 15.7 17l.7-8.8"/><path d="M10.4 11v5M13.6 11v5"/></g>'),
+  /** New: a page with a folded corner and a plus. */
+  newPage: action('<g class="shape"><path d="M7 4.5h6.5L17 8v11.5H7z"/><path d="M13.5 4.5V8H17"/><path d="M12 11v5M9.5 13.5h5"/></g>'),
+  /** Record: a dot in a ring. */
+  record: action('<circle class="shape" cx="12" cy="12" r="4.6" fill="currentColor" stroke="none"/>'),
+  /** Import: an arrow down into a tray. */
+  importFile: action('<g class="shape"><path d="M12 5v9"/><path d="m8.5 10.5 3.5 3.5 3.5-3.5"/><path d="M6 15v2.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V15"/></g>'),
+  /** Export: an arrow up out of a tray. */
+  exportFile: action('<g class="shape"><path d="M12 14V5"/><path d="M8.5 8.5 12 5l3.5 3.5"/><path d="M6 15v2.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V15"/></g>'),
+} as const;
+
+export type ActionIconName = keyof typeof ACTION_ICONS;
