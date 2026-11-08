@@ -133,6 +133,8 @@ class Broker {
         await this.store.load();
         // Settings saved or a password set: a paused bypass sign-on may try again, one session at a time.
         signonGate.rearmAll();
+        // Every other window keeps its own copy of the settings: tell them to reload.
+        for (const w of new Set([...this.windows, ...this.tabs.windows()])) if (w !== msg.window) this.send(w, { type: 'store:changed' });
         break;
       case 'tab:open':
         this.open(msg.tab, msg.window, msg.profile);

@@ -14,7 +14,8 @@ export const RELAY_EVENT = 'relay';
 export type ToBroker =
   | { type: 'window:hello'; window: string }
   | { type: 'window:closed'; window: string }
-  | { type: 'store:changed' }
+  /** A window (or the credential store) saved settings.json; `window` = the sender, which needs no reload. */
+  | { type: 'store:changed'; window?: string }
   | { type: 'tab:open'; tab: string; window: string; profile: TerminalSettings }
   | { type: 'tab:input'; tab: string; msg: WebviewToHost }
   | { type: 'tab:reload'; tab: string; profile: TerminalSettings }
@@ -35,6 +36,8 @@ export type ToWindow =
   | { type: 'tab:gone'; tab: string }
   | { type: 'ui:ask'; request: string; tab: string; title: string; text: string; ok: string; then?: 'openSettings' }
   | { type: 'registry'; tabs: RegistryEntry[] }
+  /** Another window saved settings.json: reload it and refresh. */
+  | { type: 'store:changed' }
   /** From another window (the Connections tree): bring this tab to the front. */
   | { type: 'tab:activate'; tab: string };
 

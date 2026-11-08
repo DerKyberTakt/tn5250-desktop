@@ -116,16 +116,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
       this.log(`system info: ${errorText(err)}`);
     }
     this.applyTheme();
-    this.store.onChange(() => {
-      this.applyTheme();
-      for (const e of this.entries) {
-        if (e.kind === 'terminal') e.tab.pushConfig();
-        else if (e.kind === 'settings') e.tab.push();
-      }
-      this.renderSessions();
-      // The broker keeps its own copy of the settings (bypass sign-on, passwords, PC commands).
-      void relay('broker', { type: 'store:changed' }).catch(() => undefined);
-    });
+    this.store.onChange(() => this.storeChanged(true));
     this.buildMenus();
     this.buildToolbar();
     this.bindSidebar();
@@ -1055,9 +1046,31 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
   // --- frames ---
 
   /** A message from the broker: for one of our tabs, a dialog to show, or the app-wide registry. */
+  /**
+   * The settings changed, here (saved = true: tell the broker, which tells the other
+   * windows) or in another window (reloaded from the file): apply them everywhere.
+   */
+  private storeChanged(saved: boolean): void {
+    this.applyTheme();
+    for (const e of this.entries) {
+      if (e.kind === 'terminal') e.tab.pushConfig();
+      else if (e.kind === 'settings') e.tab.push();
+    }
+    this.renderSessions();
+    // The broker keeps its own copy of the settings (bypass sign-on, passwords, PC commands).
+    if (saved) void relay('broker', { type: 'store:changed', window: this.windowName }).catch(() => undefined);
+  }
+
   private onRelay(msg: ToWindow): void {
     if (msg.type === 'broker:ready') {
       brokerIsReady();
+      return;
+    }
+    if (msg.type === 'store:changed') {
+      void this.store
+        .load()
+        .then(() => this.storeChanged(false))
+        .catch((err: unknown) => this.log(`settings not reloaded: ${errorText(err)}`));
       return;
     }
     if (msg.type === 'registry') {

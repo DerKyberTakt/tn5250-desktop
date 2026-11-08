@@ -735,12 +735,14 @@ dialog.modal label {
   margin-bottom: 10px;
 }
 
-dialog.modal input {
+dialog.modal input,
+dialog.modal select {
   display: block;
   width: 100%;
   margin-top: 4px;
   padding: 5px 7px;
   background: var(--vscode-input-background);
+  color: inherit;
   border: 1px solid var(--vscode-input-border);
   border-radius: 3px;
 }
