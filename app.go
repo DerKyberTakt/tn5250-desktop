@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -231,19 +232,63 @@ func (a *App) PickFile(title string, filters []FileFilter) (string, error) {
 	return a.PickFileIn(title, filters, "")
 }
 
-// PickFileIn is PickFile opening in dir when that folder exists ("~/..." = under the home directory).
-func (a *App) PickFileIn(title string, filters []FileFilter, dir string) (string, error) {
+// expandHome turns "~/..." into the path under the home directory.
+func expandHome(dir string) string {
 	if strings.HasPrefix(dir, "~") {
 		if home, err := os.UserHomeDir(); err == nil {
-			dir = filepath.Join(home, strings.TrimPrefix(dir, "~"))
+			return filepath.Join(home, strings.TrimPrefix(dir, "~"))
 		}
 	}
+	return dir
+}
+
+// existingDir is dir when it is a folder, else "" (the dialog then opens where the OS likes).
+func existingDir(dir string) string {
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		dir = ""
+		return ""
 	}
+	return dir
+}
+
+// PickFileIn is PickFile opening in dir when that folder exists ("~/..." = under the home directory).
+func (a *App) PickFileIn(title string, filters []FileFilter, dir string) (string, error) {
 	return a.wails.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
-		Title: title, Directory: dir, Filters: toWailsFilters(filters), CanChooseFiles: true,
+		Title: title, Directory: existingDir(expandHome(dir)), Filters: toWailsFilters(filters), CanChooseFiles: true,
 	}).PromptForSingleSelection()
+}
+
+// PickFilesIn is PickFileIn for several files; an empty list when cancelled.
+func (a *App) PickFilesIn(title string, filters []FileFilter, dir string) ([]string, error) {
+	paths, err := a.wails.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
+		Title: title, Directory: existingDir(expandHome(dir)), Filters: toWailsFilters(filters), CanChooseFiles: true, AllowsMultipleSelection: true,
+	}).PromptForMultipleSelection()
+	if paths == nil {
+		paths = []string{}
+	}
+	sort.Strings(paths)
+	return paths, err
+}
+
+// ListFiles lists the files in dir (not its subfolders) whose name ends with ext, ignoring
+// case, sorted; "~/..." is under the home directory. A folder that does not exist gives none.
+func (a *App) ListFiles(dir, ext string) ([]string, error) {
+	dir = expandHome(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	out := []string{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), strings.ToLower(ext)) {
+			continue
+		}
+		out = append(out, filepath.Join(dir, e.Name()))
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // SaveTextFile asks where to save and writes the text; false when cancelled.

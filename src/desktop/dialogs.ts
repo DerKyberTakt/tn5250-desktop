@@ -177,3 +177,68 @@ export function listDialog(
     close.focus();
   });
 }
+
+export interface CheckRow {
+  label: string;
+  detail?: string;
+  /** A short mark after the label ("replaces the saved one"). */
+  tag?: string;
+  /** Starts ticked unless false. */
+  checked?: boolean;
+}
+
+/** A list of check boxes with All / None; resolves with the indexes ticked, or undefined when cancelled. */
+export function checkListDialog(title: string, note: string, rows: CheckRow[], okLabel = 'OK'): Promise<number[] | undefined> {
+  return new Promise((resolve) => {
+    const dialog = el('dialog', 'modal list-dialog');
+    const form = el('form');
+    form.method = 'dialog';
+    form.append(el('h2', undefined, title));
+    if (note) form.append(el('p', 'note', note));
+    const list = el('ul', 'list-rows check-rows');
+    const boxes: HTMLInputElement[] = [];
+    for (const row of rows) {
+      const li = el('li');
+      const label = el('label', 'check');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = row.checked !== false;
+      boxes.push(box);
+      const text = el('span', 'text');
+      text.append(el('span', 'label', row.label));
+      if (row.tag) text.append(el('span', 'tag', row.tag));
+      if (row.detail) text.append(el('span', 'detail', row.detail));
+      label.append(box, text);
+      li.append(label);
+      list.append(li);
+    }
+    form.append(list);
+    const buttons = el('div', 'buttons');
+    const setAll = (on: boolean) => (): void => boxes.forEach((b) => (b.checked = on));
+    for (const [name, on] of [['All', true], ['None', false]] as const) {
+      const b = el('button', undefined, name);
+      b.type = 'button';
+      b.onclick = setAll(on);
+      buttons.append(b);
+    }
+    const cancel = el('button', undefined, 'Cancel');
+    cancel.type = 'button';
+    cancel.onclick = () => dialog.close();
+    const ok = el('button', 'primary', okLabel);
+    ok.type = 'submit';
+    buttons.append(cancel, ok);
+    form.append(buttons);
+    let result: number[] | undefined;
+    form.onsubmit = () => {
+      result = boxes.map((b, i) => (b.checked ? i : -1)).filter((i) => i >= 0);
+    };
+    dialog.append(form);
+    document.body.append(dialog);
+    dialog.onclose = () => {
+      dialog.remove();
+      resolve(result);
+    };
+    dialog.showModal();
+    ok.focus();
+  });
+}

@@ -770,6 +770,34 @@ dialog.modal .list-rows li.empty {
   opacity: 0.7;
 }
 
+dialog.modal .check-rows li label.check {
+  flex: 1;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+dialog.modal .check-rows .text {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  font-family: inherit;
+}
+
+dialog.modal .check-rows .text .label {
+  font-weight: 600;
+}
+
+dialog.modal .check-rows .text .tag {
+  opacity: 0.75;
+  font-style: italic;
+}
+
+dialog.modal .check-rows .text .detail {
+  flex-basis: 100%;
+  opacity: 0.8;
+  font-size: 0.92em;
+}
+
 dialog.modal label.check {
   display: flex;
   align-items: center;

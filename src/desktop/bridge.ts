@@ -158,6 +158,10 @@ interface GoApp {
   PickFile(title: string, filters: FileFilter[]): Promise<string>;
   /** PickFile opening in a folder when it exists; '~/...' is under the home directory. */
   PickFileIn(title: string, filters: FileFilter[], dir: string): Promise<string>;
+  /** PickFileIn for several files; empty when cancelled. */
+  PickFilesIn(title: string, filters: FileFilter[], dir: string): Promise<string[]>;
+  /** The files in a folder (not its subfolders) with the extension, sorted; none when the folder does not exist. */
+  ListFiles(dir: string, ext: string): Promise<string[]>;
   SaveTextFile(title: string, defaultName: string, text: string, filters: FileFilter[]): Promise<boolean>;
   ReadTextFile(path: string): Promise<string>;
   ImageDataURL(path: string): Promise<string>;

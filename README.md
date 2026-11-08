@@ -12,7 +12,10 @@ It shares its TN5250 engine and terminal UI with the
 
 - 24x80 and 27x132 sessions over telnet or TLS, auto-fit, ACS-style keyboard map,
   bypass sign-on, reconnect with a visible connection status.
-- Session tabs, quick connect, saved sessions, ACS-style menus and toolbar.
+- Session tabs, quick connect, saved sessions, ACS-style menus and toolbar. **Import Connections**
+  (File menu) brings your ACS 5250 session profiles (`.hod`) over: connection, screen size, code
+  page, workstation name, user profile, display, paste, hotspot and keyboard options, field
+  colours. A profile already saved is updated in place; passwords are never read.
 - **Several windows**, as in ACS: drag a tab out of the window to give the session a window
   of its own, drag it onto another window of the app to merge it there, drag within the
   bar to reorder (also Window > Move Tab to New Window / Merge Tab into Main Window). The

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 - unreleased
+
+- File > Import Connections: reads ACS 5250 display session profiles (`.hod`) from `Documents\\IBM\\iAccessClient\\Emulator` or any `.hod` files you pick and adds the ones you select (connection, screen size, code page, workstation name, user profile, display, paste, hotspot, mouse wheel, sound and keyboard options, field colours); a connection already saved is updated in place, passwords are never read. The readers are shared with the VS Code extension, where Juan Concepcion contributed them (tn5250-terminal #7).
+
 ## 0.2.1 - 2026-11-08
 
 - Fixed: Actions > Print (host) left the session in X SYSTEM. The host answers the Print key with Read Screen (to Print), X'66', which was not recognised; it now gets the screen image like Read Screen, and the host spools it.

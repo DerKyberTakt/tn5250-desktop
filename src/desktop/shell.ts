@@ -4,7 +4,7 @@ import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
 import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
-import { confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
+import { checkListDialog, confirmDialog, formDialog, listDialog, messageDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { SettingsTab } from './settingsTab';
@@ -15,6 +15,7 @@ import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow } fro
 import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
 import { TabDrag, reorder, type Point } from './tabDrag';
+import { ACS_EMULATOR_DIR, HOD_FILTERS, importMessage, importRows, mergeImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
 
 const APP_NAME = 'TN5250 Terminal';
 const PROJECT_URL = 'https://github.com/DerKyberTakt/tn5250-desktop';
@@ -713,6 +714,50 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     else this.notify('No previous session yet');
   }
 
+  /**
+   * File > Import Connections: ACS 5250 session profiles (.hod) from the ACS folder or files
+   * the user picks, into the saved sessions (shared readers in src/shared). A connection
+   * already saved is updated in place; passwords are never read.
+   */
+  private async importConnections(): Promise<void> {
+    const app = goApp();
+    const inAcs = await app.ListFiles(ACS_EMULATOR_DIR, '.hod').catch((): string[] => []);
+    let files: string[];
+    if (inAcs.length) {
+      const pick = await listDialog(
+        'Import Connections',
+        'Only 5250 display sessions are imported; printer, 3270 and VT profiles are left out. Passwords are never read.',
+        [`ACS session profiles: ${inAcs.length} in Documents\\IBM\\iAccessClient\\Emulator`, 'Choose .hod files…'],
+        ['Select'],
+        [],
+      );
+      if (!pick) return;
+      files = pick.row === 0 ? inAcs : await app.PickFilesIn('Import ACS session profiles', HOD_FILTERS, ACS_EMULATOR_DIR);
+    } else {
+      files = await app.PickFilesIn('Import ACS session profiles', HOD_FILTERS, ACS_EMULATOR_DIR);
+    }
+    if (!files.length) return;
+    const found = await readProfiles(files, (p) => app.ReadTextFile(p));
+    if (!found.sessions.length) {
+      this.notify(`No 5250 display sessions found.${unreadableNote(found.unreadable)}`);
+      return;
+    }
+    const saved = this.store.readSessions();
+    const rows = importRows(found.sessions, saved).map((r) => ({ label: r.label, detail: r.detail, tag: r.replaces ? 'replaces the saved one' : undefined }));
+    const chosen = await checkListDialog(
+      'Import Connections',
+      "Select the connections to import. One already saved is updated in place: the profile's values win, what you set only here (a trusted certificate, bypass sign-on) stays.",
+      rows,
+      'Import',
+    );
+    if (!chosen?.length) return;
+    const merged = mergeImported(saved, chosen.map((i) => (found.sessions[i] as FoundSession).session));
+    await this.store.writeSessions(merged.sessions);
+    this.notify(importMessage(merged, found.unreadable));
+    const first = merged.touched[0];
+    if (first !== undefined) this.openSettings(first);
+  }
+
   private async newConnection(): Promise<void> {
     const d = this.store.readDefaults();
     const values = await formDialog('New connection', [
@@ -1045,6 +1090,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
         label: 'File',
         items: [
           { label: 'New Connection…', run: () => void this.newConnection() },
+          { label: 'Import Connections…', run: () => void this.importConnections().catch((err: unknown) => this.notify(`Import failed: ${errorText(err)}`)) },
           { label: 'Connect to Previous', run: () => this.connectPrevious(), enabled: () => !!this.store.lastSession },
           '-',
           { label: 'Settings…', run: () => this.openSettings(-1) },
