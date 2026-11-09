@@ -319,7 +319,8 @@ export class TabDrag<T> {
 
   private makeGhost(button: HTMLElement): HTMLElement {
     const g = document.createElement('div');
-    g.className = 'tab-ghost';
+    // Held until the pointer leaves the bar: near it the tab itself is what moves.
+    g.className = 'tab-ghost held';
     g.textContent = this.label(button);
     document.body.append(g);
     return g;

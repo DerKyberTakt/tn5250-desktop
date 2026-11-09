@@ -153,10 +153,10 @@ interface GoApp {
   WindowBounds(name: string): Promise<WindowBounds>;
   /** The drag ghost window (app_ghost.go): created hidden, shown at a screen point, moved, hidden. */
   GhostPrepare(): Promise<void>;
-  GhostShow(label: string, x: number, y: number): Promise<void>;
+  GhostShow(label: string, theme: string, x: number, y: number): Promise<void>;
   GhostMove(x: number, y: number): Promise<void>;
   GhostHide(): Promise<void>;
-  GhostLabel(): Promise<string>;
+  GhostLabel(): Promise<GhostInfo>;
   NetConnect(id: string, options: ConnectOptionsDto): Promise<void>;
   NetSend(id: string, base64: string): Promise<void>;
   NetClose(id: string): Promise<void>;
@@ -318,4 +318,10 @@ export function base64ToBytes(text: string): Uint8Array {
 
 export function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** What the ghost window shows: the dragged tab's name and the app's appearance ("system" | "light" | "dark"). */
+export interface GhostInfo {
+  label: string;
+  theme: string;
 }
