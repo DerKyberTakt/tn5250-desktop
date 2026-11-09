@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.0 - unreleased
+- Settings > Connection has an Import Connections… button, the same import as File > Import Connections.
+
 ## 0.2.2 - 2026-11-08
 
 - IT rollout, two files. A `settings.json` in the machine-wide folder (Windows `%ProgramData%\tn5250-terminal`, Linux `/etc/tn5250-terminal`, macOS `/Library/Application Support/tn5250-terminal`, or the path in `TN5250_MANAGED_SETTINGS`) is read at every start and layered under each user's own settings: its defaults are the base the user's defaults override, its sessions show read-only under "Company connections" (right-click: connect, or copy one to your own list), its macros run but cannot be changed, and `"checkForUpdates": false` turns the startup update check off for everyone. A `settings.default.json` next to the executable seeds a user who has no settings yet. Help > Settings File Location lists all three. See DEPLOYMENT.md.

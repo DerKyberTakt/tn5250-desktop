@@ -10,6 +10,8 @@ export interface SettingsHost {
   readonly store: Store;
   readonly credentials: Credentials;
   openSession(profile: TerminalSettings): void;
+  /** File > Import Connections, run from the Settings page's button. */
+  importConnections(): Promise<void>;
   /** The open terminal tabs that have a session (not the demo screen). */
   openTerminals(): Array<{ tab: { readonly title: string; reload(profile: TerminalSettings): void }; profile: TerminalSettings; deviceTemplate: string }>;
   notify(text: string): void;
@@ -179,6 +181,10 @@ export class SettingsTab {
           if (entry?.host) this.host.openSession(resolveSettings(store.readDefaults(), entry));
           break;
         }
+        case 'importConnections':
+          await this.host.importConnections();
+          this.push();
+          break;
         case 'setPassword': {
           const { name, host, user } = this.targetName(msg.target);
           const values = await formDialog(

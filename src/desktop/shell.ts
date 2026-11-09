@@ -951,7 +951,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
    * the user picks, into the saved sessions (shared readers in src/shared). A connection
    * already saved is updated in place; passwords are never read.
    */
-  private async importConnections(): Promise<void> {
+  async importConnections(): Promise<void> {
     const app = goApp();
     const inAcs = await app.ListFiles(ACS_EMULATOR_DIR, '.hod').catch((): string[] => []);
     let files: string[];

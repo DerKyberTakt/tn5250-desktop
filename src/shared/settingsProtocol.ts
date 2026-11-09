@@ -54,6 +54,8 @@ export type SettingsToHost =
   | { type: 'removeSession'; index: number }
   | { type: 'connect'; index: number }
   | { type: 'importKmp'; target: number }
+  /** Settings > Connection > Import Connections: the host runs its import (ACS .hod / Code for IBM i) and pushes the new list. */
+  | { type: 'importConnections'; target: number }
   | { type: 'setPassword'; target: number }
   | { type: 'browseWatermark' }
   | { type: 'browseFile'; key: 'tlsClientCert' | 'tlsClientKey' | 'tlsCaFile' }

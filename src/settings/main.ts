@@ -160,7 +160,7 @@ type FieldSpec = { showIf?: Key; hideIf?: Key; showWhen?: [Key, string[]]; locke
   | { kind: 'titleParts'; label: string }
   | { kind: 'heading'; label: string }
   | { kind: 'static'; label: string; text: string }
-  | { kind: 'button'; label: string; text: string; message: 'setPassword' | 'setCertPassphrase' | 'exportColors' | 'importColors' | 'resetColors' }
+  | { kind: 'button'; label: string; text: string; message: 'setPassword' | 'setCertPassphrase' | 'exportColors' | 'importColors' | 'resetColors' | 'importConnections' }
   | { kind: 'preview' }
 );
 
@@ -321,6 +321,8 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       YESNO('demoMode', 'Demo session'),
       { kind: 'text', key: 'demoLabel', label: 'Label', showIf: 'demoMode' },
       { kind: 'color', key: 'demoColor', label: 'Colour', showIf: 'demoMode' },
+      { kind: 'heading', label: 'Import' },
+      { kind: 'button', label: 'From ACS or Code for IBM i', text: 'Import Connections…', message: 'importConnections' },
     ],
   },
   {
@@ -846,7 +848,7 @@ function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
     mark.title = 'Takes effect on the next connection. Saving while a tab is open offers to reload it.';
     label.append(mark);
   }
-  const helpText = 'key' in f ? HELP[f.key] : f.kind === 'button' && f.message === 'setPassword' ? 'Kept in the secret store (VS Code secret storage, or the Windows Credential Manager / keyring in the desktop app), never in settings or files.' : f.kind === 'titleParts' ? 'Parts of the tab title, in this order. The session ID is a letter A, B, C per open tab, like ACS.' : undefined;
+  const helpText = 'key' in f ? HELP[f.key] : f.kind === 'button' && f.message === 'setPassword' ? 'Kept in the secret store (VS Code secret storage, or the Windows Credential Manager / keyring in the desktop app), never in settings or files.' : f.kind === 'button' && f.message === 'importConnections' ? 'Reads ACS session profiles (.hod) or Code for IBM i connections. Only 5250 display sessions; passwords are never read. A connection already saved is updated in place.' : f.kind === 'titleParts' ? 'Parts of the tab title, in this order. The session ID is a letter A, B, C per open tab, like ACS.' : undefined;
   if (helpText) label.append(infoBubble(helpText));
   row.append(label);
   if (f.kind === 'static') {
