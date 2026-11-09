@@ -56,8 +56,8 @@ describe('title bar', () => {
     expect(caption.style.getPropertyValue('--wails-draggable')).toBe('drag');
     (header.querySelector('.win-close') as HTMLButtonElement).click();
     expect(h.close).toHaveBeenCalledTimes(1);
-    bar?.setTitle('A - KYLEB1 - TN5250 Terminal');
-    expect(header.querySelector('.win-title')?.textContent).toBe('A - KYLEB1 - TN5250 Terminal');
+    bar?.setTitle('A - PUB400 - TN5250 Terminal');
+    expect(header.querySelector('.win-title')?.textContent).toBe('A - PUB400 - TN5250 Terminal');
     // Maximised: the glyph and a class change.
     await Promise.resolve();
     h.fireMax(true);
