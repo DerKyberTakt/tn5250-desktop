@@ -407,6 +407,11 @@ export class SessionController {
   }
 
   /** Text of the current screen, nulls as blanks, one line per row. */
+  /** True while the host accepts keystrokes (connected, keyboard not locked). */
+  get inputAllowed(): boolean {
+    return this.connected && this.session.oia(true).inputInhibited === 'none';
+  }
+
   screenText(): string {
     const snap = this.session.snapshot();
     const rows: string[] = [];
