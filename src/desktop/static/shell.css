@@ -1093,9 +1093,9 @@ dialog.modal.icon-list .list-rows li .text {
   overflow: visible;
 }
 
-/* A toggle that is on (Edit, Wrap, Find) keeps its ring and colour. */
-.icon-actions button.act.pressed .ring {
-  stroke-dashoffset: 0;
+/* A toggle that is on (folder tree, Edit, Wrap, Find): a tinted disc under the coloured shape; the ring stays the hover. */
+.icon-actions button.act.pressed {
+  background: color-mix(in srgb, var(--act-color) 18%, transparent);
 }
 
 .icon-actions button.act.pressed .shape {

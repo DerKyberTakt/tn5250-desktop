@@ -16,6 +16,7 @@ export interface Encoding {
 const UNICODE: Encoding[] = [
   { ccsid: 1208, label: 'UTF-8 (1208)' },
   { ccsid: 1200, label: 'UTF-16 (1200)' },
+  { ccsid: 1202, label: 'UTF-16 LE (1202)' },
   { ccsid: 819, label: 'ISO-8859-1 (819)' },
   { ccsid: 1252, label: 'Windows-1252 (1252)' },
 ];
@@ -39,15 +40,22 @@ const EBCDIC_LABELS: Record<number, string> = {
 /** Every encoding the viewer offers: Unicode and Latin first, then the EBCDIC pages the engine knows. */
 export const ENCODINGS: Encoding[] = [...UNICODE, ...CodePage.supported().map((ccsid) => ({ ccsid, label: EBCDIC_LABELS[ccsid] ?? `EBCDIC ${ccsid}` }))];
 
+/** Not a CCSID: the viewer's "show me the bytes" choice. */
+export const HEX = -1;
+
 export function isEbcdic(ccsid: number): boolean {
   return CodePage.supported().includes(ccsid);
 }
 
 export function encodingLabel(ccsid: number): string {
+  if (ccsid === HEX) return 'Bytes (hex)';
   return ENCODINGS.find((e) => e.ccsid === ccsid)?.label ?? `CCSID ${ccsid}`;
 }
 
+/** UTF-16 big endian, the IBM i byte order. */
 const UTF16 = new Set([1200, 13488, 17584, 61952]);
+/** UTF-16 little endian: what Windows Notepad and PowerShell write. */
+const UTF16LE = 1202;
 
 function validUtf8(bytes: Uint8Array): boolean {
   try {
@@ -77,7 +85,15 @@ function looksEbcdic(bytes: Uint8Array): boolean {
  * looks like EBCDIC is CCSID 37, anything else Latin-1.
  */
 export function guessCcsid(bytes: Uint8Array, reported: number): number {
-  if (reported && (UTF16.has(reported) || reported === 1208 || reported === 819 || reported === 1252 || isEbcdic(reported))) return reported;
+  const bom = bomCcsid(bytes);
+  if (bom) return bom;
+  if (reported && (UTF16.has(reported) || reported === UTF16LE || reported === 1208 || reported === 819 || reported === 1252 || isEbcdic(reported))) {
+    // Tagged UTF-16 but not a NUL in sight: a PC file an earlier upload tagged 1200. Read the bytes for what they are.
+    if ((UTF16.has(reported) || reported === UTF16LE) && bytes.length && !bytes.subarray(0, 8192).includes(0)) return validUtf8(bytes) ? 1208 : 819;
+    return reported;
+  }
+  const utf16 = utf16Guess(bytes);
+  if (utf16) return utf16;
   if (validUtf8(bytes)) return 1208;
   if (looksEbcdic(bytes)) return 37;
   return 819;
@@ -85,7 +101,7 @@ export function guessCcsid(bytes: Uint8Array, reported: number): number {
 
 /** A file is binary when it has NULs where text would not (UTF-16 has them between every byte pair). */
 export function isBinary(bytes: Uint8Array, ccsid: number): boolean {
-  if (UTF16.has(ccsid)) return false;
+  if (UTF16.has(ccsid) || ccsid === UTF16LE) return false;
   const n = Math.min(bytes.length, 8192);
   for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
   return false;
@@ -101,6 +117,7 @@ const EBCDIC_TAB = 0x05;
 export function decodeIfs(bytes: Uint8Array, ccsid: number): string {
   if (ccsid === 1208) return new TextDecoder('utf-8').decode(bytes);
   if (UTF16.has(ccsid)) return new TextDecoder('utf-16be').decode(bytes);
+  if (ccsid === UTF16LE) return new TextDecoder('utf-16le').decode(bytes);
   if (ccsid === 1252) return new TextDecoder('windows-1252').decode(bytes);
   if (isEbcdic(ccsid)) {
     const cp = CodePage.get(ccsid);
@@ -134,12 +151,13 @@ export function ebcdicLineEnd(bytes: Uint8Array): number {
 /** Encodes text for a file of the given CCSID; characters the page lacks become '?' (EBCDIC X'6F'). */
 export function encodeIfs(text: string, ccsid: number, lineEnd = EBCDIC_NL): Uint8Array {
   if (ccsid === 1208) return new TextEncoder().encode(text);
-  if (UTF16.has(ccsid)) {
+  if (UTF16.has(ccsid) || ccsid === UTF16LE) {
+    const le = ccsid === UTF16LE;
     const out = new Uint8Array(text.length * 2);
     for (let i = 0; i < text.length; i++) {
       const c = text.charCodeAt(i);
-      out[2 * i] = c >> 8;
-      out[2 * i + 1] = c & 0xff;
+      out[2 * i] = le ? c & 0xff : c >> 8;
+      out[2 * i + 1] = le ? c >> 8 : c & 0xff;
     }
     return out;
   }
@@ -186,4 +204,38 @@ export function toBase64(bytes: Uint8Array): string {
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+
+/** The encoding a byte-order mark announces, when the file starts with one. */
+export function bomCcsid(bytes: Uint8Array): number | undefined {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return 1208;
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return UTF16LE;
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return 1200;
+  return undefined;
+}
+
+/** UTF-16 without a mark: Latin text has a NUL in every other byte (odd positions = little endian). */
+function utf16Guess(bytes: Uint8Array): number | undefined {
+  const n = Math.min(bytes.length, 4096) & ~1;
+  if (n < 4) return undefined;
+  let even = 0;
+  let odd = 0;
+  for (let i = 0; i < n; i += 2) {
+    if (bytes[i] === 0) even++;
+    if (bytes[i + 1] === 0) odd++;
+  }
+  const pairs = n / 2;
+  if (odd / pairs > 0.3 && even === 0) return UTF16LE;
+  if (even / pairs > 0.3 && odd === 0) return 1200;
+  return undefined;
+}
+
+/** Puts back the byte-order mark the file had, so a save keeps it. TextDecoder drops it when reading. */
+export function keepBom(encoded: Uint8Array, original: Uint8Array, ccsid: number): Uint8Array {
+  if (bomCcsid(original) !== ccsid) return encoded;
+  const bom = ccsid === 1208 ? [0xef, 0xbb, 0xbf] : ccsid === UTF16LE ? [0xff, 0xfe] : [0xfe, 0xff];
+  const out = new Uint8Array(bom.length + encoded.length);
+  out.set(bom, 0);
+  out.set(encoded, bom.length);
+  return out;
 }

@@ -5,7 +5,7 @@
  * The pure helpers (hit tests, ordering) are tested; TabDrag wires them to pointer events.
  */
 import type { WindowBounds } from './bridge';
-import { settle } from './flip';
+import { layoutRect, settle } from './flip';
 
 /** Pointer travel before a press becomes a drag. */
 export const DRAG_THRESHOLD = 6;
@@ -306,7 +306,8 @@ export class TabDrag<T> {
     const others: Span[] = [];
     for (const item of this.host.items()) {
       if (item === p?.item) continue;
-      const r = this.host.buttonOf(item).getBoundingClientRect();
+      // Laid-out places: the others may still be sliding (FLIP) from where they were.
+      const r = layoutRect(this.host.buttonOf(item));
       others.push({ left: r.left, right: r.right });
     }
     return insertionIndex(others, x);
