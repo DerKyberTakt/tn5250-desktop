@@ -1,10 +1,11 @@
 /**
  * The app's own title bar, used when the window is frameless (Windows, and Linux as an
  * experiment): app icon, the menu bar, the window title in the middle, and the minimise /
- * maximise / close buttons. On Windows the buttons and the caption are "non-client regions"
- * (WebView2 tells the system where they are): dragging, double-click to maximise, Snap
- * Layouts on the maximise button and the clicks themselves are the system's. Elsewhere the
- * page handles them through the runtime.
+ * maximise / close buttons. The caption is a Wails draggable region (the runtime starts a
+ * system move on mouse down, so snapping and Win+arrows work), a double-click on it toggles
+ * maximise, and the buttons call the runtime's window functions. (Wails 3.1 only reports
+ * `--wails-non-client-region` rectangles under WebView2 composition hosting, which this app
+ * does not use, so the system's own hit testing and the Snap Layouts flyout are not on.)
  */
 
 export interface FrameInfo {
@@ -48,7 +49,6 @@ const GLYPHS = {
  */
 export function installTitleBar(header: HTMLElement, menubar: HTMLElement, icon: string, info: FrameInfo, host: TitleBarHost): TitleBar | undefined {
   if (!info.custom) return undefined;
-  const native = info.platform === 'windows';
   document.documentElement.classList.add('custom-frame', `frame-${info.platform}`);
   header.hidden = false;
   header.replaceChildren();
@@ -59,25 +59,22 @@ export function installTitleBar(header: HTMLElement, menubar: HTMLElement, icon:
   const title = el('span', 'win-title');
   caption.append(title);
   const controls = el('div', 'win-controls');
-  const button = (kind: 'minimise' | 'maximise' | 'close', label: string, region: string, run: () => void): HTMLButtonElement => {
+  const button = (kind: 'minimise' | 'maximise' | 'close', label: string, run: () => void): HTMLButtonElement => {
     const b = el('button', `win-${kind}`);
     b.type = 'button';
     b.title = label;
     b.setAttribute('aria-label', label);
     b.innerHTML = GLYPHS[kind];
-    if (native) b.style.setProperty('--wails-non-client-region', region);
-    else b.addEventListener('click', run);
+    b.addEventListener('click', run);
     return b;
   };
-  const max = button('maximise', 'Maximize', 'maximize', () => host.toggleMaximise());
-  controls.append(button('minimise', 'Minimize', 'minimize', () => host.minimise()), max, button('close', 'Close', 'close', () => host.close()));
+  const max = button('maximise', 'Maximize', () => host.toggleMaximise());
+  controls.append(button('minimise', 'Minimize', () => host.minimise()), max, button('close', 'Close', () => host.close()));
   header.append(app, menubar, caption, controls);
 
-  if (native) caption.style.setProperty('--wails-non-client-region', 'caption');
-  else {
-    caption.style.setProperty('--wails-draggable', 'drag');
-    caption.addEventListener('dblclick', () => host.toggleMaximise());
-  }
+  // The runtime watches mouse down on elements with this property and starts a system move.
+  caption.style.setProperty('--wails-draggable', 'drag');
+  caption.addEventListener('dblclick', () => host.toggleMaximise());
 
   const setMax = (on: boolean): void => {
     header.classList.toggle('maximised', on);

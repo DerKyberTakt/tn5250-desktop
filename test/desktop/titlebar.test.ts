@@ -39,7 +39,7 @@ describe('title bar', () => {
     expect(menubar.parentElement).toBe(document.body);
   });
 
-  it('on Windows the caption and buttons are non-client regions; the system handles the clicks', async () => {
+  it('fills the header: icon, menus, caption, buttons; the title and the maximised state follow the host', async () => {
     const { header, menubar } = page();
     const h = host();
     const bar = installTitleBar(header, menubar, '<svg/>', { custom: true, platform: 'windows' }, h);
@@ -51,11 +51,11 @@ describe('title bar', () => {
     expect(menubar.parentElement).toBe(header);
     expect([...header.children].map((c) => c.className || c.id)).toEqual(['app-icon', 'menubar', 'caption', 'win-controls']);
     const caption = header.querySelector('.caption') as HTMLElement;
-    expect(caption.style.getPropertyValue('--wails-non-client-region')).toBe('caption');
-    const regions = [...header.querySelectorAll<HTMLButtonElement>('.win-controls button')].map((b) => b.style.getPropertyValue('--wails-non-client-region'));
-    expect(regions).toEqual(['minimize', 'maximize', 'close']);
+    // No non-client regions: Wails 3.1 only tracks them under composition hosting; the caption drags through the runtime.
+    expect(caption.style.getPropertyValue('--wails-non-client-region')).toBe('');
+    expect(caption.style.getPropertyValue('--wails-draggable')).toBe('drag');
     (header.querySelector('.win-close') as HTMLButtonElement).click();
-    expect(h.close).not.toHaveBeenCalled();
+    expect(h.close).toHaveBeenCalledTimes(1);
     bar?.setTitle('A - KYLEB1 - TN5250 Terminal');
     expect(header.querySelector('.win-title')?.textContent).toBe('A - KYLEB1 - TN5250 Terminal');
     // Maximised: the glyph and a class change.
@@ -67,7 +67,7 @@ describe('title bar', () => {
     expect((header.querySelector('.win-maximise') as HTMLButtonElement).title).toBe('Maximize');
   });
 
-  it('elsewhere the page handles the buttons and the caption drags through the runtime', () => {
+  it('the buttons call the host and a double-click on the caption toggles maximise (Linux too)', () => {
     const { header, menubar } = page();
     const h = host();
     installTitleBar(header, menubar, '<svg/>', { custom: true, platform: 'linux' }, h);

@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.4.0 - unreleased
-- The window has the app's own title bar (Windows, and Linux as an experiment): app icon, the menus, the title and the window buttons in one row, like VS Code or Teams. On Windows the system still does the dragging, double-click, Snap Layouts (hover the maximise button) and the button clicks. View > Use System Title Bar (restart) brings the system frame back.
+- The window has the app's own title bar (Windows, and Linux as an experiment): app icon, the menus, the title and the window buttons in one row, like VS Code or Teams. Dragging the title row moves the window (a system move, so snapping and Win+arrows work), a double-click on it maximises or restores, and the three buttons minimise, maximise and close. (The Snap Layouts flyout on the maximise button needs hit testing Wails 3.1 does not do for this window; Win+Z still opens it.) View > Use System Title Bar (restart) brings the system frame back.
 - Themes: View > Theme… lists Light, Dark, Midnight (Discord-like) and Graphite (Teams-like) plus your own; use, edit (a copy of a built-in), delete, New, Import and Export. The editor is a page with every colour of the window chrome, tabs, keycap buttons, macro editor and tool pages, each with a picker and a hex field, previewed live; ESC or Reset puts the old look back. Themes are .json files in the themes folder next to settings.json; an administrator can ship read-only ones in a themes folder next to the managed settings file. Appearance: System/Light/Dark takes a theme off.
 
 ## 0.3.0 - unreleased
