@@ -50,3 +50,31 @@ export function settle(el: HTMLElement, ms = 150): void {
   el.style.transform = '';
   el.addEventListener('transitionend', () => (el.style.transition = ''), { once: true });
 }
+
+/** Where an element is laid out: its rectangle with any transform in flight (a FLIP slide) taken off. */
+export function layoutRect(el: HTMLElement): { left: number; right: number; top: number; bottom: number } {
+  const r = el.getBoundingClientRect();
+  const m = /matrix\(([^)]+)\)/.exec(getComputedStyle(el).transform || '');
+  if (!m) return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+  const parts = (m[1] as string).split(',').map((v) => parseFloat(v));
+  const tx = parts[4] || 0;
+  const ty = parts[5] || 0;
+  return { left: r.left - tx, right: r.right - tx, top: r.top - ty, bottom: r.bottom - ty };
+}
+
+/**
+ * Puts the children of `parent` in `order` without ever moving `keep`: the others are
+ * inserted around it. Re-inserting an element that holds pointer capture (the tab under
+ * the pointer) makes the browser drop the capture, which ends the drag.
+ */
+export function placeAround(parent: HTMLElement, keep: HTMLElement, order: HTMLElement[]): void {
+  const at = order.indexOf(keep);
+  if (at < 0) return;
+  for (let i = 0; i < at; i++) parent.insertBefore(order[i] as HTMLElement, keep);
+  let ref: Node | null = keep.nextSibling;
+  for (let i = order.length - 1; i > at; i--) {
+    const e = order[i] as HTMLElement;
+    parent.insertBefore(e, ref);
+    ref = e;
+  }
+}

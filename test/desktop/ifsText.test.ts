@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENCODINGS, decodeIfs, ebcdicLineEnd, encodeIfs, encodingLabel, fromBase64, guessCcsid, hexDump, isBinary, toBase64 } from '../../src/desktop/ifsText';
+import { ENCODINGS, HEX, bomCcsid, keepBom, decodeIfs, ebcdicLineEnd, encodeIfs, encodingLabel, fromBase64, guessCcsid, hexDump, isBinary, toBase64 } from '../../src/desktop/ifsText';
 
 const bytes = (...b: number[]): Uint8Array => Uint8Array.from(b);
 
@@ -51,8 +51,44 @@ describe('IFS text codec', () => {
   it('round-trips base64 and lists the encodings with labels', () => {
     const raw = bytes(0, 1, 2, 250, 255);
     expect([...fromBase64(toBase64(raw))]).toEqual([...raw]);
-    expect(ENCODINGS.map((e) => e.ccsid)).toEqual([1208, 1200, 819, 1252, 37, 273, 500, 1140, 1141, 1142, 1143, 1144, 1145, 1146, 1147, 1148, 1149]);
+    expect(ENCODINGS.map((e) => e.ccsid)).toEqual([1208, 1200, 1202, 819, 1252, 37, 273, 500, 1140, 1141, 1142, 1143, 1144, 1145, 1146, 1147, 1148, 1149]);
     expect(encodingLabel(37)).toBe('EBCDIC 37 (US, Canada)');
     expect(encodingLabel(9999)).toBe('CCSID 9999');
+  });
+});
+
+describe('IFS text codec: PC files', () => {
+  const bytes = (...b: number[]): Uint8Array => Uint8Array.from(b);
+
+  it('reads a byte-order mark before anything else and keeps it on the way back', () => {
+    expect(bomCcsid(bytes(0xff, 0xfe, 0x48, 0x00))).toBe(1202);
+    expect(bomCcsid(bytes(0xfe, 0xff, 0x00, 0x48))).toBe(1200);
+    expect(bomCcsid(bytes(0xef, 0xbb, 0xbf, 0x48))).toBe(1208);
+    expect(bomCcsid(bytes(0x48, 0x69))).toBeUndefined();
+    // PowerShell's "> file.txt": UTF-16 LE with a mark, tagged 1208 by an upload.
+    const ps = bytes(0xff, 0xfe, 0x48, 0x00, 0x69, 0x00);
+    expect(guessCcsid(ps, 1208)).toBe(1202);
+    expect(isBinary(ps, 1202)).toBe(false);
+    expect(decodeIfs(ps, 1202)).toBe('Hi');
+    expect([...keepBom(encodeIfs('Hi', 1202), ps, 1202)]).toEqual([0xff, 0xfe, 0x48, 0x00, 0x69, 0x00]);
+    expect([...keepBom(encodeIfs('Hi', 1208), ps, 1208)]).toEqual([0x48, 0x69]); // the file had no UTF-8 mark
+  });
+
+  it('does not believe a UTF-16 tag on bytes without a single NUL (files an earlier upload tagged 1200)', () => {
+    expect(guessCcsid(new TextEncoder().encode('plain text\n'), 1200)).toBe(1208);
+    expect(guessCcsid(bytes(0x41, 0xe9, 0x42), 1200)).toBe(819);
+    expect(guessCcsid(bytes(0x00, 0x48, 0x00, 0x69), 1200)).toBe(1200);
+  });
+
+  it('guesses UTF-16 without a mark from where the NULs sit', () => {
+    expect(guessCcsid(bytes(0x48, 0x00, 0x69, 0x00, 0x21, 0x00), 0)).toBe(1202);
+    expect(guessCcsid(bytes(0x00, 0x48, 0x00, 0x69, 0x00, 0x21), 0)).toBe(1200);
+    expect(decodeIfs(encodeIfs('Grüße', 1202), 1202)).toBe('Grüße');
+  });
+
+  it('has a hex choice that is not a CCSID', () => {
+    expect(HEX).toBeLessThan(0);
+    expect(encodingLabel(HEX)).toBe('Bytes (hex)');
+    expect(ENCODINGS.some((e) => e.ccsid === 1202)).toBe(true);
   });
 });

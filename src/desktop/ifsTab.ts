@@ -136,9 +136,9 @@ export class IfsTab {
     const actions = el('div', 'ifs-actions');
     actions.append(
       btn('tree', 'folderTree', 'blue', 'Show or hide the folder tree', () => this.toggleTree()),
-      btn('upload', 'importFile', 'green', 'Upload files from this computer (or drop files here)', () => void this.upload([])),
-      btn('download', 'exportFile', 'blue', 'Download the selected items (one text file can be converted to UTF-8)', () => void this.download()),
-      btn('mkdir', 'newFolder', 'blue', 'New folder here', () => void this.mkdir()),
+      btn('upload', 'exportFile', 'green', 'Upload files from this computer (or drop files here)', () => void this.upload([])),
+      btn('download', 'importFile', 'blue', 'Download the selected items (one text file can be converted to UTF-8)', () => void this.download()),
+      btn('mkdir', 'newFolder', 'green', 'New folder here', () => void this.mkdir()),
       btn('rename', 'pencil', 'yellow', 'Rename the selected item (F2)', () => void this.rename()),
       btn('delete', 'trash', 'red', 'Delete the selected items (Del)', () => void this.remove()),
       btn('view', 'eye', 'blue', 'Open the selected file in a viewer tab (Enter, double-click)', () => void this.view()),

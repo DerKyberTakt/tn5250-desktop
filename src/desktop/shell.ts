@@ -6,7 +6,7 @@ import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow
 import { Credentials } from './credentials';
 import { checkListDialog, choiceDialog, confirmDialog, formDialog, iconListDialog, listDialog, messageDialog, promptDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
-import { play, reducedMotion, snapshot } from './flip';
+import { placeAround, play, reducedMotion, snapshot } from './flip';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { IfsViewTab, type IfsViewHost } from './ifsViewTab';
 import { SettingsTab } from './settingsTab';
@@ -582,8 +582,8 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     const others = this.entries.filter((e) => e !== entry).map((e) => [e, e.button] as const);
     const before = snapshot(others);
     this.entries = reorder(this.entries, from, to);
-    const next = this.entries[this.entries.indexOf(entry) + 1];
-    this.tabbar.insertBefore(entry.button, next ? next.button : null);
+    // The dragged button holds the pointer capture: the others move around it, it stays put.
+    placeAround(this.tabbar, entry.button, this.entries.map((e) => e.button));
     play(others, before, entry);
   }
 

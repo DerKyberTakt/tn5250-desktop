@@ -1,11 +1,13 @@
 import { errorText, goApp } from './bridge';
 import { choiceDialog, confirmDialog } from './dialogs';
 import { actionButton } from './icons';
-import { ENCODINGS, decodeIfs, ebcdicLineEnd, encodeIfs, encodingLabel, fromBase64, guessCcsid, hexDump, isBinary, toBase64 } from './ifsText';
+import { ENCODINGS, HEX, decodeIfs, ebcdicLineEnd, encodeIfs, encodingLabel, fromBase64, guessCcsid, hexDump, isBinary, keepBom, toBase64 } from './ifsText';
 import { formatSize } from './ifsTab';
 
 export interface IfsViewHost {
   notify(text: string): void;
+  /** A line for the Session Log (what was read and how it is decoded). */
+  log?(line: string): void;
   changed(tab: IfsViewTab): void;
 }
 
@@ -82,6 +84,9 @@ export class IfsViewTab {
       o.value = String(e.ccsid);
       this.encodingSel.append(o);
     }
+    const hex = el('option', undefined, encodingLabel(HEX));
+    hex.value = String(HEX);
+    this.encodingSel.append(hex);
     this.encodingSel.addEventListener('change', () => this.setEncoding(Number(this.encodingSel.value)));
     bar.append(
       btn('reload', 'refresh', 'blue', 'Read the file again (F5)', () => void this.load()),
@@ -175,16 +180,18 @@ export class IfsViewTab {
       this.editing = false;
       this.setDirty(false);
       this.decode();
+      this.host.log?.(`Viewer: ${this.path}: ${this.bytes.length} bytes, file says CCSID ${this.reported || 'unknown'}, reading as ${encodingLabel(this.ccsid)}${this.binary ? ', shown as hex' : ''}`);
     } catch (err) {
       this.statusEl.textContent = 'Could not read the file';
       this.host.notify(errorText(err));
+      this.host.log?.(`Viewer: ${this.path}: ${errorText(err)}`);
     } finally {
       this.frame.classList.remove('busy');
     }
   }
 
   private decode(): void {
-    this.encodingSel.value = String(this.ccsid);
+    this.encodingSel.value = String(this.binary ? HEX : this.ccsid);
     this.text = this.binary ? hexDump(this.bytes) : decodeIfs(this.bytes, this.ccsid);
     this.area.value = this.text;
     this.area.readOnly = !this.editing;
@@ -206,7 +213,7 @@ export class IfsViewTab {
   }
 
   private renderStatus(): void {
-    const enc = this.binary ? 'binary (hex)' : encodingLabel(this.ccsid) + (this.reported === this.ccsid ? '' : this.reported ? ` (file says ${this.reported})` : ' (guessed)');
+    const enc = this.binary ? `binary (hex)${this.reported ? ` (file says ${this.reported})` : ''}` : encodingLabel(this.ccsid) + (this.reported === this.ccsid ? '' : this.reported ? ` (file says ${this.reported})` : ' (guessed)');
     const lines = this.binary ? '' : ` · ${this.text.split('\n').length} lines`;
     this.statusEl.textContent = `${this.path} · ${formatSize(this.size)}${lines} · ${enc}${this.dirty ? ' · modified' : ''}`;
     this.bannerEl.hidden = !this.truncated;
@@ -227,7 +234,7 @@ export class IfsViewTab {
     set('copy', this.bytes.length > 0);
     set('find', text, !this.findBar.hidden);
     set('wrap', text, this.wrap);
-    this.encodingSel.disabled = this.binary || this.dirty;
+    this.encodingSel.disabled = this.dirty;
   }
 
   private setDirty(d: boolean): void {
@@ -241,8 +248,11 @@ export class IfsViewTab {
 
   private setEncoding(ccsid: number): void {
     if (this.dirty) return;
-    this.ccsid = ccsid;
-    this.binary = isBinary(this.bytes, ccsid);
+    if (ccsid === HEX) this.binary = true;
+    else {
+      this.ccsid = ccsid;
+      this.binary = isBinary(this.bytes, ccsid);
+    }
     this.decode();
   }
 
@@ -334,7 +344,7 @@ export class IfsViewTab {
         const ok = await confirmDialog('The file changed on the host', `${name} was modified since you opened it (${formatSize(now.size)}, ${new Date(now.modified).toLocaleString()}). Overwrite it anyway?`, 'Overwrite');
         if (!ok) return;
       }
-      const bytes = encodeIfs(this.text, ccsid, ebcdicLineEnd(this.bytes));
+      const bytes = keepBom(encodeIfs(this.text, ccsid, ebcdicLineEnd(this.bytes)), this.bytes, ccsid);
       await goApp().IfsWriteBytes(this.sessionId, this.path, toBase64(bytes), ccsid, true);
       this.bytes = bytes;
       this.size = bytes.length;
