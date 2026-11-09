@@ -1,9 +1,11 @@
 /**
- * Dragging session tabs: reorder inside the tab bar, drop outside the window to detach the
- * session into a window of its own, drop on another window of the app to merge it there.
+ * Dragging session tabs: reorder inside the tab bar (the other tabs shuffle aside while the
+ * dragged one follows the pointer), drop outside the window to detach the session into a
+ * window of its own, drop on another window of the app to merge it there.
  * The pure helpers (hit tests, ordering) are tested; TabDrag wires them to pointer events.
  */
 import type { WindowBounds } from './bridge';
+import { settle } from './flip';
 
 /** Pointer travel before a press becomes a drag. */
 export const DRAG_THRESHOLD = 6;
@@ -58,6 +60,25 @@ export function nearBar(bar: { top: number; bottom: number }, y: number): boolea
   return y >= bar.top - BAR_REACH && y <= bar.bottom + BAR_REACH;
 }
 
+/** How far a dragged tab may be moved so it stays inside the bar. */
+export function clampShift(dx: number, tab: Span, bar: Span): number {
+  return Math.max(bar.left - tab.left, Math.min(dx, bar.right - tab.right));
+}
+
+/** The pointer's point clipped to the window, where a ring is drawn when the pointer crosses the edge. */
+export function edgePoint(p: Point, width: number, height: number): Point {
+  return { x: Math.max(0, Math.min(p.x, width - 1)), y: Math.max(0, Math.min(p.y, height - 1)) };
+}
+
+/** A ghost of the tab that another window of the app draws when the pointer is outside this one. */
+export interface GhostHost {
+  /** The drag began: get the ghost window ready (it takes a moment to start). */
+  prepare(): void;
+  show(label: string, screenX: number, screenY: number): void;
+  move(screenX: number, screenY: number): void;
+  hide(): void;
+}
+
 export interface DragHost<T> {
   /** The tab bar; children are the tab buttons in order. */
   bar: HTMLElement;
@@ -69,23 +90,33 @@ export interface DragHost<T> {
   detachable(item: T): boolean;
   windows(): Promise<WindowBounds[]>;
   windowName: string;
+  /** The dragged tab passed another one: put it at `to` now so the others slide aside (no other side effects). */
+  onLiveReorder(item: T, to: number): void;
+  /** The drop inside the bar; the order is already as shown. */
   onReorder(item: T, to: number): void;
-  onDetach(item: T, origin: Point): void;
-  onMerge(item: T, window: string): void;
+  onDetach(item: T, origin: Point, at: Point): void;
+  onMerge(item: T, window: string, at: Point): void;
+  /** Water-drop rings at a client point: the pointer left or came back through the window edge. */
+  splash?(p: Point, kind: 'leave' | 'enter'): void;
+  ghost?: GhostHost;
   log(line: string): void;
 }
 
 /**
  * Pointer handling for one tab bar. A press on a tab that travels DRAG_THRESHOLD becomes a
- * drag: a droplet ghost follows the pointer, a marker shows where the tab would land in
- * the bar, and the drop decides between reorder, detach and merge. Escape cancels.
+ * drag: near the bar the tab itself follows the pointer and the others shuffle out of its
+ * way; away from the bar a droplet ghost follows the pointer (a ghost window once the
+ * pointer leaves this window), and the drop decides between reorder, detach and merge.
+ * Escape cancels and puts the tab back where it was.
  */
 export class TabDrag<T> {
-  private press: { item: T; start: Point; pointerId: number; button: HTMLElement } | undefined;
+  private press: { item: T; start: Point; pointerId: number; button: HTMLElement; grabDX: number; startIndex: number } | undefined;
   private dragging = false;
   private ghost: HTMLElement | undefined;
-  private marker: HTMLElement | undefined;
   private free = false;
+  private outside = false;
+  /** The dragged button's laid-out place; measured again after every live reorder. */
+  private base: DOMRect | undefined;
   private readonly onKey = (ev: KeyboardEvent): void => {
     if (ev.key === 'Escape' && this.press) this.cancel();
   };
@@ -97,7 +128,8 @@ export class TabDrag<T> {
     const button = this.host.buttonOf(item);
     button.addEventListener('pointerdown', (ev) => {
       if (ev.button !== 0 || (ev.target instanceof HTMLElement && ev.target.closest('.close'))) return;
-      this.press = { item, start: { x: ev.clientX, y: ev.clientY }, pointerId: ev.pointerId, button };
+      const rect = button.getBoundingClientRect();
+      this.press = { item, start: { x: ev.clientX, y: ev.clientY }, pointerId: ev.pointerId, button, grabDX: ev.clientX - rect.left, startIndex: this.host.items().indexOf(item) };
       this.dragging = false;
       button.addEventListener('pointermove', this.onMove);
       button.addEventListener('pointerup', this.onUp);
@@ -116,6 +148,11 @@ export class TabDrag<T> {
     if (this.press?.item === item) this.release();
   }
 
+  private nearBar(now: Point): boolean {
+    const bar = this.host.bar.getBoundingClientRect();
+    return nearBar(bar, now.y) && now.x >= bar.left - BAR_REACH && now.x <= bar.right + BAR_REACH;
+  }
+
   private readonly onMove = (ev: PointerEvent): void => {
     const p = this.press;
     if (!p) return;
@@ -131,14 +168,62 @@ export class TabDrag<T> {
       p.button.classList.add('dragging');
       this.host.bar.classList.add('drag-active');
       this.ghost = this.makeGhost(p.button);
+      this.host.ghost?.prepare();
+    }
+    const near = this.nearBar(now);
+    if (near) {
+      this.setFree(false);
+      // Passing another tab: the order changes under the pointer, the others slide aside.
+      const to = this.targetIndex(now.x);
+      if (to !== this.host.items().indexOf(p.item)) {
+        this.base = undefined;
+        this.host.onLiveReorder(p.item, to);
+      }
+      this.follow(now.x);
+    } else {
+      this.unfollow();
+      this.setFree(true);
     }
     this.moveGhost(now);
-    const bar = this.host.bar.getBoundingClientRect();
-    const near = nearBar(bar, now.y) && now.x >= bar.left - BAR_REACH && now.x <= bar.right + BAR_REACH;
-    this.setFree(!near);
-    if (near) this.showMarker(this.targetIndex(now.x));
-    else this.hideMarker();
+    // Across the window edge: this page cannot draw there, a ghost window takes over.
+    const inside = now.x >= 0 && now.y >= 0 && now.x < window.innerWidth && now.y < window.innerHeight;
+    if (!inside && !this.outside) {
+      this.outside = true;
+      this.ghost?.classList.add('offscreen');
+      this.host.splash?.(edgePoint(now, window.innerWidth, window.innerHeight), 'leave');
+      this.host.ghost?.show(this.label(p.button), ev.screenX, ev.screenY);
+    } else if (inside && this.outside) {
+      this.outside = false;
+      this.ghost?.classList.remove('offscreen');
+      this.host.ghost?.hide();
+      this.host.splash?.(edgePoint(now, window.innerWidth, window.innerHeight), 'enter');
+    } else if (this.outside) {
+      this.host.ghost?.move(ev.screenX, ev.screenY);
+    }
   };
+
+  /** Keeps the dragged tab under the pointer, inside the bar. */
+  private follow(x: number): void {
+    const p = this.press;
+    if (!p) return;
+    if (!this.base) {
+      p.button.style.transition = 'none';
+      p.button.style.transform = '';
+      this.base = p.button.getBoundingClientRect();
+    }
+    const bar = this.host.bar.getBoundingClientRect();
+    const dx = clampShift(x - p.grabDX - this.base.left, { left: this.base.left, right: this.base.right }, { left: bar.left, right: bar.right });
+    p.button.style.transition = 'none';
+    p.button.style.transform = `translateX(${dx}px)`;
+  }
+
+  /** The tab goes back to its slot (the pointer left the bar, or the drag ended). */
+  private unfollow(): void {
+    const p = this.press;
+    if (!p) return;
+    this.base = undefined;
+    settle(p.button);
+  }
 
   private readonly onUp = (ev: PointerEvent): void => {
     const p = this.press;
@@ -148,18 +233,17 @@ export class TabDrag<T> {
       return;
     }
     const now = { x: ev.clientX, y: ev.clientY };
-    const bar = this.host.bar.getBoundingClientRect();
-    const near = nearBar(bar, now.y) && now.x >= bar.left - BAR_REACH && now.x <= bar.right + BAR_REACH;
+    const near = this.nearBar(now);
     const screen = { x: ev.screenX, y: ev.screenY };
     const item = p.item;
     if (near) {
-      const to = this.targetIndex(now.x);
+      const to = this.host.items().indexOf(item);
       this.release();
       this.host.onReorder(item, to);
       return;
     }
     if (!this.host.detachable(item)) {
-      this.release();
+      this.cancel();
       return;
     }
     const inside = now.x >= 0 && now.y >= 0 && now.x < window.innerWidth && now.y < window.innerHeight;
@@ -169,8 +253,9 @@ export class TabDrag<T> {
       .catch(() => [] as WindowBounds[])
       .then((windows) => {
         const target = windowAt(windows, screen.x, screen.y, this.host.windowName);
-        if (target) this.host.onMerge(item, target.name);
-        else if (!inside) this.host.onDetach(item, detachOrigin(screen.x, screen.y));
+        if (target) this.host.onMerge(item, target.name, screen);
+        else if (!inside) this.host.onDetach(item, detachOrigin(screen.x, screen.y), screen);
+        else this.putBack(item, p.startIndex);
         this.dropGhost();
       });
   };
@@ -179,8 +264,15 @@ export class TabDrag<T> {
     if (this.press) this.cancel();
   };
 
+  /** Escape, a lost capture, or a drop that went nowhere: the tab returns to where it started. */
   private cancel(): void {
+    const p = this.press;
+    if (p && this.dragging) this.putBack(p.item, p.startIndex);
     this.release();
+  }
+
+  private putBack(item: T, index: number): void {
+    if (this.host.items().indexOf(item) !== index && this.host.items().includes(item)) this.host.onLiveReorder(item, index);
   }
 
   /** Ends the press; with keepGhost the droplet stays for the detach animation. */
@@ -197,9 +289,13 @@ export class TabDrag<T> {
     } catch {
       // not captured
     }
+    this.unfollow();
     p.button.classList.remove('dragging');
     this.host.bar.classList.remove('drag-active');
-    this.hideMarker();
+    if (this.outside) {
+      this.outside = false;
+      this.host.ghost?.hide();
+    }
     if (!keepGhost) this.dropGhost(false);
     this.press = undefined;
     this.dragging = false;
@@ -216,10 +312,14 @@ export class TabDrag<T> {
     return insertionIndex(others, x);
   }
 
+  private label(button: HTMLElement): string {
+    return button.querySelector('.label')?.textContent ?? '';
+  }
+
   private makeGhost(button: HTMLElement): HTMLElement {
     const g = document.createElement('div');
     g.className = 'tab-ghost';
-    g.textContent = button.querySelector('.label')?.textContent ?? '';
+    g.textContent = this.label(button);
     document.body.append(g);
     return g;
   }
@@ -229,10 +329,12 @@ export class TabDrag<T> {
     this.ghost.style.transform = `translate(${p.x}px, ${p.y}px)`;
   }
 
+  /** Away from the bar the droplet shows; near it the tab itself is what moves. */
   private setFree(free: boolean): void {
     if (free === this.free || !this.ghost) return;
     this.free = free;
     this.ghost.classList.toggle('free', free);
+    this.ghost.classList.toggle('held', !free);
     if (free) {
       // Snapping loose from the bar: a short wobble.
       this.ghost.classList.remove('snap');
@@ -253,26 +355,5 @@ export class TabDrag<T> {
     }
     g.classList.add('gone');
     setTimeout(() => g.remove(), 300);
-  }
-
-  private showMarker(index: number): void {
-    const p = this.press;
-    if (!this.marker) {
-      this.marker = document.createElement('div');
-      this.marker.className = 'tab-marker';
-      this.host.bar.append(this.marker);
-    }
-    const others = this.host.items().filter((i) => i !== p?.item);
-    const bar = this.host.bar.getBoundingClientRect();
-    let x: number;
-    if (index < others.length) x = this.host.buttonOf(others[index] as T).getBoundingClientRect().left;
-    else if (others.length) x = this.host.buttonOf(others[others.length - 1] as T).getBoundingClientRect().right;
-    else x = bar.left + 4;
-    this.marker.style.left = `${x - bar.left + this.host.bar.scrollLeft - 1}px`;
-    this.marker.hidden = false;
-  }
-
-  private hideMarker(): void {
-    if (this.marker) this.marker.hidden = true;
   }
 }

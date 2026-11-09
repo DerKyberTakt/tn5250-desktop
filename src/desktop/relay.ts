@@ -21,7 +21,8 @@ export type ToBroker =
   /** Several inputs from one tick, in order (a macro's TAB TAB "40"). */
   | { type: 'tab:inputs'; tab: string; msgs: WebviewToHost[] }
   | { type: 'tab:reload'; tab: string; profile: TerminalSettings }
-  | { type: 'tab:move'; tab: string; window: string }
+  /** at: where the tab was dropped (screen point), so the receiving window can splash there. */
+  | { type: 'tab:move'; tab: string; window: string; at?: { x: number; y: number } }
   | { type: 'tab:close'; tab: string }
   | { type: 'tab:trace'; tab: string; request: string }
   | { type: 'ui:answer'; request: string; ok: boolean };
@@ -29,7 +30,7 @@ export type ToBroker =
 /** Broker -> window. */
 export type ToWindow =
   | { type: 'broker:ready' }
-  | { type: 'tab:opened'; tab: string; letter: string; profile: TerminalSettings; deviceTemplate: string; status: ConnectionStatus; detail: string }
+  | { type: 'tab:opened'; tab: string; letter: string; profile: TerminalSettings; deviceTemplate: string; status: ConnectionStatus; detail: string; at?: { x: number; y: number } }
   | { type: 'tab:output'; tab: string; msg: HostToWebview }
   | { type: 'tab:state'; tab: string; status: ConnectionStatus; detail: string }
   | { type: 'tab:log'; tab: string; line: string }

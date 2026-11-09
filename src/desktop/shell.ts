@@ -6,6 +6,7 @@ import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow
 import { Credentials } from './credentials';
 import { checkListDialog, choiceDialog, confirmDialog, formDialog, iconListDialog, listDialog, messageDialog, promptDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
+import { play, reducedMotion, snapshot } from './flip';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { IfsViewTab, type IfsViewHost } from './ifsViewTab';
 import { SettingsTab } from './settingsTab';
@@ -77,11 +78,32 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     detachable: (e) => e.kind === 'terminal' && !e.tab.isDemo,
     windows: () => goApp().WindowList().then((w) => w ?? []),
     windowName: windowNameFromUrl(location.search),
+    onLiveReorder: (e, to) => this.liveReorder(e, to),
     onReorder: (e, to) => this.reorderTab(e, to),
     onDetach: (e, origin) => void this.detachTab(e, origin),
-    onMerge: (e, window) => void this.mergeTab(e, window),
+    onMerge: (e, window, at) => void this.mergeTab(e, window, at),
+    splash: (p, kind) => this.splash(p, kind),
+    ghost: {
+      prepare: () => void goApp().GhostPrepare().catch(() => undefined),
+      show: (label, x, y) => void goApp().GhostShow(label, Math.round(x), Math.round(y)).catch((err: unknown) => this.log(`ghost: ${errorText(err)}`)),
+      // At most one move per frame: the binding call is cheap but not free.
+      move: (x, y) => {
+        this.ghostAt = { x, y };
+        if (this.ghostFrame) return;
+        this.ghostFrame = requestAnimationFrame(() => {
+          this.ghostFrame = undefined;
+          if (this.ghostAt) void goApp().GhostMove(Math.round(this.ghostAt.x), Math.round(this.ghostAt.y)).catch(() => undefined);
+        });
+      },
+      hide: () => {
+        this.ghostAt = undefined;
+        void goApp().GhostHide().catch(() => undefined);
+      },
+    },
     log: (line) => this.log(line),
   });
+  private ghostAt: Point | undefined;
+  private ghostFrame: number | undefined;
   private selectedSession = -1;
   /** The administrator's session selected in the panel (by name), when no own session is. */
   private selectedManaged = '';
@@ -550,14 +572,43 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     else this.refresh();
   }
 
-  /** A tab dragged within the bar: new place in the order (entries and buttons alike). */
-  private reorderTab(entry: Entry, to: number): void {
+  /**
+   * A tab dragged past another one: the order changes right away and the other tabs slide
+   * into their new places (FLIP); the dragged one stays under the pointer.
+   */
+  private liveReorder(entry: Entry, to: number): void {
     const from = this.entries.indexOf(entry);
     if (from < 0) return;
+    const others = this.entries.filter((e) => e !== entry).map((e) => [e, e.button] as const);
+    const before = snapshot(others);
     this.entries = reorder(this.entries, from, to);
     const next = this.entries[this.entries.indexOf(entry) + 1];
     this.tabbar.insertBefore(entry.button, next ? next.button : null);
+    play(others, before, entry);
+  }
+
+  /** A tab dropped within the bar: the order is already as shown; the rest of the app learns about it. */
+  private reorderTab(entry: Entry, to: number): void {
+    if (this.entries.indexOf(entry) !== to) this.liveReorder(entry, to);
     this.syncSettingsTabs();
+  }
+
+  /** Water-drop rings at a client point: the pointer crossing the edge, or a tab landing. */
+  private splash(p: Point, kind: 'leave' | 'enter' | 'land'): void {
+    if (reducedMotion()) return;
+    const s = el('div', `splash ${kind}`);
+    s.style.left = `${p.x}px`;
+    s.style.top = `${p.y}px`;
+    s.append(el('span'), el('span'), el('span'));
+    document.body.append(s);
+    setTimeout(() => s.remove(), 1000);
+  }
+
+  /** A screen point in this window's client coordinates (the frame's size is estimated). */
+  private clientFromScreen(p: Point): Point {
+    const frameX = (window.outerWidth - window.innerWidth) / 2;
+    const frameY = window.outerHeight - window.innerHeight - frameX;
+    return { x: p.x - window.screenX - frameX, y: p.y - window.screenY - frameY };
   }
 
   /** A tab dropped outside every window: a new window opens there and takes the session. */
@@ -572,9 +623,9 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     await this.moveTab(entry, name);
   }
 
-  /** A tab dropped on another window of the app: that window takes the session. */
-  private async mergeTab(entry: Entry, window: string): Promise<void> {
-    await this.moveTab(entry, window);
+  /** A tab dropped on another window of the app: that window takes the session and splashes where it landed. */
+  private async mergeTab(entry: Entry, window: string, at?: Point): Promise<void> {
+    await this.moveTab(entry, window, at);
     void goApp().WindowFocus(window).catch(() => undefined);
   }
 
@@ -1261,6 +1312,9 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
       const adopted: Entry = { kind: 'terminal', tab, button: el('div') };
       this.addEntry(adopted, true);
       this.dropIn(adopted);
+      // Rings where it landed: the drop point when the move carried one, else the tab itself.
+      const r = adopted.button.getBoundingClientRect();
+      this.splash(msg.at ? this.clientFromScreen(msg.at) : { x: r.left + r.width / 2, y: r.top + r.height / 2 }, 'land');
     }
   }
 
@@ -1297,11 +1351,11 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
    * Hands a terminal tab to another window: the broker re-homes the session and that
    * window adopts it. A detached window that gave away its last tab closes.
    */
-  private async moveTab(entry: Entry, window: string): Promise<void> {
+  private async moveTab(entry: Entry, window: string, at?: Point): Promise<void> {
     if (entry.kind !== 'terminal' || !entry.tab.profile) return;
     entry.tab.handOver();
     try {
-      await relay('broker', { type: 'tab:move', tab: entry.tab.id, window });
+      await relay('broker', { type: 'tab:move', tab: entry.tab.id, window, ...(at ? { at } : {}) });
     } catch (err) {
       this.notify(`Could not move the tab: ${errorText(err)}`);
       return;

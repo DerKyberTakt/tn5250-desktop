@@ -151,6 +151,12 @@ interface GoApp {
   WindowClose(name: string): Promise<void>;
   WindowList(): Promise<WindowBounds[] | null>;
   WindowBounds(name: string): Promise<WindowBounds>;
+  /** The drag ghost window (app_ghost.go): created hidden, shown at a screen point, moved, hidden. */
+  GhostPrepare(): Promise<void>;
+  GhostShow(label: string, x: number, y: number): Promise<void>;
+  GhostMove(x: number, y: number): Promise<void>;
+  GhostHide(): Promise<void>;
+  GhostLabel(): Promise<string>;
   NetConnect(id: string, options: ConnectOptionsDto): Promise<void>;
   NetSend(id: string, base64: string): Promise<void>;
   NetClose(id: string): Promise<void>;

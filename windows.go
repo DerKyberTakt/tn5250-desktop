@@ -15,7 +15,8 @@ import (
 
 const brokerWindow = "broker"
 
-// WindowBounds is a window's position and size on the virtual screen, in device pixels.
+// WindowBounds is a window's position and size on the virtual screen, in device-independent
+// pixels (the same units as a page's screenX/screenY).
 type WindowBounds struct {
 	Name   string `json:"name"`
 	X      int    `json:"x"`
@@ -106,7 +107,7 @@ func (a *App) WindowList() []WindowBounds {
 	}
 	var out []WindowBounds
 	for _, w := range a.wails.Window.GetAll() {
-		if w.Name() == brokerWindow {
+		if w.Name() == brokerWindow || w.Name() == ghostWindow {
 			continue
 		}
 		out = append(out, boundsOf(w))
@@ -183,7 +184,7 @@ func (a *App) newBrokerWindow() {
 func (a *App) visibleWindows(except string) int {
 	n := 0
 	for _, w := range a.wails.Window.GetAll() {
-		if w.Name() != brokerWindow && w.Name() != except {
+		if w.Name() != brokerWindow && w.Name() != ghostWindow && w.Name() != except {
 			n++
 		}
 	}

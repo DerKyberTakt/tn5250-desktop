@@ -238,83 +238,61 @@ input {
 }
 
 /* --- dragging tabs: reorder, detach into a window, merge into another --- */
+/* Near the bar the tab itself rides under the pointer (transform set by tabDrag.ts); the others slide aside. */
 .tab.dragging {
-  opacity: 0.35;
+  position: relative;
+  z-index: 5;
+  opacity: 0.92;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 30%);
 }
 
 #tabbar {
   position: relative;
 }
 
-.tab-marker {
-  position: absolute;
-  top: 4px;
-  bottom: 0;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--tab-accent);
-  pointer-events: none;
-}
-
-.tab-marker[hidden] {
-  display: none;
-}
-
-/* The droplet that follows the pointer: tab-shaped near the bar, a drop once it is loose. */
-.tab-ghost {
+/* Water drops where the pointer crosses the window edge, and where a tab lands. */
+.splash {
   position: fixed;
-  top: -14px;
-  left: -12px;
-  z-index: 100;
-  max-width: 220px;
-  padding: 5px 12px;
-  background: var(--tab-active-bg);
-  color: var(--chrome-fg);
-  border: 1px solid var(--tab-accent);
-  border-radius: 4px 4px 0 0;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 25%);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  z-index: 99;
+  width: 0;
+  height: 0;
   pointer-events: none;
-  will-change: transform;
-  transition: border-radius 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
-  animation: ghost-in 0.15s ease-out;
 }
 
-.tab-ghost.free {
-  border-radius: 18px 18px 18px 4px;
-  box-shadow: 0 8px 22px rgb(0 0 0 / 32%);
-}
-
-.tab-ghost.snap {
-  animation: ghost-snap 0.3s ease-out;
-}
-
-.tab-ghost.gone {
+.splash span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  border: 2px solid var(--tab-accent);
+  border-radius: 50%;
   opacity: 0;
-  scale: 0.2;
-  transition: opacity 0.25s ease, scale 0.25s ease-in;
+  animation: splash-ring 0.7s ease-out forwards;
 }
 
-@keyframes ghost-in {
+.splash span:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.splash span:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+.splash.enter span,
+.splash.land span {
+  border-color: var(--dot-connected);
+}
+
+@keyframes splash-ring {
   from {
+    transform: scale(0.3);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(4.5);
     opacity: 0;
-  }
-}
-
-@keyframes ghost-snap {
-  0% {
-    scale: 1 1;
-  }
-  35% {
-    scale: 1.15 0.85;
-  }
-  65% {
-    scale: 0.92 1.08;
-  }
-  100% {
-    scale: 1 1;
   }
 }
 
@@ -366,10 +344,9 @@ input {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tab-ghost,
-  .tab-ghost.snap,
   .tab.drop-in,
-  .tab .ripple {
+  .tab .ripple,
+  .splash span {
     animation: none;
     transition: none;
   }

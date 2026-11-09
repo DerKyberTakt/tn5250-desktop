@@ -1,6 +1,7 @@
 import { keyName, type KeyAction } from '../shared/keymap';
 import { EDITOR_ACTIONS, actionName, macroProblems, type Macro, type MacroStep } from '../shared/macros';
 import { escButton, keyButton } from './dialogs';
+import { play, snapshot } from './flip';
 
 /**
  * The macro editor, modelled on the macro editors of gaming keyboards (Logitech G HUB):
@@ -410,7 +411,6 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
 
     /** The step each chip shows, to slide chips from where they were to where they go. */
     const stepOf = new WeakMap<Element, MacroStep>();
-    const reducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     /** Moves the dragged step while the drag is still going: the other chips shuffle out of the way. */
     const liveMove = (to: number): void => {
@@ -520,11 +520,12 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
 
     function renderTimeline(): void {
       // FLIP: remember where every chip is, redraw, then slide each from its old place to the new one.
-      const before = new Map<MacroStep, DOMRect>();
-      for (const old of timeline.querySelectorAll('li.chip[data-index]')) {
-        const st = stepOf.get(old);
-        if (st) before.set(st, old.getBoundingClientRect());
-      }
+      const chips = (): Array<readonly [MacroStep, HTMLElement]> =>
+        [...timeline.querySelectorAll<HTMLElement>('li.chip[data-index]')].flatMap((li) => {
+          const st = stepOf.get(li);
+          return st ? [[st, li] as const] : [];
+        });
+      const before = snapshot(chips());
       timeline.replaceChildren();
       macro.steps.forEach((step, i) => {
         if (i > 0) {
@@ -653,25 +654,7 @@ export function macroEditorDialog(original: Macro, others: Macro[], options: Edi
       }
       // Slide every chip that changed place from where it was (the shuffle). The dragged one
       // stays under the pointer instead.
-      if (before.size && !reducedMotion()) {
-        for (const li of timeline.querySelectorAll<HTMLElement>('li.chip[data-index]')) {
-          if (Number(li.dataset.index) === dragFrom) continue;
-          const st = stepOf.get(li);
-          const from = st && before.get(st);
-          if (!from) continue;
-          const now = li.getBoundingClientRect();
-          const dx = from.left - now.left;
-          const dy = from.top - now.top;
-          if (!dx && !dy) continue;
-          li.style.transition = 'none';
-          li.style.transform = `translate(${dx}px, ${dy}px)`;
-          requestAnimationFrame(() => {
-            li.style.transition = 'transform 180ms ease';
-            li.style.transform = '';
-            li.addEventListener('transitionend', () => (li.style.transition = ''), { once: true });
-          });
-        }
-      }
+      play(chips(), before, dragFrom === undefined ? undefined : macro.steps[dragFrom]);
     }
     const buttons = el('div', 'buttons');
     const finish = (action: 'save' | 'run'): void => {

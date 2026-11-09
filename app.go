@@ -31,6 +31,9 @@ type App struct {
 	sockets *Sockets
 	ifsOnce sync.Once
 	ifsSt   *ifsState
+	// The drag ghost window (app_ghost.go).
+	ghostOnce sync.Once
+	ghostSt   *ghostState
 	sqlOnce sync.Once
 	sqlSt   *sqlState
 }

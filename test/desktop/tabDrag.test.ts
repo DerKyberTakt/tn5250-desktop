@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DRAG_THRESHOLD, detachOrigin, dragStarted, insertionIndex, nearBar, reorder, windowAt } from '../../src/desktop/tabDrag';
+import { DRAG_THRESHOLD, clampShift, detachOrigin, dragStarted, edgePoint, insertionIndex, nearBar, reorder, windowAt } from '../../src/desktop/tabDrag';
 
 describe('tab drag helpers', () => {
   it('a press becomes a drag after the threshold', () => {
@@ -44,6 +44,20 @@ describe('tab drag helpers', () => {
   it('places a detached window so the pointer lands on its tab, never off screen', () => {
     expect(detachOrigin(500, 300)).toEqual({ x: 440, y: 236 });
     expect(detachOrigin(10, 10)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('a dragged tab is shifted no further than the bar', () => {
+    const tab = { left: 100, right: 200 };
+    const bar = { left: 0, right: 500 };
+    expect(clampShift(50, tab, bar)).toBe(50);
+    expect(clampShift(-150, tab, bar)).toBe(-100);
+    expect(clampShift(400, tab, bar)).toBe(300);
+  });
+
+  it('the edge point is the pointer clipped to the window', () => {
+    expect(edgePoint({ x: -30, y: 50 }, 800, 600)).toEqual({ x: 0, y: 50 });
+    expect(edgePoint({ x: 900, y: 700 }, 800, 600)).toEqual({ x: 799, y: 599 });
+    expect(edgePoint({ x: 10, y: 20 }, 800, 600)).toEqual({ x: 10, y: 20 });
   });
 
   it('the tab bar keeps a dragged tab within reach above and below', () => {

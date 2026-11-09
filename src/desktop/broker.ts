@@ -159,7 +159,7 @@ class Broker {
         if (!s) break;
         this.tabs.move(msg.tab, msg.window);
         if (this.windows.has(msg.window)) {
-          this.send(msg.window, { type: 'tab:opened', ...this.opened(s) });
+          this.send(msg.window, { type: 'tab:opened', ...this.opened(s), ...(msg.at ? { at: msg.at } : {}) });
           s.controller.publish();
         } else {
           this.pendingMoves.set(msg.window, [...(this.pendingMoves.get(msg.window) ?? []), msg.tab]);

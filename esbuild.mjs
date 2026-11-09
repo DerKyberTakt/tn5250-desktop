@@ -24,6 +24,7 @@ const pages = await esbuild.context({
     // Desktop only: the shell page and the frame shim.
     shell: 'src/desktop/shell.ts',
     broker: 'src/desktop/broker.ts',
+    ghost: 'src/desktop/ghost.ts',
     shim: 'src/desktop/frameShim.ts',
   },
   outdir,
