@@ -88,7 +88,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     splash: (p, kind) => this.splash(p, kind),
     ghost: {
       prepare: () => void goApp().GhostPrepare().catch(() => undefined),
-      show: (label, x, y) => void goApp().GhostShow(label, Math.round(x), Math.round(y)).catch((err: unknown) => this.log(`ghost: ${errorText(err)}`)),
+      show: (label, x, y) => void goApp().GhostShow(label, this.store.appTheme, Math.round(x), Math.round(y)).catch((err: unknown) => this.log(`ghost: ${errorText(err)}`)),
       // At most one move per frame: the binding call is cheap but not free.
       move: (x, y) => {
         this.ghostAt = { x, y };

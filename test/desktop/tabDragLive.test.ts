@@ -105,6 +105,21 @@ describe('tab drag: live shuffle', () => {
     expect(host.final).toEqual([]);
   });
 
+  it('near the bar the droplet is held (the tab itself moves); it is drawn only once the pointer leaves the bar', () => {
+    const { buttons, fire } = setup();
+    const b = buttons.get('B') as HTMLElement;
+    fire(b, 'pointerdown', 150, 55);
+    fire(b, 'pointermove', 170, 58);
+    const ghost = document.querySelector('.tab-ghost') as HTMLElement;
+    expect(ghost.classList.contains('held')).toBe(true);
+    expect(ghost.classList.contains('free')).toBe(false);
+    fire(b, 'pointermove', 170, 200);
+    expect(ghost.classList.contains('held')).toBe(false);
+    expect(ghost.classList.contains('free')).toBe(true);
+    fire(b, 'pointermove', 170, 60);
+    expect(ghost.classList.contains('held')).toBe(true);
+  });
+
   it('away from the bar the droplet shows; across the window edge the ghost window takes over and the edge splashes', () => {
     const { host, buttons, fire } = setup();
     const b = buttons.get('B') as HTMLElement;

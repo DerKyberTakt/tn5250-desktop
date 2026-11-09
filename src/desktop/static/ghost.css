@@ -64,7 +64,8 @@
   }
 }
 
-/* ghost.html: the whole window is the droplet, on nothing. */
+/* ghost.html: the whole window is the droplet, on nothing. The offsets match app_ghost.go
+   (ghostDX / ghostDY), so the droplet's corner stays at the pointer across the window edge. */
 .ghost-page {
   margin: 0;
   background: transparent;
@@ -74,7 +75,7 @@
 .ghost-page .tab-ghost {
   position: fixed;
   top: 14px;
-  left: 18px;
+  left: 12px;
   animation: ghost-in 0.15s ease-out;
 }
 
