@@ -38,7 +38,7 @@ It shares its TN5250 engine and terminal UI with the
 - **Host PC commands**: `STRPCCMD` from a host program opens http(s) links in your
   browser; other commands ask first (or never run, by setting).
 - SEU syntax colouring for RPG/RPGLE, CL, DDS and DB2 SQL.
-- **Integrated File System browser** (Tools menu): browse, upload, download, rename,
+- **Integrated File System browser** (Tools menu): browse, upload, download, rename, Double-click opens folders and files; the viewer tab decodes text by the file's CCSID (EBCDIC included), finds, wraps, edits and saves back, shows binaries as hex, and saves a UTF-8 copy on request.
   delete. It talks to the IBM i file server directly, like IBM i Access Client
   Solutions does, so the host needs only its standard host servers (STRHOSTSVR).
 - **Run SQL Scripts** and a **CL / QSH Console** (Tools menu). They use the remote

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	hs "github.com/DerKyberTakt/tn5250-desktop/internal/hostserver"
 	"github.com/DerKyberTakt/tn5250-desktop/internal/hostserver/ifs"
@@ -468,35 +467,60 @@ func (e *ExistsError) Error() string {
 	return "EXISTS: " + strings.Join(shown, ", ") + more
 }
 
-const maxViewBytes = 2 * 1024 * 1024
+// IfsBytes is a file's content for the viewer: base64 data, the data CCSID the server reports
+// (0 = unknown), the full size and whether the data stops short of it.
+type IfsBytes struct {
+	Data      string `json:"data"`
+	Ccsid     uint16 `json:"ccsid"`
+	Size      int64  `json:"size"`
+	Truncated bool   `json:"truncated"`
+}
 
-// IfsReadText returns a small file as text for the viewer (UTF-8; other bytes shown as Latin-1).
-func (a *App) IfsReadText(id, p string) (string, error) {
+const maxReadBytes = 16 * 1024 * 1024
+
+// IfsReadBytes returns up to maxBytes of a file (capped at 16 MB) with its CCSID.
+func (a *App) IfsReadBytes(id, p string, maxBytes int) (IfsBytes, error) {
 	s, err := a.ifsSession(id)
 	if err != nil {
-		return "", err
+		return IfsBytes{}, err
 	}
 	st, err := s.client.Stat(p)
 	if err != nil {
-		return "", err
+		return IfsBytes{}, err
 	}
 	if st.Dir {
-		return "", errors.New("that is a folder")
+		return IfsBytes{}, errors.New("that is a folder")
 	}
-	if st.Size > maxViewBytes {
-		return "", fmt.Errorf("the file is %d MB; download it to open it", st.Size/1024/1024)
+	if st.Type == 4 {
+		return IfsBytes{}, errors.New("that is a QSYS.LIB object, not a stream file; use a 5250 session or SQL to look at it")
 	}
-	var buf bytes.Buffer
-	if err := s.client.Download(p, &buf, nil); err != nil {
-		return "", err
+	if maxBytes <= 0 || maxBytes > maxReadBytes {
+		maxBytes = maxReadBytes
 	}
-	b := buf.Bytes()
-	if utf8.Valid(b) {
-		return string(b), nil
+	data, ccsid, truncated, err := s.client.ReadAll(p, maxBytes)
+	if err != nil {
+		return IfsBytes{}, err
 	}
-	r := make([]rune, len(b))
-	for i, c := range b {
-		r[i] = rune(c)
+	return IfsBytes{Data: base64.StdEncoding.EncodeToString(data), Ccsid: ccsid, Size: int64(st.Size), Truncated: truncated}, nil
+}
+
+// IfsWriteBytes writes base64 data to a file. An existing file is replaced only when replace is
+// set (otherwise EXISTS: name); a created file is tagged with ccsid (0 = the server's choice).
+func (a *App) IfsWriteBytes(id, p, dataB64 string, ccsid uint16, replace bool) error {
+	s, err := a.ifsSession(id)
+	if err != nil {
+		return err
 	}
-	return string(r), nil
+	data, err := base64.StdEncoding.DecodeString(dataB64)
+	if err != nil {
+		return fmt.Errorf("bad data: %w", err)
+	}
+	if !replace {
+		if _, err := s.client.Stat(p); err == nil {
+			return &ExistsError{Names: []string{path.Base(p)}}
+		} else if !ifs.IsNotFound(err) {
+			return err
+		}
+	}
+	return s.client.WriteAll(p, data, ccsid)
 }

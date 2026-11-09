@@ -2,6 +2,10 @@
 
 ## 0.3.0 - unreleased
 - Settings > Connection has an Import Connections… button, the same import as File > Import Connections.
+- IFS browser: double-click a folder to open it and a file to view it (a click used to rebuild the rows, so the second click never counted); the tool bars are icon buttons with the Macros dialog's hover ring (back, up, refresh, folders, upload, download, new folder, rename, delete, view).
+- IFS viewer is a tab: text decoded by the file's CCSID (the host reports it; EBCDIC pages use the terminal's tables) with an encoding list, line numbers, Find (Ctrl+F, F3), wrap, Copy, a hex dump for binary files, and Edit + Save (Ctrl+S) that writes back in the file's code page after checking the file did not change on the host. Save as… keeps the bytes or converts the text to UTF-8.
+- IFS download of one text file offers "Convert to UTF-8" next to "As on the host".
+- Fixed: files created by an upload were tagged CCSID 1200 (UTF-16); they are tagged 1208 (UTF-8) now, so the host reads them as text.
 
 ## 0.2.2 - 2026-11-08
 

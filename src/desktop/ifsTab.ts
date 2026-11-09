@@ -1,5 +1,7 @@
 import { errorText, goApp, wailsRuntime, type IfsConnectRequest, type IfsEntry, type IfsProgress } from './bridge';
-import { confirmDialog, messageDialog, promptDialog } from './dialogs';
+import { choiceDialog, confirmDialog, messageDialog, promptDialog } from './dialogs';
+import { actionButton, type ActionIconName, type ActionTone } from './icons';
+import { decodeIfs, encodingLabel, fromBase64, guessCcsid } from './ifsText';
 import { IfsTreeModel, canMoveInto, crumbs, joinPath, parentPath, type TreeNode } from './ifsTree';
 import { explainToolError } from './toolErrors';
 
@@ -7,6 +9,8 @@ export interface IfsHost {
   notify(text: string): void;
   log(line: string): void;
   changed(tab: IfsTab): void;
+  /** Opens a file of this browser's session in a viewer tab. */
+  openViewer(tab: IfsTab, path: string, info: { size: number; modified: string }): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -82,18 +86,17 @@ export class IfsTab {
     this.frame.tabIndex = -1;
 
     const bar = el('div', 'ifs-bar');
-    const btn = (key: string, text: string, title: string, run: () => void): HTMLButtonElement => {
-      const b = el('button', undefined, text);
-      b.type = 'button';
-      b.title = title;
+    // The icon buttons share their look (and the ring drawn on hover) with the Macros dialog.
+    const btn = (key: string, icon: ActionIconName, tone: ActionTone, title: string, run: () => void): HTMLButtonElement => {
+      const b = actionButton(icon, title, tone);
       b.addEventListener('click', run);
       this.buttons[key] = b;
       return b;
     };
     bar.append(
-      btn('back', '←', 'Back', () => void this.back()),
-      btn('up', '↑', 'Up one level', () => void this.go(parent(this.cwd))),
-      btn('refresh', '⟳', 'Refresh (F5)', () => void this.go(this.cwd, false)),
+      btn('back', 'back', 'blue', 'Back', () => void this.back()),
+      btn('up', 'up', 'blue', 'Up one level (Backspace)', () => void this.go(parent(this.cwd))),
+      btn('refresh', 'refresh', 'blue', 'Refresh (F5)', () => void this.go(this.cwd, false)),
     );
     // The path: clickable segments; click the pencil (or press Ctrl+L) to type a path.
     const pathBox = el('div', 'ifs-pathbox');
@@ -132,14 +135,15 @@ export class IfsTab {
     bar.append(pathBox, fav);
     const actions = el('div', 'ifs-actions');
     actions.append(
-      btn('tree', 'Folders', 'Show or hide the folder tree', () => this.toggleTree()),
-      btn('upload', 'Upload…', 'Upload files from this computer (or drop files here)', () => void this.upload([])),
-      btn('download', 'Download…', 'Download the selected items', () => void this.download()),
-      btn('mkdir', 'New folder', 'Create a folder here', () => void this.mkdir()),
-      btn('rename', 'Rename', 'Rename the selected item (F2)', () => void this.rename()),
-      btn('delete', 'Delete', 'Delete the selected items (Del)', () => void this.remove()),
-      btn('view', 'View', 'Show the selected text file', () => void this.view()),
+      btn('tree', 'folderTree', 'blue', 'Show or hide the folder tree', () => this.toggleTree()),
+      btn('upload', 'importFile', 'green', 'Upload files from this computer (or drop files here)', () => void this.upload([])),
+      btn('download', 'exportFile', 'blue', 'Download the selected items (one text file can be converted to UTF-8)', () => void this.download()),
+      btn('mkdir', 'newFolder', 'blue', 'New folder here', () => void this.mkdir()),
+      btn('rename', 'pencil', 'yellow', 'Rename the selected item (F2)', () => void this.rename()),
+      btn('delete', 'trash', 'red', 'Delete the selected items (Del)', () => void this.remove()),
+      btn('view', 'eye', 'blue', 'Open the selected file in a viewer tab (Enter, double-click)', () => void this.view()),
     );
+    this.buttons.tree?.classList.toggle('pressed', treeShown);
 
     const table = el('table', 'ifs-list');
     const head = el('thead');
@@ -183,7 +187,7 @@ export class IfsTab {
     this.progressEl.hidden = true;
     foot.append(this.statusEl, this.progressEl);
 
-    const top = el('div', 'ifs-top');
+    const top = el('div', 'ifs-top icon-actions');
     top.append(bar, actions);
     this.frame.append(top, main, foot);
     this.frame.addEventListener('keydown', (e) => this.onKey(e));
@@ -226,6 +230,7 @@ export class IfsTab {
 
   private toggleTree(): void {
     treeShown = !treeShown;
+    this.buttons.tree?.classList.toggle('pressed', treeShown);
     this.treePane.hidden = !treeShown;
     const split = this.treePane.nextElementSibling as HTMLElement | null;
     if (split) split.hidden = !treeShown;
@@ -483,12 +488,13 @@ export class IfsTab {
     const rows = this.sorted();
     for (const e of rows) {
       const tr = el('tr', this.selected.has(e.name) ? 'selected' : undefined);
+      tr.dataset.name = e.name;
       const name = el('td', 'col-name');
       name.append(el('span', `icon ${e.dir ? 'folder' : 'file'}`), el('span', undefined, e.name));
       const modified = e.modified && !e.modified.startsWith('0001') ? new Date(e.modified).toLocaleString() : '';
       tr.append(name, el('td', 'col-size', e.dir ? '' : formatSize(e.size)), el('td', 'col-modified', modified), el('td', 'col-type', typeName(e)));
       tr.addEventListener('mousedown', (ev) => this.select(e.name, ev, rows));
-      tr.addEventListener('dblclick', () => (e.dir ? void this.go(join(this.cwd, e.name)) : void this.view(e)));
+      tr.addEventListener('dblclick', () => (e.dir ? void this.go(join(this.cwd, e.name)) : this.view(e)));
       // Rows can be dragged onto a folder row, a tree node or a path segment to move them.
       tr.draggable = true;
       tr.addEventListener('dragstart', (ev) => {
@@ -529,7 +535,19 @@ export class IfsTab {
       this.selected = new Set([name]);
       this.anchor = name;
     }
-    this.render();
+    // Only the highlight changes: rebuilding the rows here made the second click of a
+    // double-click land on a fresh element, so dblclick never fired.
+    for (const r of this.body.rows) r.classList.toggle('selected', this.selected.has(r.dataset.name ?? ''));
+    this.updateButtons();
+  }
+
+  /** The IFS session id, for tabs that read or write files of this host (the viewer). */
+  get sessionId(): string {
+    return this.session;
+  }
+
+  get hostName(): string {
+    return this.request.host;
   }
 
   private selection(): IfsEntry[] {
@@ -572,7 +590,7 @@ export class IfsTab {
     } else if (e.key === 'Enter') {
       const [one] = this.selection();
       if (one?.dir) void this.go(join(this.cwd, one.name));
-      else if (one) void this.view(one);
+      else if (one) this.view(one);
     } else if (e.ctrlKey && e.key.toLowerCase() === 'a') {
       e.preventDefault();
       this.selected = new Set(this.entries.map((x) => x.name));
@@ -617,7 +635,7 @@ export class IfsTab {
       });
       menu.append(b);
     };
-    item('Open', sel.length === 1, () => (sel[0]?.dir ? void this.go(join(this.cwd, sel[0].name)) : void this.view(sel[0])));
+    item('Open', sel.length === 1, () => (sel[0]?.dir ? void this.go(join(this.cwd, sel[0].name)) : this.view(sel[0])));
     item('Download…', sel.length > 0, () => void this.download());
     item('Upload here…', true, () => void this.upload([]));
     item('New folder', true, () => void this.mkdir());
@@ -700,34 +718,15 @@ export class IfsTab {
     }
   }
 
-  private async view(entry?: IfsEntry): Promise<void> {
+  /** Opens a file in a viewer tab (text decoded by its CCSID, or a hex dump; editable). */
+  private view(entry?: IfsEntry): void {
     const e = entry ?? this.selection()[0];
-    if (!e || e.dir) return;
-    const p = join(this.cwd, e.name);
-    this.setBusy(true);
-    let text: string;
-    try {
-      text = await goApp().IfsReadText(this.session, p);
-    } catch (err) {
-      this.host.notify(errorText(err));
+    if (!e || e.dir || !this.session) return;
+    if (e.type === 4) {
+      this.host.notify('That is a QSYS.LIB object, not a stream file; open it in a 5250 session or with SQL.');
       return;
-    } finally {
-      this.setBusy(false);
     }
-    const dialog = el('dialog', 'modal ifs-viewer');
-    const form = el('form');
-    form.method = 'dialog';
-    form.append(el('h2', undefined, p), el('pre', undefined, text));
-    const buttons = el('div', 'buttons');
-    const copy = el('button', undefined, 'Copy');
-    copy.type = 'button';
-    copy.addEventListener('click', () => void goApp().ClipboardSet(text).then(() => this.host.notify('Copied')));
-    buttons.append(copy, el('button', 'primary', 'Close'));
-    form.append(buttons);
-    dialog.append(form);
-    document.body.append(dialog);
-    dialog.addEventListener('close', () => dialog.remove());
-    dialog.showModal();
+    this.host.openViewer(this, join(this.cwd, e.name), { size: e.size, modified: e.modified });
   }
 
   // ---- transfers ------------------------------------------------------------
@@ -761,9 +760,25 @@ export class IfsTab {
     this.progressEl.hidden = true;
   }
 
+  /** The read limit for a converted download; bigger files are downloaded as they are. */
+  static readonly CONVERT_LIMIT = 16 * 1024 * 1024;
+
   private async download(): Promise<void> {
     const sel = this.selection();
     if (!sel.length) return;
+    const one = sel.length === 1 && !sel[0]?.dir && sel[0]?.type !== 4 ? sel[0] : undefined;
+    if (one) {
+      const choice = await choiceDialog(
+        'Download',
+        [`${one.name}: save it as it is on the host, or convert the text to UTF-8 first.`, 'The code page comes from the file; an EBCDIC file becomes readable on this computer.'],
+        ['As on the host', 'Convert to UTF-8'],
+      );
+      if (!choice) return;
+      if (choice === 'Convert to UTF-8') {
+        await this.downloadConverted(one);
+        return;
+      }
+    }
     const id = this.beginTransfer('Downloading');
     try {
       const n = await goApp().IfsDownload(this.session, sel.map((e) => join(this.cwd, e.name)), id);
@@ -772,6 +787,26 @@ export class IfsTab {
       this.host.notify(errorText(err) === 'cancelled' ? 'Download cancelled' : errorText(err));
     } finally {
       this.endTransfer();
+    }
+  }
+
+  private async downloadConverted(e: IfsEntry): Promise<void> {
+    this.setBusy(true);
+    try {
+      const r = await goApp().IfsReadBytes(this.session, join(this.cwd, e.name), IfsTab.CONVERT_LIMIT);
+      if (r.truncated) {
+        this.host.notify(`${e.name} is ${formatSize(r.size)}; conversion stops at ${formatSize(IfsTab.CONVERT_LIMIT)}. Download it as it is.`);
+        return;
+      }
+      const bytes = fromBase64(r.data);
+      const ccsid = guessCcsid(bytes, r.ccsid);
+      const text = decodeIfs(bytes, ccsid);
+      const saved = await goApp().SaveTextFile(`Save ${e.name} as UTF-8`, e.name, text, [{ name: 'Text', patterns: '*.*' }]);
+      if (saved) this.host.notify(`Saved ${e.name} as UTF-8 (read as ${encodingLabel(ccsid)})`);
+    } catch (err) {
+      this.host.notify(errorText(err));
+    } finally {
+      this.setBusy(false);
     }
   }
 

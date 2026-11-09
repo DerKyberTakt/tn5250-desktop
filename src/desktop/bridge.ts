@@ -123,6 +123,17 @@ export interface IfsConnectRequest {
   timeoutMs: number;
 }
 
+/** A file's bytes for the viewer (IfsReadBytes). */
+export interface IfsBytes {
+  /** Base64. */
+  data: string;
+  /** The data CCSID the host reports; 0 when it does not say. */
+  ccsid: number;
+  size: number;
+  /** The data stops short of the size (the read limit). */
+  truncated: boolean;
+}
+
 export interface IfsProgress {
   transfer: string;
   file: string;
@@ -189,7 +200,9 @@ interface GoApp {
   IfsDownload(id: string, remotes: string[], transfer: string): Promise<number>;
   IfsUpload(id: string, remoteDir: string, paths: string[], replace: boolean, transfer: string): Promise<number>;
   IfsCancel(transfer: string): Promise<void>;
-  IfsReadText(id: string, path: string): Promise<string>;
+  IfsReadBytes(id: string, path: string, maxBytes: number): Promise<IfsBytes>;
+  /** Writes base64 data; a created file is tagged with the CCSID. Without replace, an existing file answers EXISTS: name. */
+  IfsWriteBytes(id: string, path: string, dataB64: string, ccsid: number, replace: boolean): Promise<void>;
 }
 
 interface WailsRuntime {

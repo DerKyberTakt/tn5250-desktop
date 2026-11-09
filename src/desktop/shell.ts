@@ -7,6 +7,7 @@ import { Credentials } from './credentials';
 import { checkListDialog, choiceDialog, confirmDialog, formDialog, iconListDialog, listDialog, messageDialog, promptDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { IfsTab, type IfsHost } from './ifsTab';
+import { IfsViewTab, type IfsViewHost } from './ifsViewTab';
 import { SettingsTab } from './settingsTab';
 import { ConsoleTab, type ConsoleHost, type ConsoleMode } from './consoleTab';
 import { SqlTab, type SqlHost } from './sqlTab';
@@ -29,6 +30,7 @@ type Entry =
   | { kind: 'terminal'; tab: TerminalTab; button: HTMLElement }
   | { kind: 'settings'; tab: SettingsTab; button: HTMLElement }
   | { kind: 'ifs'; tab: IfsTab; button: HTMLElement }
+  | { kind: 'ifsview'; tab: IfsViewTab; button: HTMLElement }
   | { kind: 'sql'; tab: SqlTab; button: HTMLElement }
   | { kind: 'console'; tab: ConsoleTab; button: HTMLElement };
 
@@ -57,7 +59,7 @@ export function parseHostInput(input: string, defaultPort: number): { host: stri
   return { host, port };
 }
 
-class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
+class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
   readonly store = new Store();
   readonly credentials = new Credentials(this.store);
   system: SystemInfo = { computerName: '', userName: '', platform: '' };
@@ -262,7 +264,7 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     return this.logPane.classList.contains('open');
   }
 
-  changed(tab: TerminalTab | IfsTab | SqlTab | ConsoleTab): void {
+  changed(tab: TerminalTab | IfsTab | IfsViewTab | SqlTab | ConsoleTab): void {
     const entry = this.entries.find((e) => e.tab === tab);
     if (entry) this.renderTabButton(entry);
     if (this.active?.tab === tab) this.refresh();
@@ -382,6 +384,18 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     const entry: Entry = { kind: 'ifs', tab, button: el('div') };
     this.addEntry(entry, true);
     void tab.start();
+  }
+
+  /** A file of an IFS browser, in its own tab (the same file twice just activates the tab). */
+  openViewer(from: IfsTab, path: string, info: { size: number; modified: string }): void {
+    const open = this.entries.find((e) => e.kind === 'ifsview' && e.tab.path === path && e.tab.sessionId === from.sessionId);
+    if (open) {
+      this.activate(open);
+      return;
+    }
+    const tab = new IfsViewTab(this, from.sessionId, path, info);
+    this.addEntry({ kind: 'ifsview', tab, button: el('div') }, true);
+    void tab.load();
   }
 
   /** Tools > Saved Passwords: the USER@host passwords in the credential store. */
@@ -614,6 +628,10 @@ class Shell implements TabHost, IfsHost, SqlHost, ConsoleHost {
     }
     if (entry.kind === 'sql' && entry.tab.isDirty) {
       const ok = await confirmDialog('Close script', 'The script has unsaved changes. Close anyway?', 'Close');
+      if (!ok) return;
+    }
+    if (entry.kind === 'ifsview' && entry.tab.isDirty) {
+      const ok = await confirmDialog('Close file', `${entry.tab.title.replace(/^● /, '')} has changes that are not saved to the host. Close anyway?`, 'Close');
       if (!ok) return;
     }
     this.removeEntry(entry);

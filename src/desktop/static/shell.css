@@ -992,7 +992,7 @@ dialog.modal.icon-list .list-rows li .text {
   margin-right: 8px;
 }
 
-dialog.modal.icon-list button.act {
+.icon-actions button.act {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1000,26 +1000,44 @@ dialog.modal.icon-list button.act {
   width: 34px;
   height: 34px;
   padding: 0;
-  color: var(--chrome-fg);
+  color: inherit;
   background: transparent;
   border: 0;
   border-radius: 50%;
   cursor: pointer;
 }
 
-dialog.modal.icon-list button.act:focus-visible {
+.icon-actions button.act:focus-visible {
   outline: 2px solid var(--tab-accent);
   outline-offset: 1px;
 }
 
-dialog.modal.icon-list button.act svg {
+.icon-actions button.act svg {
   width: 24px;
   height: 24px;
   overflow: visible;
 }
 
+/* A toggle that is on (Edit, Wrap, Find) keeps its ring and colour. */
+.icon-actions button.act.pressed .ring {
+  stroke-dashoffset: 0;
+}
+
+.icon-actions button.act.pressed .shape {
+  color: var(--act-color);
+}
+
+.icon-actions button.act:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.icon-actions button.act:disabled .ring {
+  stroke-dashoffset: 100 !important;
+}
+
 /* The ring is drawn from the top on hover, after the shape has lit up. */
-dialog.modal.icon-list button.act .ring {
+.icon-actions button.act .ring {
   stroke: var(--act-color);
   stroke-width: 1.6;
   stroke-dasharray: 100;
@@ -1030,73 +1048,73 @@ dialog.modal.icon-list button.act .ring {
   transition: stroke-dashoffset 0.35s ease;
 }
 
-dialog.modal.icon-list button.act .shape,
-dialog.modal.icon-list button.act .lid {
+.icon-actions button.act .shape,
+.icon-actions button.act .lid {
   transition: color 0.15s ease, stroke-width 0.15s ease, filter 0.2s ease, transform 0.25s ease;
 }
 
-dialog.modal.icon-list button.act:hover .ring,
-dialog.modal.icon-list button.act:focus-visible .ring {
+.icon-actions button.act:hover .ring,
+.icon-actions button.act:focus-visible .ring {
   stroke-dashoffset: 0;
   transition-delay: 0.12s;
 }
 
-dialog.modal.icon-list button.act:hover .shape,
-dialog.modal.icon-list button.act:hover .lid,
-dialog.modal.icon-list button.act:focus-visible .shape,
-dialog.modal.icon-list button.act:focus-visible .lid {
+.icon-actions button.act:hover .shape,
+.icon-actions button.act:hover .lid,
+.icon-actions button.act:focus-visible .shape,
+.icon-actions button.act:focus-visible .lid {
   color: var(--act-color);
   filter: drop-shadow(0 0 4px var(--act-glow));
 }
 
 /* Edit: the pencil gets bolder. */
-dialog.modal.icon-list button.act.pencil:hover .shape,
-dialog.modal.icon-list button.act.pencil:focus-visible .shape {
+.icon-actions button.act.pencil:hover .shape,
+.icon-actions button.act.pencil:focus-visible .shape {
   stroke-width: 2.6;
 }
 
 /* Delete: the lid swings open on its left hinge. */
-dialog.modal.icon-list button.act.trash .lid {
+.icon-actions button.act.trash .lid {
   transform-box: view-box;
   transform-origin: 6.5px 8px;
 }
 
-dialog.modal.icon-list button.act.trash:hover .lid,
-dialog.modal.icon-list button.act.trash:focus-visible .lid {
+.icon-actions button.act.trash:hover .lid,
+.icon-actions button.act.trash:focus-visible .lid {
   transform: translate(-0.6px, -1.4px) rotate(-22deg);
 }
 
-dialog.modal.icon-list button.act.green {
+.icon-actions button.act.green {
   --act-color: #2fbf5b;
   --act-glow: rgb(47 191 91 / 75%);
 }
 
-dialog.modal.icon-list button.act.yellow {
+.icon-actions button.act.yellow {
   --act-color: #e6b422;
   --act-glow: rgb(230 180 34 / 70%);
 }
 
-dialog.modal.icon-list button.act.red {
+.icon-actions button.act.red {
   --act-color: #ff4d3d;
   --act-glow: rgb(255 77 61 / 75%);
 }
 
-dialog.modal.icon-list button.act.blue {
+.icon-actions button.act.blue {
   --act-color: #2f9be6;
   --act-glow: rgb(47 155 230 / 70%);
 }
 
 /* Record always shows its red dot; the ring is the hover. */
-dialog.modal.icon-list button.act.record .shape {
+.icon-actions button.act.record .shape {
   color: #c4372c;
 }
 
 @media (prefers-reduced-motion: reduce) {
   dialog.modal button.keycap,
   dialog.modal button.keycap span,
-  dialog.modal.icon-list button.act .ring,
-  dialog.modal.icon-list button.act .shape,
-  dialog.modal.icon-list button.act .lid {
+  .icon-actions button.act .ring,
+  .icon-actions button.act .shape,
+  .icon-actions button.act .lid {
     transition: none;
   }
 }

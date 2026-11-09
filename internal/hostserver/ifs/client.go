@@ -4,6 +4,7 @@
 package ifs
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -332,12 +333,19 @@ const (
 	openReplace        // access write, create or replace
 )
 
-func (cl *Client) open(p string, mode int) (uint32, error) {
+// Default data CCSID a file gets when it is created by an upload: the bytes come from a PC
+// file, which is UTF-8 far more often than anything else. Binary files do not care.
+const uploadCCSID uint16 = 1208
+
+// open opens p and returns the file handle and the file's data CCSID (0 when the server does
+// not say). dataCCSID goes into the request: it tags a file that is created; data itself is
+// never converted (the conversion flag stays off).
+func (cl *Client) open(p string, mode int, dataCCSID uint16) (uint32, uint16, error) {
 	access, options := uint16(0x01), uint16(0x08)
 	if mode == openReplace {
 		access, options = 0x02, 0x02
 	}
-	b := (&hs.Builder{}).U16(0).U16(nameCCSID).U32(1).U16(nameCCSID).U16(access).U16(0).U16(0).U16(options).
+	b := (&hs.Builder{}).U16(0).U16(nameCCSID).U32(1).U16(dataCCSID).U16(access).U16(0).U16(0).U16(options).
 		U32(0).U32(0).U16(1).U32(0).U32(0)
 	tmpl := uint16(36)
 	if cl.level >= 16 {
@@ -346,19 +354,25 @@ func (cl *Client) open(p string, mode int) (uint32, error) {
 	}
 	rep, err := cl.c.Request(&hs.Frame{TemplateLen: tmpl, ReqRepID: reqOpen, Body: b.Param(cpName, utf16Name(p)).Bytes()})
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	op := "open"
 	if mode == openReplace {
 		op = "write"
 	}
 	if err := cl.returnCode(rep, op, p); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if rep.ReqRepID != repOpen {
-		return 0, fmt.Errorf("%s %s: unexpected reply %04X", op, p, rep.ReqRepID)
+		return 0, 0, fmt.Errorf("%s %s: unexpected reply %04X", op, p, rep.ReqRepID)
 	}
-	return hs.At(rep.Body).U32(22), nil
+	r := hs.At(rep.Body)
+	// Open reply: file handle at 22, the file's data CCSID at 26 (JTOpen IFSOpenRep).
+	var ccsid uint16
+	if len(rep.Body) >= 28-hs.HeaderLen { // offsets count from the frame start; Body starts after the header
+		ccsid = r.U16(26)
+	}
+	return r.U32(22), ccsid, nil
 }
 
 func (cl *Client) closeHandle(h uint32) error {
@@ -377,12 +391,54 @@ func (cl *Client) closeHandle(h uint32) error {
 
 // Download copies a file to w. progress (optional) gets the bytes done so far.
 func (cl *Client) Download(p string, w io.Writer, progress func(done int64)) error {
+	_, err := cl.download(p, w, progress)
+	return err
+}
+
+// ErrTooLarge stops a read at the caller's limit; what was read so far is kept.
+var ErrTooLarge = errors.New("too large")
+
+// ReadAll returns the whole file (at most max bytes: truncated is set and the rest is left
+// unread) and the file's data CCSID as the server reports it (0 = unknown).
+func (cl *Client) ReadAll(p string, max int) (data []byte, ccsid uint16, truncated bool, err error) {
+	var buf bytes.Buffer
+	lw := &limitWriter{w: &buf, left: max}
+	ccsid, err = cl.download(p, lw, nil)
+	if errors.Is(err, ErrTooLarge) {
+		return buf.Bytes(), ccsid, true, nil
+	}
+	return buf.Bytes(), ccsid, false, err
+}
+
+type limitWriter struct {
+	w    io.Writer
+	left int
+}
+
+func (l *limitWriter) Write(b []byte) (int, error) {
+	if len(b) > l.left {
+		_, _ = l.w.Write(b[:l.left])
+		l.left = 0
+		return 0, ErrTooLarge
+	}
+	n, err := l.w.Write(b)
+	l.left -= n
+	return n, err
+}
+
+// WriteAll replaces (or creates) the file at p with data, tagged with the data CCSID
+// (0 = let the server choose).
+func (cl *Client) WriteAll(p string, data []byte, ccsid uint16) error {
+	return cl.upload(p, bytes.NewReader(data), nil, ccsid)
+}
+
+func (cl *Client) download(p string, w io.Writer, progress func(done int64)) (uint16, error) {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 	p = Clean(p)
-	h, err := cl.open(p, openRead)
+	h, ccsid, err := cl.open(p, openRead, nameCCSID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var done int64
 	readErr := func() error {
@@ -439,17 +495,22 @@ func (cl *Client) Download(p string, w io.Writer, progress func(done int64)) err
 	}()
 	closeErr := cl.closeHandle(h)
 	if readErr != nil {
-		return readErr
+		return ccsid, readErr
 	}
-	return closeErr
+	return ccsid, closeErr
 }
 
 // Upload writes r to the file at p, replacing it when it exists. progress (optional) gets bytes done.
+// A file that is created is tagged CCSID 1208 (UTF-8).
 func (cl *Client) Upload(p string, r io.Reader, progress func(done int64)) error {
+	return cl.upload(p, r, progress, uploadCCSID)
+}
+
+func (cl *Client) upload(p string, r io.Reader, progress func(done int64), ccsid uint16) error {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 	p = Clean(p)
-	h, err := cl.open(p, openReplace)
+	h, _, err := cl.open(p, openReplace, ccsid)
 	if err != nil {
 		return err
 	}

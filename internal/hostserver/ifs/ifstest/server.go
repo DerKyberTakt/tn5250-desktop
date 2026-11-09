@@ -24,8 +24,11 @@ type Server struct {
 	Files    map[string][]byte // path -> content
 	Dirs     map[string]bool
 	Handles  map[uint32]string
-	next     uint32
-	Writes   int
+	// CCSIDs is the data CCSID per file (set by the test, or by the open request that created it);
+	// files without one report 1208, like a stream file written by a UTF-8 job.
+	CCSIDs map[string]uint16
+	next   uint32
+	Writes int
 }
 
 const (
@@ -75,7 +78,7 @@ func New(addr, user, password string, level byte) (*Server, error) {
 	}
 	home := "/home/" + strings.ToUpper(user)
 	f := &Server{l: l, user: user, password: password, level: level,
-		Files: map[string][]byte{}, Dirs: map[string]bool{"/": true, "/home": true, home: true}, Handles: map[uint32]string{}, next: 0x100}
+		Files: map[string][]byte{}, Dirs: map[string]bool{"/": true, "/home": true, home: true}, Handles: map[uint32]string{}, CCSIDs: map[string]uint16{}, next: 0x100}
 	go f.serve()
 	return f, nil
 }
@@ -222,11 +225,21 @@ func (f *Server) answer(req *hs.Frame, clientSeed *[]byte) []*hs.Frame {
 			}
 		}
 		if access == 0x02 {
+			if _, existed := f.Files[name]; !existed {
+				// A created file takes the data CCSID of the open request (offset 28).
+				if c := b.U16(28); c != 0 {
+					f.CCSIDs[name] = c
+				}
+			}
 			f.Files[name] = nil
 		}
 		f.next++
 		f.Handles[f.next] = name
-		return []*hs.Frame{rep(req, repOpen, 8, (&hs.Builder{}).U16(0).U32(f.next).U16(0).Bytes())}
+		ccsid, ok := f.CCSIDs[name]
+		if !ok {
+			ccsid = 1208
+		}
+		return []*hs.Frame{rep(req, repOpen, 8, (&hs.Builder{}).U16(0).U32(f.next).U16(ccsid).Bytes())}
 	case reqRead:
 		name := f.Handles[b.U32(22)]
 		off, n := int(b.U64(50)), int(b.U32(34))

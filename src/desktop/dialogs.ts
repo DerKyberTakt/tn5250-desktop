@@ -1,6 +1,6 @@
 /** Small modal dialogs drawn by the shell (the OS dialogs only cover files). */
 
-import { ACTION_ICONS, type ActionIconName } from './icons';
+import { actionButton, type ActionIconName, type ActionTone } from './icons';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -157,16 +157,12 @@ export interface IconAction {
   label: string;
   icon: ActionIconName;
   /** Colour on hover: play is green, edit yellow, delete red. */
-  tone?: 'green' | 'yellow' | 'red' | 'blue';
+  tone?: ActionTone;
 }
 
 function iconButton(a: IconAction): HTMLButtonElement {
-  const b = el('button', `act ${a.icon}${a.tone ? ` ${a.tone}` : ''}`);
-  b.type = 'button';
-  b.title = a.label;
-  b.setAttribute('aria-label', a.label);
+  const b = actionButton(a.icon, a.label, a.tone);
   b.dataset.action = a.id;
-  b.innerHTML = ACTION_ICONS[a.icon];
   return b;
 }
 
@@ -183,7 +179,7 @@ export function iconListDialog(
   empty = 'Nothing here yet.',
 ): Promise<{ row: number; action: string } | undefined> {
   return new Promise((resolve) => {
-    const dialog = el('dialog', 'modal list-dialog icon-list');
+    const dialog = el('dialog', 'modal list-dialog icon-list icon-actions');
     const form = el('form');
     form.method = 'dialog';
     let result: { row: number; action: string } | undefined;

@@ -20,13 +20,15 @@ function fakeHost(tree: Record<string, string[]>) {
       calls.push(`rename ${from} ${to}`);
     }),
     ClipboardSet: vi.fn(async () => undefined),
+    IfsReadBytes: vi.fn(async () => ({ data: btoa('hello'), ccsid: 1208, size: 5, truncated: false })),
+    SaveTextFile: vi.fn(async () => true),
   };
   window.go = { main: { App: app as never } };
   window.runtime = { EventsOn: () => () => undefined } as never;
   return { app, calls };
 }
 
-const host = { notify: vi.fn(), log: vi.fn(), changed: vi.fn() };
+const host = { notify: vi.fn(), log: vi.fn(), changed: vi.fn(), openViewer: vi.fn() };
 const request = { host: 'pub400.com', tls: false, trustAnyCertificate: false, user: 'jsmith', password: 'x', timeoutMs: 1000 };
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
@@ -62,6 +64,42 @@ describe('IFS tab: mouse navigation', () => {
     await tick();
     expect(calls.at(-1)).toBe('list /home');
     expect(tab.frame.querySelector('.ifs-node.current')?.getAttribute('data-path')).toBe('/home');
+  });
+
+  it('a click only highlights the row, so a double-click still reaches it: folders open, files go to the viewer', async () => {
+    const { calls } = fakeHost({ '/': ['home/'], '/home': ['JSMITH/'], '/home/JSMITH': ['src/', 'notes.txt'], '/home/JSMITH/src': [] });
+    const tab = new IfsTab(host, request);
+    document.body.append(tab.frame);
+    await tab.start();
+    const row = (name: string): HTMLTableRowElement => [...tab.frame.querySelectorAll<HTMLTableRowElement>('.ifs-list tbody tr')].find((r) => r.dataset.name === name) as HTMLTableRowElement;
+    const notes = row('notes.txt');
+    notes.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    // The same element is still in the table (no rebuild) and is now selected.
+    expect(row('notes.txt')).toBe(notes);
+    expect(notes.classList.contains('selected')).toBe(true);
+    expect((tab.frame.querySelector('button.eye') as HTMLButtonElement).disabled).toBe(false);
+    notes.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(host.openViewer).toHaveBeenCalledWith(tab, '/home/JSMITH/notes.txt', { size: 12, modified: '2026-11-03T09:00:00Z' });
+    const src = row('src');
+    src.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    src.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await tick();
+    await tick();
+    expect(calls.at(-1)).toBe('list /home/JSMITH/src');
+  });
+
+  it('draws the tool bars as icon buttons that share the Macros dialog look', async () => {
+    fakeHost({ '/': ['home/'], '/home': ['JSMITH/'], '/home/JSMITH': [] });
+    const tab = new IfsTab(host, request);
+    document.body.append(tab.frame);
+    await tab.start();
+    expect(tab.frame.querySelector('.ifs-top')?.classList.contains('icon-actions')).toBe(true);
+    const icons = [...tab.frame.querySelectorAll<HTMLButtonElement>('.ifs-top button.act')].map((b) => b.className.split(' ')[1]);
+    expect(icons).toEqual(['back', 'up', 'refresh', 'folderTree', 'importFile', 'exportFile', 'newFolder', 'pencil', 'trash', 'eye']);
+    expect(tab.frame.querySelectorAll('.ifs-top button.act svg .ring')).toHaveLength(10);
+    // Nothing selected: view, rename, delete and download are off; upload and new folder are on.
+    const state = Object.fromEntries([...tab.frame.querySelectorAll<HTMLButtonElement>('.ifs-top button.act')].map((b) => [b.className.split(' ')[1], b.disabled]));
+    expect(state).toMatchObject({ eye: true, pencil: true, trash: true, exportFile: true, importFile: false, newFolder: false });
   });
 
   it('expands a tree node on its arrow and navigates on its name', async () => {

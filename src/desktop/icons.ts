@@ -68,6 +68,43 @@ export const ACTION_ICONS = {
   importFile: action('<g class="shape"><path d="M12 5v9"/><path d="m8.5 10.5 3.5 3.5 3.5-3.5"/><path d="M6 15v2.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V15"/></g>'),
   /** Export: an arrow up out of a tray. */
   exportFile: action('<g class="shape"><path d="M12 14V5"/><path d="M8.5 8.5 12 5l3.5 3.5"/><path d="M6 15v2.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V15"/></g>'),
+  /** Back: an arrow to the left. */
+  back: action('<g class="shape"><path d="M17 12H7"/><path d="m11 7.5-4.5 4.5 4.5 4.5"/></g>'),
+  /** Up one level: an arrow up with a bar. */
+  up: action('<g class="shape"><path d="M12 18V8"/><path d="m7.5 12.5 4.5-4.5 4.5 4.5"/><path d="M7 5.5h10"/></g>'),
+  /** Refresh: a circular arrow. */
+  refresh: action('<g class="shape"><path d="M17.5 10.5A6 6 0 1 0 18 13.5"/><path d="M18 6v4.5h-4.5"/></g>'),
+  /** Folder tree: a folder with a branch. */
+  folderTree: action('<g class="shape"><path d="M5.5 8.5V6a1 1 0 0 1 1-1h3l1.5 1.5H17a1 1 0 0 1 1 1v2"/><path d="M4.5 10.5h15l-1 8.5H5.5z"/><path d="M8.5 14h3M8.5 16.5h5"/></g>'),
+  /** New folder: a folder with a plus. */
+  newFolder: action('<g class="shape"><path d="M4 7.5a1.5 1.5 0 0 1 1.5-1.5H9l1.5 1.5h7A1.5 1.5 0 0 1 19 9v8a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 4 17z"/><path d="M11.5 11v5M9 13.5h5"/></g>'),
+  /** View: an eye. */
+  eye: action('<g class="shape"><path d="M3.5 12s3.2-5.5 8.5-5.5 8.5 5.5 8.5 5.5-3.2 5.5-8.5 5.5S3.5 12 3.5 12z"/><circle cx="12" cy="12" r="2.6"/></g>'),
+  /** Save: a floppy disk. */
+  save: action('<g class="shape"><path d="M5.5 5.5h10l3 3v10a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z"/><path d="M8.5 5.5v4.5h6V5.5"/><path d="M8 19.5v-5h8v5"/></g>'),
+  /** Copy: two pages. */
+  copy: action('<g class="shape"><rect x="9" y="8.5" width="9.5" height="10.5" rx="1"/><path d="M15 8.5V6.5a1 1 0 0 0-1-1H6.5a1 1 0 0 0-1 1V15a1 1 0 0 0 1 1H9"/></g>'),
+  /** Find: a magnifier. */
+  find: action('<g class="shape"><circle cx="10.5" cy="10.5" r="5"/><path d="m14.2 14.2 4.8 4.8"/></g>'),
+  /** Wrap long lines: a returning arrow under text. */
+  wrap: action('<g class="shape"><path d="M5 7.5h14M5 12h10.5a2.5 2.5 0 0 1 0 5H13"/><path d="m14.5 15.5-1.5 1.5 1.5 1.5"/><path d="M5 16.5h4"/></g>'),
 } as const;
 
 export type ActionIconName = keyof typeof ACTION_ICONS;
+
+/** Colour on hover: play is green, edit yellow, delete red; blue for the rest. */
+export type ActionTone = 'green' | 'yellow' | 'red' | 'blue';
+
+/**
+ * An icon button for an `.icon-actions` container (the Macros dialog, the IFS tool bars): the
+ * ring draws around it on hover in its tone. `label` is the tooltip and the accessible name.
+ */
+export function actionButton(icon: ActionIconName, label: string, tone?: ActionTone): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.className = `act ${icon}${tone ? ` ${tone}` : ''}`;
+  b.type = 'button';
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  b.innerHTML = ACTION_ICONS[icon];
+  return b;
+}

@@ -148,3 +148,54 @@ func TestClean(t *testing.T) {
 		}
 	}
 }
+
+func TestReadAllReportsCCSIDAndTruncates(t *testing.T) {
+	f := newFakeServer(t, 1)
+	f.Files["/home/TESTUSER/ebcdic.txt"] = []byte{0xC8, 0xC5, 0xD3, 0xD3, 0xD6} // "HELLO" in CCSID 37
+	f.CCSIDs["/home/TESTUSER/ebcdic.txt"] = 37
+	f.Files["/home/TESTUSER/big.bin"] = bytes.Repeat([]byte{7}, 1000)
+	c := open(t, f)
+
+	data, ccsid, truncated, err := c.ReadAll("/home/TESTUSER/ebcdic.txt", 1<<20)
+	if err != nil || truncated {
+		t.Fatalf("ReadAll: %v truncated=%v", err, truncated)
+	}
+	if ccsid != 37 || !bytes.Equal(data, f.Files["/home/TESTUSER/ebcdic.txt"]) {
+		t.Fatalf("ccsid %d data %x", ccsid, data)
+	}
+	data, ccsid, truncated, err = c.ReadAll("/home/TESTUSER/big.bin", 300)
+	if err != nil || !truncated || len(data) != 300 || ccsid != 1208 {
+		t.Fatalf("truncated read: err=%v truncated=%v len=%d ccsid=%d", err, truncated, len(data), ccsid)
+	}
+	if _, _, _, err := c.ReadAll("/home/TESTUSER/missing", 10); err == nil {
+		t.Fatal("missing file: want an error")
+	}
+}
+
+func TestWriteAllTagsNewFilesAndReplaces(t *testing.T) {
+	f := newFakeServer(t, 1)
+	c := open(t, f)
+	if err := c.WriteAll("/home/TESTUSER/new.txt", []byte("abc"), 37); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Files["/home/TESTUSER/new.txt"]; string(got) != "abc" {
+		t.Fatalf("content %q", got)
+	}
+	if f.CCSIDs["/home/TESTUSER/new.txt"] != 37 {
+		t.Fatalf("ccsid %d", f.CCSIDs["/home/TESTUSER/new.txt"])
+	}
+	// Replacing keeps the file's CCSID: the request's value only tags a created file.
+	if err := c.WriteAll("/home/TESTUSER/new.txt", []byte("longer text"), 1208); err != nil {
+		t.Fatal(err)
+	}
+	if string(f.Files["/home/TESTUSER/new.txt"]) != "longer text" || f.CCSIDs["/home/TESTUSER/new.txt"] != 37 {
+		t.Fatalf("after replace: %q ccsid %d", f.Files["/home/TESTUSER/new.txt"], f.CCSIDs["/home/TESTUSER/new.txt"])
+	}
+	// An upload tags a created file UTF-8.
+	if err := c.Upload("/home/TESTUSER/up.txt", strings.NewReader("x"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.CCSIDs["/home/TESTUSER/up.txt"] != 1208 {
+		t.Fatalf("upload ccsid %d", f.CCSIDs["/home/TESTUSER/up.txt"])
+	}
+}
