@@ -30,6 +30,8 @@ interface SettingsFile {
   checkForUpdates?: boolean;
   /** View > Appearance: follow the system, or force light / dark. */
   appTheme?: AppTheme;
+  /** View > Use System Title Bar: keep the system frame instead of the app's own title bar (read by Go at start). */
+  systemTitleBar?: boolean;
   /** Host and user of the last IFS sign-on, to fill the dialog (the password is in the credential store). */
   ifsLast?: { host: string; user: string };
   /** Which USER@host passwords are saved in the credential store (names only, no passwords). */
@@ -75,6 +77,7 @@ export class Store {
       lastSession: typeof parsed.lastSession === 'string' ? parsed.lastSession : undefined,
       checkForUpdates: typeof parsed.checkForUpdates === 'boolean' ? parsed.checkForUpdates : undefined,
       appTheme: APP_THEMES.includes(parsed.appTheme as AppTheme) ? parsed.appTheme : undefined,
+      systemTitleBar: parsed.systemTitleBar === true ? true : undefined,
       credentials: Array.isArray(parsed.credentials)
         ? parsed.credentials.filter((c) => typeof c?.user === 'string' && typeof c?.host === 'string').map((c) => ({ user: c.user, host: c.host }))
         : undefined,
@@ -232,6 +235,15 @@ export class Store {
   async setAppTheme(theme: AppTheme): Promise<void> {
     if (this.appTheme === theme) return;
     this.file.appTheme = theme === 'system' ? undefined : theme;
+    await this.persist();
+  }
+
+  get systemTitleBar(): boolean {
+    return this.file.systemTitleBar === true;
+  }
+
+  async setSystemTitleBar(on: boolean): Promise<void> {
+    this.file.systemTitleBar = on ? true : undefined;
     await this.persist();
   }
 

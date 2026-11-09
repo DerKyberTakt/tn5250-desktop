@@ -73,6 +73,88 @@ input {
   color: inherit;
 }
 
+/* --- title bar (frameless windows): icon, menu bar, title, window controls --- */
+#titlebar[hidden] {
+  display: none;
+}
+
+#titlebar {
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+  flex: none;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  user-select: none;
+}
+
+#titlebar .app-icon {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px 0 10px;
+  color: var(--chrome-fg);
+}
+
+/* Inside the title bar the menu bar is a row of its own, no border. */
+#titlebar #menubar {
+  align-items: center;
+  padding: 0 2px;
+  border-bottom: 0;
+}
+
+#titlebar .caption {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 12px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+#titlebar .win-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#titlebar .win-controls {
+  display: flex;
+  flex: none;
+}
+
+#titlebar .win-controls button {
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--chrome-fg);
+  cursor: default;
+}
+
+#titlebar .win-controls button:hover {
+  background: var(--chrome-hover);
+}
+
+#titlebar .win-controls button.win-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+#titlebar .win-controls svg {
+  display: block;
+  margin: 0 auto;
+}
+
+/* With the page's title bar, the whole first row is it: the stand-alone menu bar rules do not apply. */
+.custom-frame body > #menubar {
+  display: none;
+}
+
 /* --- menu bar --- */
 #menubar {
   display: flex;

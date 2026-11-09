@@ -31,6 +31,8 @@ type App struct {
 	sockets *Sockets
 	ifsOnce sync.Once
 	ifsSt   *ifsState
+	// Whether windows are frameless with the page's own title bar (app_frame.go); decided at start.
+	customFrame bool
 	// The drag ghost window (app_ghost.go).
 	ghostOnce sync.Once
 	ghostSt   *ghostState

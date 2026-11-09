@@ -47,6 +47,7 @@ func main() {
 		},
 	})
 	app.attach(wails)
+	app.customFrame = wantsCustomFrame()
 	app.newBrokerWindow()
 	app.newWindow(mainWindow, "TN5250 Terminal", 1180, 800)
 	if err := wails.Run(); err != nil {

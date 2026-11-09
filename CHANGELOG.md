@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.0 - unreleased
+- The window has the app's own title bar (Windows, and Linux as an experiment): app icon, the menus, the title and the window buttons in one row, like VS Code or Teams. On Windows the system still does the dragging, double-click, Snap Layouts (hover the maximise button) and the button clicks. View > Use System Title Bar (restart) brings the system frame back.
+
 ## 0.3.0 - unreleased
 - Settings > Connection has an Import Connections… button, the same import as File > Import Connections.
 - IFS browser: double-click a folder to open it and a file to view it (a click used to rebuild the rows, so the second click never counted); the tool bars are icon buttons with the Macros dialog's hover ring (back, up, refresh, folders, upload, download, new folder, rename, delete, view).

@@ -157,6 +157,8 @@ interface GoApp {
   GhostMove(x: number, y: number): Promise<void>;
   GhostHide(): Promise<void>;
   GhostLabel(): Promise<string>;
+  /** Whether this window is frameless and the page draws the title bar (app_frame.go). */
+  FrameInfo(): Promise<{ custom: boolean; platform: string }>;
   NetConnect(id: string, options: ConnectOptionsDto): Promise<void>;
   NetSend(id: string, base64: string): Promise<void>;
   NetClose(id: string): Promise<void>;
@@ -217,6 +219,11 @@ interface WailsRuntime {
   /** Files dropped on the window (paths resolved by the host). */
   OnFileDrop(callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean): void;
   WindowSetTitle(title: string): void;
+  /** Window controls for the page's own title bar. */
+  WindowMinimise(): void;
+  WindowToggleMaximise(): void;
+  WindowClose(): void;
+  WindowIsMaximised(): Promise<boolean>;
   /** Opens a URL in the default browser (the Go OpenURL is used for host-driven links). */
   OpenURL(url: string): void;
   Quit(): void;
@@ -242,6 +249,10 @@ const runtime: WailsRuntime = {
   EventsOn: (name, callback) => Events.On(name, (ev) => callback(ev.data)),
   OnFileDrop: (callback) => void Events.On('files:dropped', (ev) => callback(0, 0, (ev.data as string[] | null) ?? [])),
   WindowSetTitle: (title) => void Window.SetTitle(title),
+  WindowMinimise: () => void Window.Minimise(),
+  WindowToggleMaximise: () => void Window.ToggleMaximise(),
+  WindowClose: () => void Window.Close(),
+  WindowIsMaximised: () => Window.IsMaximised(),
   OpenURL: (url) => void Browser.OpenURL(url),
   Quit: () => void Application.Quit(),
 };

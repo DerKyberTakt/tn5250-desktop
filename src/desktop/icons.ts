@@ -6,6 +6,10 @@
 const svg = (body: string): string =>
   `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 
+/** The title bar's app icon: a terminal screen with green rows, 16 px. */
+export const APP_ICON =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2" stroke="currentColor"/><path d="M8 21h8M12 17v4" stroke="currentColor"/><path d="M6 8h6M6 11h9M6 14h4" stroke="#2e9b48"/></svg>';
+
 export const ICONS = {
   /** Show / hide the connections panel (quick connect). */
   connections: svg(

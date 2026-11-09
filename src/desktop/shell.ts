@@ -5,9 +5,10 @@ import type { SettingsToHost } from '../shared/settingsProtocol';
 import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
 import { checkListDialog, choiceDialog, confirmDialog, formDialog, iconListDialog, listDialog, messageDialog, promptDialog } from './dialogs';
-import { ICONS, type IconName } from './icons';
+import { APP_ICON, ICONS, type IconName } from './icons';
 import { play, reducedMotion, snapshot } from './flip';
 import { IfsTab, type IfsHost } from './ifsTab';
+import { installTitleBar, type TitleBar } from './titlebar';
 import { IfsViewTab, type IfsViewHost } from './ifsViewTab';
 import { SettingsTab } from './settingsTab';
 import { ConsoleTab, type ConsoleHost, type ConsoleMode } from './consoleTab';
@@ -111,6 +112,8 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
   private statusTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly tabbar = byId<HTMLDivElement>('tabbar');
+  /** The page's own title bar when the window is frameless; undefined with a system frame. */
+  private titleBar: TitleBar | undefined;
   private readonly frames = byId<HTMLElement>('frames');
   private readonly empty = byId<HTMLDivElement>('empty');
   private readonly sidebar = byId<HTMLElement>('sidebar');
@@ -149,6 +152,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     this.applyTheme();
     this.store.onChange(() => this.storeChanged(true));
     this.buildMenus();
+    void this.installTitleBar();
     this.buildToolbar();
     this.bindSidebar();
     this.statusText.addEventListener('click', () => this.toggleLog());
@@ -706,6 +710,28 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     this.focusActive();
   }
 
+  /** Frameless window: the page draws the title bar around the menu bar (titlebar.ts). */
+  private async installTitleBar(): Promise<void> {
+    let info: { custom: boolean; platform: string };
+    try {
+      info = await goApp().FrameInfo();
+    } catch {
+      return; // tests, or an older host
+    }
+    const rt = wailsRuntime();
+    this.titleBar = installTitleBar(byId<HTMLElement>('titlebar'), byId<HTMLElement>('menubar'), APP_ICON, info, {
+      minimise: () => rt.WindowMinimise(),
+      toggleMaximise: () => rt.WindowToggleMaximise(),
+      close: () => rt.WindowClose(),
+      isMaximised: () => rt.WindowIsMaximised(),
+      onMaximised: (cb) => {
+        rt.EventsOn('common:WindowMaximise', () => cb(true));
+        rt.EventsOn('common:WindowUnMaximise', () => cb(false));
+      },
+    });
+    this.titleBar?.setTitle(document.title);
+  }
+
   /** View > Appearance: data-theme on the shell page and on every frame (they share theme.css). */
   private applyTheme(): void {
     const theme = this.store.appTheme;
@@ -750,6 +776,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     const t = this.activeTerminal();
     const title = this.active ? `${this.active.tab.title} - ${APP_NAME}` : APP_NAME;
     document.title = title;
+    this.titleBar?.setTitle(title);
     try {
       wailsRuntime().WindowSetTitle(title);
     } catch {
@@ -1518,6 +1545,12 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
           { label: 'Appearance: System', run: () => void this.store.setAppTheme('system'), checked: () => this.store.appTheme === 'system' },
           { label: 'Appearance: Light', run: () => void this.store.setAppTheme('light'), checked: () => this.store.appTheme === 'light' },
           { label: 'Appearance: Dark', run: () => void this.store.setAppTheme('dark'), checked: () => this.store.appTheme === 'dark' },
+          '-',
+          {
+            label: 'Use System Title Bar (restart)',
+            run: () => void this.store.setSystemTitleBar(!this.store.systemTitleBar).then(() => this.notify(`The ${this.store.systemTitleBar ? 'system' : "app's own"} title bar is used after a restart`)),
+            checked: () => this.store.systemTitleBar,
+          },
           '-',
           { label: 'Demo Screen', run: () => this.openDemo() },
           { label: 'Demo Screen Size 24x80 / 27x132', run: () => t()?.toggleScreenSize(), enabled: () => !!t()?.isDemo },

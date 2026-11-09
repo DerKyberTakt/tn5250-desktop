@@ -153,8 +153,12 @@ func (a *App) newWindow(name, title string, width, height int) *application.Webv
 		BackgroundColour: background,
 		URL:              url,
 		EnableFileDrop:   true,
-		Windows:          application.WindowsWindow{Theme: application.SystemDefault},
-		Linux:            application.LinuxWindow{Icon: icon, WebviewGpuPolicy: application.WebviewGpuPolicyOnDemand},
+		// Frameless with the page's title bar (app_frame.go). On Windows the page marks its
+		// caption and buttons as non-client regions, so dragging, double-click, Snap Layouts
+		// and the button clicks stay the system's; the DWM shadow and rounded corners stay too.
+		Frameless: a.customFrame,
+		Windows:   application.WindowsWindow{Theme: application.SystemDefault, NonClientRegionSupport: a.customFrame},
+		Linux:     application.LinuxWindow{Icon: icon, WebviewGpuPolicy: application.WebviewGpuPolicyOnDemand},
 	})
 	win.OnWindowEvent(events.Common.WindowFilesDropped, func(e *application.WindowEvent) {
 		dispatch(win, "files:dropped", e.Context().DroppedFiles())
