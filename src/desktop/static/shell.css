@@ -15,6 +15,26 @@
   --dot-connecting: #d39b00;
   --dot-disconnected: #c4372c;
   --dot-idle: #9a9a9a;
+  /* Keycap buttons (ESC, Reset, Save…). */
+  --key-ink: #111111;
+  --esc-bg: #fee6e3;
+  --esc-hot: #e8242b;
+  --grey-bg: #ececec;
+  --grey-hot: #e0861a;
+  --green-bg: #dff5e6;
+  --green-hot: #1f9d4a;
+  --blue-bg: #dfeefc;
+  --blue-hot: #1f6fe0;
+  /* Macro editor page. */
+  --ed-bg: #f7f7f7;
+  --ed-fg: #141414;
+  --ed-muted: rgb(20 20 20 / 60%);
+  --ed-tile: #e3e3e3;
+  --ed-tile-border: #cfcfcf;
+  --ed-card: #ffffff;
+  --ed-key: #8b1e2d;
+  --ed-accent: #0f8fd6;
+  --ed-focus: #1f8fe0;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,6 +50,23 @@
     --tab-accent: #4d8fd8;
     --side-bg: #232323;
     --status-bg: #262626;
+    --key-ink: #f2f2f2;
+    --esc-bg: #3a1c1a;
+    --esc-hot: #ff4d3d;
+    --grey-bg: #262626;
+    --grey-hot: #ffa030;
+    --green-bg: #15301f;
+    --green-hot: #3ad26f;
+    --blue-bg: #14263a;
+    --blue-hot: #4da3ff;
+    --ed-bg: #0c0c0c;
+    --ed-fg: #f2f2f2;
+    --ed-muted: rgb(242 242 242 / 60%);
+    --ed-tile: #1f1f1f;
+    --ed-tile-border: #333333;
+    --ed-card: #181818;
+    --ed-key: #7a1f2b;
+    --ed-accent: #12a3ec;
   }
 }
 
@@ -46,6 +83,23 @@
   --tab-accent: #4d8fd8;
   --side-bg: #232323;
   --status-bg: #262626;
+  --key-ink: #f2f2f2;
+  --esc-bg: #3a1c1a;
+  --esc-hot: #ff4d3d;
+  --grey-bg: #262626;
+  --grey-hot: #ffa030;
+  --green-bg: #15301f;
+  --green-hot: #3ad26f;
+  --blue-bg: #14263a;
+  --blue-hot: #4da3ff;
+  --ed-bg: #0c0c0c;
+  --ed-fg: #f2f2f2;
+  --ed-muted: rgb(242 242 242 / 60%);
+  --ed-tile: #1f1f1f;
+  --ed-tile-border: #333333;
+  --ed-card: #181818;
+  --ed-key: #7a1f2b;
+  --ed-accent: #12a3ec;
 }
 
 * {
@@ -899,44 +953,6 @@ dialog.modal button.primary {
 }
 
 /* --- keycap buttons: a raised key that drops onto its shadow on hover, letters lighting up one by one --- */
-dialog.modal {
-  --key-ink: #111111;
-  --esc-bg: #fee6e3;
-  --esc-hot: #e8242b;
-  --grey-bg: #ececec;
-  --grey-hot: #e0861a;
-  --green-bg: #dff5e6;
-  --green-hot: #1f9d4a;
-  --blue-bg: #dfeefc;
-  --blue-hot: #1f6fe0;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) dialog.modal {
-    --key-ink: #f2f2f2;
-    --esc-bg: #3a1c1a;
-    --esc-hot: #ff4d3d;
-    --grey-bg: #262626;
-    --grey-hot: #ffa030;
-    --green-bg: #15301f;
-    --green-hot: #3ad26f;
-    --blue-bg: #14263a;
-    --blue-hot: #4da3ff;
-  }
-}
-
-:root[data-theme="dark"] dialog.modal {
-  --key-ink: #f2f2f2;
-  --esc-bg: #3a1c1a;
-  --esc-hot: #ff4d3d;
-  --grey-bg: #262626;
-  --grey-hot: #ffa030;
-  --green-bg: #15301f;
-  --green-hot: #3ad26f;
-  --blue-bg: #14263a;
-  --blue-hot: #4da3ff;
-}
-
 dialog.modal button.keycap {
   display: inline-flex;
   align-items: center;
@@ -1297,15 +1313,6 @@ dialog.modal.icon-list .list-rows li .text {
 
 /* --- macro editor: a full-screen page like a gaming keyboard's macro editor --- */
 dialog.modal.macro-editor {
-  --ed-bg: #f7f7f7;
-  --ed-fg: #141414;
-  --ed-muted: rgb(20 20 20 / 60%);
-  --ed-tile: #e3e3e3;
-  --ed-tile-border: #cfcfcf;
-  --ed-card: #ffffff;
-  --ed-key: #8b1e2d;
-  --ed-accent: #0f8fd6;
-  --ed-focus: #1f8fe0;
   width: 100vw;
   height: 100vh;
   max-width: none;
@@ -1318,30 +1325,6 @@ dialog.modal.macro-editor {
   background: var(--ed-bg);
   color: var(--ed-fg);
   box-shadow: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) dialog.modal.macro-editor {
-    --ed-bg: #0c0c0c;
-    --ed-fg: #f2f2f2;
-    --ed-muted: rgb(242 242 242 / 60%);
-    --ed-tile: #1f1f1f;
-    --ed-tile-border: #333333;
-    --ed-card: #181818;
-    --ed-key: #7a1f2b;
-    --ed-accent: #12a3ec;
-  }
-}
-
-:root[data-theme="dark"] dialog.modal.macro-editor {
-  --ed-bg: #0c0c0c;
-  --ed-fg: #f2f2f2;
-  --ed-muted: rgb(242 242 242 / 60%);
-  --ed-tile: #1f1f1f;
-  --ed-tile-border: #333333;
-  --ed-card: #181818;
-  --ed-key: #7a1f2b;
-  --ed-accent: #12a3ec;
 }
 
 dialog.modal.macro-editor::backdrop {
@@ -1903,4 +1886,68 @@ dialog.modal.macro-editor .buttons button.keycap {
   height: 40px;
   font-size: 12px;
   text-transform: uppercase;
+}
+
+/* --- theme editor: the macro editor's page with colour groups --- */
+dialog.modal.theme-editor .stage {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px 36px;
+  align-content: start;
+  overflow: auto;
+  padding: 8px 4px 16px;
+}
+
+dialog.modal.theme-editor .group h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ed-muted);
+}
+
+dialog.modal.theme-editor .swatch {
+  display: grid;
+  grid-template-columns: 1fr 34px 110px;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+}
+
+dialog.modal.theme-editor .swatch .label {
+  font-size: 13px;
+}
+
+dialog.modal.theme-editor .swatch .picker {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--ed-tile-border);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+dialog.modal.theme-editor .swatch .hex {
+  padding: 4px 6px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  color: var(--ed-fg);
+  background: var(--ed-card);
+  border: 1px solid var(--ed-tile-border);
+  border-radius: 4px;
+}
+
+dialog.modal.theme-editor .swatch .hex.bad {
+  border-color: #e0463a;
+}
+
+dialog.modal.theme-editor select.base {
+  width: 100%;
+  padding: 6px 8px;
+  color: var(--ed-fg);
+  background: var(--ed-card);
+  border: 1px solid var(--ed-tile-border);
+  border-radius: 4px;
 }

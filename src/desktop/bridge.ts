@@ -123,6 +123,13 @@ export interface IfsConnectRequest {
   timeoutMs: number;
 }
 
+/** One theme file (app_themes.go). */
+export interface ThemeFile {
+  name: string;
+  json: string;
+  managed: boolean;
+}
+
 /** A file's bytes for the viewer (IfsReadBytes). */
 export interface IfsBytes {
   /** Base64. */
@@ -157,6 +164,10 @@ interface GoApp {
   GhostMove(x: number, y: number): Promise<void>;
   GhostHide(): Promise<void>;
   GhostLabel(): Promise<string>;
+  ThemesList(): Promise<ThemeFile[]>;
+  ThemeSave(name: string, json: string): Promise<void>;
+  ThemeDelete(name: string): Promise<void>;
+  ThemesFolder(): Promise<string>;
   /** Whether this window is frameless and the page draws the title bar (app_frame.go). */
   FrameInfo(): Promise<{ custom: boolean; platform: string }>;
   NetConnect(id: string, options: ConnectOptionsDto): Promise<void>;

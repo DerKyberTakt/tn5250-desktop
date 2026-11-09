@@ -9,6 +9,8 @@ import { APP_ICON, ICONS, type IconName } from './icons';
 import { play, reducedMotion, snapshot } from './flip';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { installTitleBar, type TitleBar } from './titlebar';
+import { BUILT_IN, applyThemeVars, findTheme, parseTheme, themeToJson, type Theme } from './themes';
+import { themeEditorDialog } from './themeEditor';
 import { IfsViewTab, type IfsViewHost } from './ifsViewTab';
 import { SettingsTab } from './settingsTab';
 import { ConsoleTab, type ConsoleHost, type ConsoleMode } from './consoleTab';
@@ -114,6 +116,8 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
   private readonly tabbar = byId<HTMLDivElement>('tabbar');
   /** The page's own title bar when the window is frameless; undefined with a system frame. */
   private titleBar: TitleBar | undefined;
+  /** The user's and the administrator's theme files (built-ins are in themes.ts). */
+  private themes: Theme[] = [];
   private readonly frames = byId<HTMLElement>('frames');
   private readonly empty = byId<HTMLDivElement>('empty');
   private readonly sidebar = byId<HTMLElement>('sidebar');
@@ -140,6 +144,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
   async start(): Promise<void> {
     try {
       await this.store.load();
+      await this.loadThemes();
     } catch (err) {
       this.log(`settings file not readable, starting with defaults: ${errorText(err)}`);
     }
@@ -732,21 +737,166 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     this.titleBar?.setTitle(document.title);
   }
 
-  /** View > Appearance: data-theme on the shell page and on every frame (they share theme.css). */
-  private applyTheme(): void {
-    const theme = this.store.appTheme;
-    setTheme(document, theme);
-    for (const e of this.entries) this.applyThemeTo(e.tab.frame);
+  /** View > Appearance: System / Light / Dark takes any theme off. */
+  private async pickAppearance(theme: AppTheme): Promise<void> {
+    await this.store.setThemeName(undefined);
+    await this.store.setAppTheme(theme);
+    this.applyTheme();
   }
 
-  private applyThemeTo(frame: HTMLElement): void {
+  /** The theme in use, if any: a built-in or one of the files. */
+  private get activeTheme(): Theme | undefined {
+    return findTheme(this.store.themeName, this.themes);
+  }
+
+  private async loadThemes(): Promise<void> {
+    try {
+      const files = await goApp().ThemesList();
+      this.themes = files.flatMap((f) => {
+        const parsed = parseTheme(f.json);
+        if (!parsed) {
+          this.log(`theme file ${f.name}.json is not a theme`);
+          return [];
+        }
+        for (const p of parsed.problems) this.log(`theme ${f.name}: ${p}`);
+        return [{ ...parsed.theme, name: f.name, managed: f.managed }];
+      });
+    } catch (err) {
+      this.log(`themes not loaded: ${errorText(err)}`);
+    }
+  }
+
+  /**
+   * View > Appearance / Theme: the theme's variables on the shell page and on every frame
+   * (they share theme.css); with no theme, data-theme alone decides light or dark.
+   */
+  private applyTheme(): void {
+    this.paintTheme(this.activeTheme);
+  }
+
+  private paintTheme(theme: Theme | undefined): void {
+    this.paintThemeOn(document, theme);
+    for (const e of this.entries) this.applyThemeTo(e.tab.frame, theme);
+  }
+
+  private paintThemeOn(doc: Document, theme: Theme | undefined): void {
+    applyThemeVars(doc.documentElement, theme);
+    if (!theme) setTheme(doc, this.store.appTheme);
+  }
+
+  private applyThemeTo(frame: HTMLElement, theme: Theme | undefined = this.activeTheme): void {
     if (!(frame instanceof HTMLIFrameElement)) return;
     try {
       const doc = frame.contentDocument;
-      if (doc) setTheme(doc, this.store.appTheme);
+      if (doc) this.paintThemeOn(doc, theme);
     } catch {
       // a frame of another origin (none today)
     }
+  }
+
+  /** View > Theme…: the list of themes with use / edit / delete, New, Import and Export on top. */
+  private async themesDialog(): Promise<void> {
+    for (;;) {
+      await this.loadThemes();
+      const all = [...BUILT_IN, ...this.themes];
+      const current = this.store.themeName;
+      const pick = await iconListDialog(
+        'Themes',
+        all.map((t) => `${t.name}   ${t.base}${t.builtin ? '   (built in)' : t.managed ? '   (company)' : ''}${t.name === current ? '   ✓ in use' : ''}`),
+        [
+          { id: 'use', label: 'Use this theme', icon: 'eye', tone: 'green' },
+          { id: 'edit', label: 'Edit (a built-in or company theme is copied first)', icon: 'pencil', tone: 'yellow' },
+          { id: 'delete', label: 'Delete', icon: 'trash', tone: 'red' },
+        ],
+        [
+          { id: 'new', label: 'New theme (from the one in use)', icon: 'newPage', tone: 'blue' },
+          { id: 'import', label: 'Import a theme file…', icon: 'importFile', tone: 'blue' },
+          { id: 'export', label: 'Export the theme in use…', icon: 'exportFile', tone: 'blue' },
+          { id: 'none', label: 'No theme: View > Appearance decides light or dark', icon: 'refresh', tone: 'blue' },
+        ],
+        'No themes yet.',
+      );
+      if (!pick) return;
+      if (pick.row < 0) {
+        if (pick.action === 'new') await this.editTheme({ ...(this.activeTheme ?? (BUILT_IN[1] as Theme)), name: 'My theme', builtin: false, managed: false });
+        else if (pick.action === 'import') await this.importTheme();
+        else if (pick.action === 'export') await this.exportTheme();
+        else if (pick.action === 'none') {
+          await this.store.setThemeName(undefined);
+          this.applyTheme();
+        }
+        continue;
+      }
+      const t = all[pick.row];
+      if (!t) continue;
+      if (pick.action === 'use') {
+        await this.store.setThemeName(t.name);
+        this.applyTheme();
+        this.notify(`Theme "${t.name}"`);
+        return;
+      }
+      if (pick.action === 'edit') {
+        if (t.builtin || t.managed) await this.editTheme({ ...t, name: `${t.name} (copy)`, builtin: false, managed: false });
+        else await this.editTheme(t);
+        continue;
+      }
+      if (pick.action === 'delete') {
+        if (t.builtin || t.managed) {
+          this.notify(t.builtin ? 'Built-in themes cannot be deleted' : 'Company themes are the administrator\'s');
+          continue;
+        }
+        if (await confirmDialog('Delete theme', `Delete "${t.name}"?`, 'Delete')) {
+          await goApp().ThemeDelete(t.name);
+          if (current === t.name) {
+            await this.store.setThemeName(undefined);
+            this.applyTheme();
+          }
+        }
+      }
+    }
+  }
+
+  /** The colour editor, previewing on this window; a save writes the file and uses the theme. */
+  private async editTheme(theme: Theme): Promise<void> {
+    const taken = [...BUILT_IN, ...this.themes].map((t) => t.name).filter((n) => n !== theme.name);
+    const result = await themeEditorDialog(theme, { preview: (t) => this.paintTheme(t), revert: () => this.applyTheme(), taken });
+    if (!result) return;
+    try {
+      if (result.name !== theme.name && !theme.builtin && this.themes.some((t) => t.name === theme.name)) await goApp().ThemeDelete(theme.name);
+      await goApp().ThemeSave(result.name, themeToJson(result));
+      await this.loadThemes();
+      await this.store.setThemeName(result.name);
+      this.applyTheme();
+      this.notify(`Theme "${result.name}" saved`);
+    } catch (err) {
+      this.notify(`Theme not saved: ${errorText(err)}`);
+      this.applyTheme();
+    }
+  }
+
+  private async importTheme(): Promise<void> {
+    const app = goApp();
+    const file = await app.PickFile('Import a theme', [{ name: 'Theme', patterns: '*.json' }, { name: 'All files', patterns: '*.*' }]);
+    if (!file) return;
+    const parsed = parseTheme(await app.ReadTextFile(file));
+    if (!parsed) {
+      await messageDialog('Import theme', ['That file is not a theme (it needs "vars" with colour variables).']);
+      return;
+    }
+    const name = parsed.theme.name;
+    await app.ThemeSave(name, themeToJson(parsed.theme));
+    await this.loadThemes();
+    this.notify(`Theme "${name}" imported${parsed.problems.length ? ` (${parsed.problems.length} value(s) replaced from the base)` : ''}`);
+  }
+
+  private async exportTheme(): Promise<void> {
+    const t = this.activeTheme;
+    if (!t) {
+      this.notify('No theme is in use; pick one first');
+      return;
+    }
+    const saved = await goApp().SaveTextFile('Export theme', `${t.name}.json`, themeToJson(t), [{ name: 'Theme', patterns: '*.json' }]);
+    if (saved) this.notify(`Theme "${t.name}" exported`);
   }
 
   /** Keyboard focus back to the active tab (after menus, dialogs, closing tabs, hiding the panel). */
@@ -1291,7 +1441,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
    * windows) or in another window (reloaded from the file): apply them everywhere.
    */
   private storeChanged(saved: boolean): void {
-    this.applyTheme();
+    void this.loadThemes().then(() => this.applyTheme());
     for (const e of this.entries) {
       if (e.kind === 'terminal') e.tab.pushConfig();
       else if (e.kind === 'settings') e.tab.push();
@@ -1542,9 +1692,10 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
           { label: 'Session Log', run: () => this.toggleLog(), checked: () => this.logOpen },
           { label: 'Key Overlay', run: () => t()?.toggleKeyOverlay(), enabled: () => !!t() },
           '-',
-          { label: 'Appearance: System', run: () => void this.store.setAppTheme('system'), checked: () => this.store.appTheme === 'system' },
-          { label: 'Appearance: Light', run: () => void this.store.setAppTheme('light'), checked: () => this.store.appTheme === 'light' },
-          { label: 'Appearance: Dark', run: () => void this.store.setAppTheme('dark'), checked: () => this.store.appTheme === 'dark' },
+          { label: 'Appearance: System', run: () => void this.pickAppearance('system'), checked: () => !this.store.themeName && this.store.appTheme === 'system' },
+          { label: 'Appearance: Light', run: () => void this.pickAppearance('light'), checked: () => !this.store.themeName && this.store.appTheme === 'light' },
+          { label: 'Appearance: Dark', run: () => void this.pickAppearance('dark'), checked: () => !this.store.themeName && this.store.appTheme === 'dark' },
+          { label: 'Theme…', run: () => void this.themesDialog(), checked: () => !!this.store.themeName },
           '-',
           {
             label: 'Use System Title Bar (restart)',

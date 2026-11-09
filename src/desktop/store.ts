@@ -32,6 +32,8 @@ interface SettingsFile {
   appTheme?: AppTheme;
   /** View > Use System Title Bar: keep the system frame instead of the app's own title bar (read by Go at start). */
   systemTitleBar?: boolean;
+  /** View > Theme…: the theme in use (a built-in or a file in the themes folder); none = Appearance decides. */
+  themeName?: string;
   /** Host and user of the last IFS sign-on, to fill the dialog (the password is in the credential store). */
   ifsLast?: { host: string; user: string };
   /** Which USER@host passwords are saved in the credential store (names only, no passwords). */
@@ -78,6 +80,7 @@ export class Store {
       checkForUpdates: typeof parsed.checkForUpdates === 'boolean' ? parsed.checkForUpdates : undefined,
       appTheme: APP_THEMES.includes(parsed.appTheme as AppTheme) ? parsed.appTheme : undefined,
       systemTitleBar: parsed.systemTitleBar === true ? true : undefined,
+      themeName: typeof parsed.themeName === 'string' && parsed.themeName.trim() ? parsed.themeName : undefined,
       credentials: Array.isArray(parsed.credentials)
         ? parsed.credentials.filter((c) => typeof c?.user === 'string' && typeof c?.host === 'string').map((c) => ({ user: c.user, host: c.host }))
         : undefined,
@@ -235,6 +238,16 @@ export class Store {
   async setAppTheme(theme: AppTheme): Promise<void> {
     if (this.appTheme === theme) return;
     this.file.appTheme = theme === 'system' ? undefined : theme;
+    await this.persist();
+  }
+
+  get themeName(): string | undefined {
+    return this.file.themeName;
+  }
+
+  async setThemeName(name: string | undefined): Promise<void> {
+    if (this.file.themeName === name) return;
+    this.file.themeName = name;
     await this.persist();
   }
 
