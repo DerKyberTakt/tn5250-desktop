@@ -144,6 +144,33 @@
   display: none;
 }
 
+/* Results: the grid scrolls, the status line under it stays put. */
+.sql-results {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sql-grid-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  transition: opacity 0.2s;
+}
+
+.sql-grid-wrap.stale {
+  opacity: 0.45;
+}
+
+.sql-results-status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--chrome-bg);
+  border-top: 1px solid var(--chrome-border);
+  white-space: pre-wrap;
+}
+
 .sql-grid {
   border-collapse: collapse;
   font-family: var(--vscode-editor-font-family, Consolas, monospace);
@@ -223,6 +250,8 @@
   gap: 12px;
   align-items: center;
   justify-content: space-between;
+  min-height: 22px;
+  box-sizing: border-box;
   padding: 3px 8px;
   font-size: 12px;
   background: var(--chrome-bg);
@@ -231,4 +260,9 @@
 
 .sql.busy .sql-editor {
   opacity: 0.8;
+}
+
+.sql-job {
+  opacity: 0.75;
+  white-space: nowrap;
 }
