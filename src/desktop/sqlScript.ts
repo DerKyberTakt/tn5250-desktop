@@ -1,14 +1,16 @@
 /**
  * Splits the text of a Run SQL Scripts editor into runnable statements, the way ACS
  * does: statements end at a semicolon outside quotes and comments; a line starting
- * with `CL:` is a CL command (ending at its semicolon or line end); `--` and
- * block comments are skipped; statement boundaries keep their offsets so
- * "run selected" and "run from cursor" can pick by position.
+ * with `CL:` is a CL command (ending at its semicolon or line end); a line starting
+ * with `QSH:` is a Qshell / PASE command line (to the end of the line: a shell line
+ * may itself contain semicolons); `--` and block comments are skipped; statement
+ * boundaries keep their offsets so "run selected" and "run from cursor" can pick by
+ * position.
  */
 
 export interface Statement {
-  kind: 'sql' | 'cl';
-  /** The statement without its terminating semicolon (CL: without the prefix). */
+  kind: 'sql' | 'cl' | 'qsh';
+  /** The statement without its terminating semicolon (CL: / QSH: without the prefix). */
   text: string;
   /** Offsets into the editor text: first character of the statement and the one after it. */
   start: number;
@@ -43,6 +45,14 @@ export function splitStatements(source: string): Statement[] {
       continue;
     }
     const start = i;
+    if (/^qsh:/i.test(source.slice(i, i + 4))) {
+      // QSH: command line, to the end of the line.
+      const j = endOfLine(source, i);
+      const text = source.slice(i + 4, j).replace(/\r$/, '').trim();
+      if (text) out.push({ kind: 'qsh', text, start, end: j, line: lineAt(start) });
+      i = j;
+      continue;
+    }
     if (/^cl:/i.test(source.slice(i, i + 3))) {
       // CL: command, up to a semicolon or the end of the line.
       let j = i + 3;
@@ -113,6 +123,6 @@ export function statementsFrom(statements: Statement[], pos: number, source: str
 
 /** A short label for the Messages pane: the first words of the statement. */
 export function statementLabel(s: Statement, max = 60): string {
-  const flat = (s.kind === 'cl' ? 'CL: ' : '') + s.text.replace(/\s+/g, ' ');
+  const flat = (s.kind === 'cl' ? 'CL: ' : s.kind === 'qsh' ? 'QSH: ' : '') + s.text.replace(/\s+/g, ' ');
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }

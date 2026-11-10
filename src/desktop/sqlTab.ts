@@ -93,7 +93,7 @@ export class SqlTab {
 
     this.editor = el('textarea', 'sql-editor');
     this.editor.spellcheck = false;
-    this.editor.placeholder = 'SELECT * FROM QSYS2.SYSTABLES FETCH FIRST 50 ROWS ONLY;\nCL: DSPLIBL;';
+    this.editor.placeholder = 'SELECT * FROM QSYS2.SYSTABLES FETCH FIRST 50 ROWS ONLY;\nCL: DSPLIBL OUTPUT(*PRINT);\nQSH: ls -l /home';
     this.editor.addEventListener('input', () => {
       this.dirty = true;
       this.updateTitle();
@@ -253,9 +253,14 @@ export class SqlTab {
         this.statusEl.textContent = `Running ${i + 1} of ${list.length}: ${statementLabel(s)}`;
         let r: SqlResult;
         try {
-          r = s.kind === 'cl' ? await goApp().CmdRun(this.connection, s.text) : await goApp().SqlRun(this.connection, s.text, FETCH_ROWS);
+          r =
+            s.kind === 'cl'
+              ? await goApp().CmdRun(this.connection, s.text)
+              : s.kind === 'qsh'
+                ? await goApp().QshRun(this.connection, s.text)
+                : await goApp().SqlRun(this.connection, s.text, FETCH_ROWS);
         } catch (err) {
-          const why = explainToolError(s.kind === 'cl' ? 'CL' : 'SQL', this.request.host, errorText(err));
+          const why = explainToolError(s.kind === 'cl' ? 'CL' : s.kind === 'qsh' ? 'QSH' : 'SQL', this.request.host, errorText(err));
           this.addMessage('error', `[line ${s.line}] ${statementLabel(s)}\n${why.message}${why.hint ? `\n${why.hint}` : ''}`);
           this.showPane('messages');
           if (!(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue'))) break;

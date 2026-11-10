@@ -91,14 +91,17 @@ type sqlSession struct {
 	db       *db.Client
 	dbRows   *db.Rows
 	fallback string
-	files    *ifs.Client // opened on first use, with the same sign-on
-	options  hs.DialOptions
-	naming   sqlviacl.Options
-	user     string
-	seq      int
-	results  map[string]*sqlCache
-	order    []string // cursors, oldest first (a few are kept)
-	cancel   atomic.Bool
+	// dbAux is a second database connection for the session's own queries (the
+	// spooled output of CL commands), so the user's open result set is left alone.
+	dbAux   *db.Client
+	files   *ifs.Client // opened on first use, with the same sign-on
+	options hs.DialOptions
+	naming  sqlviacl.Options
+	user    string
+	seq     int
+	results map[string]*sqlCache
+	order   []string // cursors, oldest first (a few are kept)
+	cancel  atomic.Bool
 	// header is false once this host refused CPYTOIMPF ADDCOLNAM (releases before 7.2).
 	header bool
 }
@@ -174,6 +177,9 @@ func (a *App) SqlClose(id string) {
 	}
 	if s.db != nil {
 		_ = s.db.Close()
+	}
+	if s.dbAux != nil {
+		_ = s.dbAux.Close()
 	}
 }
 
@@ -311,7 +317,110 @@ func (a *App) CmdRun(id string, command string) (SqlResult, error) {
 			out.Messages = []SqlMessage{{Text: res.Err().Error()}}
 		}
 	}
+	// What the command printed: in a server job a display command has no screen,
+	// so its output is a spooled file; bring it back as rows.
+	cols, rows, notes := s.captureSpool()
+	if len(rows) > 0 {
+		out.Columns, out.Rows = cols, rows
+		if out.Kind == "none" {
+			out.Kind = "rows"
+		}
+	}
+	out.Messages = append(out.Messages, notes...)
+	out.ElapsedMs = elapsed(start)
 	return out, nil
+}
+
+// aux opens (once) the session's second database connection.
+func (s *sqlSession) aux() (*db.Client, error) {
+	if s.dbAux != nil {
+		return s.dbAux, nil
+	}
+	c, err := db.Open(db.Options{DialOptions: s.options, Naming: "sql"})
+	if err != nil {
+		return nil, err
+	}
+	s.dbAux = c
+	return c, nil
+}
+
+// auxAll runs a query on the second connection and returns every row.
+func (s *sqlSession) auxAll(sql string) ([][]*string, error) {
+	c, err := s.aux()
+	if err != nil {
+		return nil, err
+	}
+	rows, data, err := c.Query(sql, 1000)
+	if err != nil {
+		var e *db.Error
+		if !errors.As(err, &e) {
+			// The connection itself failed: forget it, the next call reconnects.
+			_ = c.Close()
+			s.dbAux = nil
+		}
+		return nil, err
+	}
+	all := data
+	for !rows.Done {
+		d, err := rows.Next()
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, d...)
+	}
+	_ = rows.Close()
+	return all, nil
+}
+
+// captureSpool lists the spooled files of the remote command server job (they can
+// only come from the command that just ran: earlier ones were deleted here), reads
+// each through SYSTOOLS.SPOOLED_FILE_DATA and deletes it. It needs the database
+// server; on the CL fallback the output stays in the job's spooled files.
+func (s *sqlSession) captureSpool() (cols []SqlColumn, rows [][]*string, notes []SqlMessage) {
+	if s.db == nil {
+		return nil, nil, nil
+	}
+	parts := strings.Fields(s.cmd.JobName())
+	if len(parts) != 3 {
+		return nil, nil, nil
+	}
+	job := parts[2] + "/" + parts[1] + "/" + parts[0]
+	list, err := s.auxAll("SELECT SPOOLED_FILE_NAME, FILE_NUMBER FROM TABLE(QSYS2.SPOOLED_FILE_INFO(JOB_NAME => '" + job + "')) ORDER BY FILE_NUMBER")
+	if err != nil {
+		// Older release without SPOOLED_FILE_INFO: the (slower) output queue view.
+		list, err = s.auxAll("SELECT SPOOLED_FILE_NAME, FILE_NUMBER FROM QSYS2.OUTPUT_QUEUE_ENTRIES_BASIC WHERE JOB_NAME = '" + job + "' ORDER BY FILE_NUMBER")
+	}
+	if err != nil {
+		return nil, nil, []SqlMessage{{Text: "the command's spooled output could not be listed: " + err.Error()}}
+	}
+	for _, f := range list {
+		if len(f) < 2 || f[0] == nil || f[1] == nil {
+			continue
+		}
+		name, num := strings.TrimSpace(*f[0]), strings.TrimSpace(*f[1])
+		data, err := s.auxAll(fmt.Sprintf("SELECT SPOOLED_DATA FROM TABLE(SYSTOOLS.SPOOLED_FILE_DATA(JOB_NAME => '%s', SPOOLED_FILE_NAME => '%s', SPOOLED_FILE_NUMBER => %s)) ORDER BY ORDINAL_POSITION", job, name, num))
+		if err != nil {
+			notes = append(notes, SqlMessage{Text: fmt.Sprintf("spooled file %s (%s) could not be read: %s", name, num, err.Error())})
+			continue
+		}
+		if len(list) > 1 {
+			if len(rows) > 0 {
+				rows = append(rows, []*string{nil})
+			}
+			hdr := fmt.Sprintf("---- %s (%s)", name, num)
+			rows = append(rows, []*string{&hdr})
+		}
+		rows = append(rows, data...)
+		where := "shown here and deleted from the server job"
+		if res, err := s.cmd.Run(fmt.Sprintf("DLTSPLF FILE(%s) JOB(%s) SPLNBR(%s)", name, job, num)); err != nil || res.Failed() {
+			where = "shown here; it is still in the server job's output queue"
+		}
+		notes = append(notes, SqlMessage{Text: fmt.Sprintf("Output: spooled file %s, %d lines, %s.", name, len(data), where)})
+	}
+	if len(rows) > 0 {
+		cols = []SqlColumn{{Name: "OUTPUT", Type: "VARCHAR", Length: 378}}
+	}
+	return cols, rows, notes
 }
 
 // QshRun runs a Qshell command line with its output sent to a stream file and read

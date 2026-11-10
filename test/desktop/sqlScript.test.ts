@@ -6,6 +6,7 @@ const script = [
   "SELECT * FROM MYLIB.CUST WHERE REP = 'A;B' AND NOTE <> 'it''s;'; -- trailing",
   'CL: DSPLIBL;',
   'cl: WRKACTJOB',
+  'QSH: cd /home; ls -l | head -5',
   '/* a block; comment */',
   'UPDATE MYLIB.CUST',
   '   SET X = 1',
@@ -20,9 +21,11 @@ describe('splitStatements', () => {
       ['sql', "SELECT * FROM MYLIB.CUST WHERE REP = 'A;B' AND NOTE <> 'it''s;'"],
       ['cl', 'DSPLIBL'],
       ['cl', 'WRKACTJOB'],
+      ['qsh', 'cd /home; ls -l | head -5'],
       ['sql', 'UPDATE MYLIB.CUST\n   SET X = 1\n WHERE ID = 2'],
     ]);
-    expect(s.map((x) => x.line)).toEqual([2, 3, 4, 6]);
+    expect(s.map((x) => x.line)).toEqual([2, 3, 4, 5, 7]);
+    expect(statementLabel(s[3]!)).toBe('QSH: cd /home; ls -l | head -5');
     expect(script.slice(s[0]!.start, s[0]!.end)).toBe("SELECT * FROM MYLIB.CUST WHERE REP = 'A;B' AND NOTE <> 'it''s;'");
   });
 
@@ -46,12 +49,12 @@ describe('picking statements by position', () => {
     expect(statementsIn(s, 3, 3, script)).toEqual([]);
     const from = script.indexOf('DSPLIBL');
     const to = script.indexOf('UPDATE') + 3;
-    expect(statementsIn(s, from, to, script).map((x) => x.text.split(/\s/)[0])).toEqual(['DSPLIBL', 'WRKACTJOB', 'UPDATE']);
+    expect(statementsIn(s, from, to, script).map((x) => x.text.split(/\s/)[0])).toEqual(['DSPLIBL', 'WRKACTJOB', 'cd', 'UPDATE']);
   });
 
   it('run from cursor takes the statement under the caret and everything after', () => {
-    expect(statementsFrom(s, script.indexOf('WRKACTJOB'), script).map((x) => x.kind)).toEqual(['cl', 'sql']);
-    expect(statementsFrom(s, 0, script).length).toBe(4);
+    expect(statementsFrom(s, script.indexOf('WRKACTJOB'), script).map((x) => x.kind)).toEqual(['cl', 'qsh', 'sql']);
+    expect(statementsFrom(s, 0, script).length).toBe(5);
     // The caret at the very end is inside the unterminated last statement.
     expect(statementsFrom(s, script.length, script).map((x) => x.kind)).toEqual(['sql']);
     // Nothing runnable after the caret: a trailing comment line.
@@ -60,7 +63,7 @@ describe('picking statements by position', () => {
   });
 
   it('labels are one line and shortened', () => {
-    expect(statementLabel(s[3]!)).toBe('UPDATE MYLIB.CUST SET X = 1 WHERE ID = 2');
+    expect(statementLabel(s[4]!)).toBe('UPDATE MYLIB.CUST SET X = 1 WHERE ID = 2');
     expect(statementLabel(s[1]!)).toBe('CL: DSPLIBL');
     expect(statementLabel(s[0]!, 20)).toHaveLength(20);
   });
