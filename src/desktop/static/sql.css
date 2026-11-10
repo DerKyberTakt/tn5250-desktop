@@ -78,25 +78,75 @@
   display: none;
 }
 
+/* The editor host: CodeMirror fills it (sqlEditor.ts); the split bar resizes it. */
 .sql-editor {
   flex: 0 0 38%;
   min-height: 80px;
   width: 100%;
-  resize: none;
-  padding: 6px 8px;
-  margin: 0;
   box-sizing: border-box;
-  font-family: var(--vscode-editor-font-family, Consolas, monospace);
-  font-size: 13px;
-  line-height: 1.4;
-  tab-size: 4;
-  background: var(--vscode-editor-background);
-  color: var(--vscode-editor-foreground, var(--vscode-foreground));
-  border: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-bottom: 1px solid var(--chrome-border);
-  outline: none;
-  white-space: pre;
-  overflow: auto;
+}
+
+.sql-editor .cm-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Syntax colours (VS Code Light+ / Dark+), read by the editor's highlight style. */
+.terminal-frame.sql {
+  --sql-kw: #0000ff;
+  --sql-fn: #795e26;
+  --sql-type: #267f99;
+  --sql-str: #a31515;
+  --sql-num: #098658;
+  --sql-comment: #008000;
+  --sql-op: #000000;
+  --sql-var: #001080;
+  --sql-cmd: #af00db;
+  --sql-cmd-bg: rgba(175, 0, 219, 0.06);
+  --sql-selection: #add6ff;
+  --sql-match: rgba(0, 120, 215, 0.18);
+  --sql-active-line: rgba(0, 0, 0, 0.04);
+  --sql-gutter: #6e7681;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .terminal-frame.sql {
+    --sql-kw: #569cd6;
+    --sql-fn: #dcdcaa;
+    --sql-type: #4ec9b0;
+    --sql-str: #ce9178;
+    --sql-num: #b5cea8;
+    --sql-comment: #6a9955;
+    --sql-op: #d4d4d4;
+    --sql-var: #9cdcfe;
+    --sql-cmd: #c586c0;
+    --sql-cmd-bg: rgba(197, 134, 192, 0.1);
+    --sql-selection: #264f78;
+    --sql-match: rgba(173, 214, 255, 0.18);
+    --sql-active-line: rgba(255, 255, 255, 0.04);
+    --sql-gutter: #858585;
+  }
+}
+
+:root[data-theme="dark"] .terminal-frame.sql {
+  --sql-kw: #569cd6;
+  --sql-fn: #dcdcaa;
+  --sql-type: #4ec9b0;
+  --sql-str: #ce9178;
+  --sql-num: #b5cea8;
+  --sql-comment: #6a9955;
+  --sql-op: #d4d4d4;
+  --sql-var: #9cdcfe;
+  --sql-cmd: #c586c0;
+  --sql-cmd-bg: rgba(197, 134, 192, 0.1);
+  --sql-selection: #264f78;
+  --sql-match: rgba(173, 214, 255, 0.18);
+  --sql-active-line: rgba(255, 255, 255, 0.04);
+  --sql-gutter: #858585;
 }
 
 .sql-split {

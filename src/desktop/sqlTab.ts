@@ -1,5 +1,6 @@
 import { errorText, goApp, type SqlColumn, type SqlConnInfo, type SqlConnectRequest, type SqlResult } from './bridge';
 import { confirmDialog } from './dialogs';
+import { SqlEditor } from './sqlEditor';
 import { splitStatements, statementLabel, statementsFrom, statementsIn, type Statement } from './sqlScript';
 import { explainToolError } from './toolErrors';
 
@@ -30,7 +31,7 @@ export class SqlTab {
   private filePath = '';
   private dirty = false;
   private result: SqlResult | undefined;
-  private readonly editor: HTMLTextAreaElement;
+  private readonly editor: SqlEditor;
   private readonly grid: HTMLDivElement;
   private readonly messages: HTMLUListElement;
   private readonly statusEl: HTMLSpanElement;
@@ -101,14 +102,19 @@ export class SqlTab {
     this.notice.setAttribute('role', 'status');
     this.notice.hidden = true;
 
-    this.editor = el('textarea', 'sql-editor');
-    this.editor.spellcheck = false;
-    this.editor.placeholder = 'SELECT * FROM QSYS2.SYSTABLES FETCH FIRST 50 ROWS ONLY;\nCL: DSPLIBL OUTPUT(*PRINT);\nQSH: ls -l /home';
-    this.editor.addEventListener('input', () => {
-      this.dirty = true;
-      this.updateTitle();
+    this.editor = new SqlEditor({
+      placeholder: 'SELECT * FROM QSYS2.SYSTABLES FETCH FIRST 50 ROWS ONLY;\nCL: DSPLIBL OUTPUT(*PRINT);\nQSH: ls -l /home',
+      onChange: () => {
+        this.dirty = true;
+        this.updateTitle();
+      },
+      keys: {
+        run: () => void this.runSelected(),
+        runAll: () => void this.runAll(),
+        runFrom: () => void this.runFromCursor(),
+        save: () => void this.save(false),
+      },
     });
-    this.editor.addEventListener('keydown', (e) => this.onEditorKey(e));
 
     const split = el('div', 'sql-split');
     split.title = 'Drag to resize';
@@ -145,7 +151,7 @@ export class SqlTab {
     this.jobEl.title = 'The server job this session runs in';
     foot.append(this.statusEl, this.jobEl);
 
-    this.frame.append(top, this.notice, this.editor, split, bottom, foot);
+    this.frame.append(top, this.notice, this.editor.element, split, bottom, foot);
     this.updateButtons();
   }
 
@@ -160,6 +166,8 @@ export class SqlTab {
 
   dispose(): void {
     if (this.connection) void goApp().SqlClose(this.connection);
+    this.endStatement();
+    this.editor.destroy();
     this.frame.remove();
   }
 
@@ -242,8 +250,8 @@ export class SqlTab {
   }
 
   async runSelected(): Promise<void> {
-    const src = this.editor.value;
-    await this.runList(statementsIn(this.statements(), this.editor.selectionStart, this.editor.selectionEnd, src));
+    const { start, end } = this.editor.selection();
+    await this.runList(statementsIn(this.statements(), start, end, this.editor.value));
   }
 
   async runAll(): Promise<void> {
@@ -251,7 +259,7 @@ export class SqlTab {
   }
 
   async runFromCursor(): Promise<void> {
-    await this.runList(statementsFrom(this.statements(), this.editor.selectionStart, this.editor.value));
+    await this.runList(statementsFrom(this.statements(), this.editor.selection().start, this.editor.value));
   }
 
   private async runList(list: Statement[]): Promise<void> {
@@ -479,36 +487,13 @@ export class SqlTab {
 
   // ---- misc ------------------------------------------------------------------------
 
-  private onEditorKey(e: KeyboardEvent): void {
-    if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'r') {
-      e.preventDefault();
-      void this.runSelected();
-    } else if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r') {
-      e.preventDefault();
-      void this.runAll();
-    } else if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'r') {
-      e.preventDefault();
-      void this.runFromCursor();
-    } else if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 's') {
-      e.preventDefault();
-      void this.save(false);
-    } else if (e.key === 'Tab') {
-      // Tab types spaces instead of leaving the editor.
-      e.preventDefault();
-      const { selectionStart: a, selectionEnd: b, value } = this.editor;
-      this.editor.value = `${value.slice(0, a)}    ${value.slice(b)}`;
-      this.editor.selectionStart = this.editor.selectionEnd = a + 4;
-      this.dirty = true;
-    }
-  }
-
   private startResize(e: MouseEvent): void {
     e.preventDefault();
     const startY = e.clientY;
-    const startH = this.editor.getBoundingClientRect().height;
+    const startH = this.editor.element.getBoundingClientRect().height;
     const move = (ev: MouseEvent): void => {
       const h = Math.max(60, startH + ev.clientY - startY);
-      this.editor.style.flex = `0 0 ${h}px`;
+      this.editor.element.style.flex = `0 0 ${h}px`;
     };
     const up = (): void => {
       window.removeEventListener('mousemove', move);

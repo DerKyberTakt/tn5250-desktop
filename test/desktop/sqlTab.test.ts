@@ -40,8 +40,12 @@ function fakeHost() {
   };
   window.go = { main: { App: app as never } };
   window.runtime = { EventsOn: () => () => undefined } as never;
-  // jsdom has no layout: the Messages list scrolls its newest line into view.
+  // jsdom has no layout: the Messages list scrolls its newest line into view, and
+  // CodeMirror measures text ranges.
   Element.prototype.scrollIntoView = () => undefined;
+  const rect = { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) };
+  Range.prototype.getClientRects = () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as never;
+  Range.prototype.getBoundingClientRect = () => rect as never;
   return { app, finish: (r: SqlResult) => pending?.(r) };
 }
 
