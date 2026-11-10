@@ -239,7 +239,8 @@ func (f *Server) answer(req *hs.Frame, clientSeed *[]byte) []*hs.Frame {
 		if !ok {
 			ccsid = 1208
 		}
-		return []*hs.Frame{rep(req, repOpen, 8, (&hs.Builder{}).U16(0).U32(f.next).U16(ccsid).Bytes())}
+		// Open reply as the host sends it: handle at 22, an 8-byte file id at 26, the data CCSID at 34.
+		return []*hs.Frame{rep(req, repOpen, 16, (&hs.Builder{}).U16(0).U32(f.next).U64(0x0102030405060708).U16(ccsid).U16(1).Bytes())}
 	case reqRead:
 		name := f.Handles[b.U32(22)]
 		off, n := int(b.U64(50)), int(b.U32(34))
