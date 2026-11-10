@@ -1,6 +1,7 @@
 // Package rmtcmdtest is an in-memory remote command server for tests: it signs the
 // user on, answers the attribute exchange, and runs commands through a handler the
-// test provides, encoding the messages the way the client expects them.
+// test provides, encoding the messages the way the host does at each datastream level
+// (JTOpen RemoteCommandImplRemote.parseMessages is the reference for the layouts).
 package rmtcmdtest
 
 import (
@@ -8,6 +9,7 @@ import (
 	"encoding/binary"
 	"net"
 	"sync"
+	"unicode/utf16"
 
 	hs "github.com/DerKyberTakt/tn5250-desktop/internal/hostserver"
 )
@@ -33,13 +35,16 @@ type Server struct {
 	password string
 	level    byte
 	Handler  Handler
-	// WithHelp encodes messages as CP 0x1106 (with a help-text length); else CP 0x1102.
-	WithHelp bool
-	// Garble makes the message layout unknown (an extra byte), to test the fallback.
+	// DSL is the datastream level the server announces (11 = a current IBM i; 10 and 7
+	// select the older command and message layouts).
+	DSL uint16
+	// Garble makes the fixed message layout not add up (an extra byte), to test the fallback.
 	Garble bool
 
 	mu       sync.Mutex
 	Commands []string
+	// Options are the message option bytes seen, one per run request.
+	Options []byte
 }
 
 var seed = []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF}
@@ -50,7 +55,7 @@ func New(addr, user, password string, level byte, h Handler) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{l: l, user: user, password: password, level: level, Handler: h, WithHelp: true}
+	s := &Server{l: l, user: user, password: password, level: level, Handler: h, DSL: 11}
 	go s.serve()
 	return s, nil
 }
@@ -111,24 +116,68 @@ func ebcdic(s string, n int) []byte {
 	return b[:n]
 }
 
-// EncodeMessage builds one message parameter the way the host sends it.
-func EncodeMessage(m Message, withHelp, garble bool) []byte {
-	text, _ := hs.EBCDIC(m.Text)
-	help, _ := hs.EBCDIC(m.Help)
+func digits(t uint16) []byte { return ebcdic(string(rune('0'+t/10))+string(rune('0'+t%10)), 2) }
+
+func lstr(b *hs.Builder, s string) {
+	e, _ := hs.EBCDIC(s)
+	b.U32(uint32(len(e))).Raw(e)
+}
+
+func lu32(b *hs.Builder, v uint32) { b.U32(4).U32(v) }
+
+// EncodeMessage builds one message parameter's data (after LL/CP) in the layout of cp.
+func EncodeMessage(m Message, cp uint16, garble bool) []byte {
 	b := &hs.Builder{}
-	b.Raw(ebcdic(m.ID, 7)).U16(m.Type).U16(m.Severity).Raw(ebcdic(m.File, 10)).Raw(ebcdic(m.Library, 10))
-	b.U16(0).U16(uint16(len(text)))
-	if withHelp {
-		b.U16(uint16(len(help)))
-	}
-	b.Raw(text)
-	if withHelp {
-		b.Raw(help)
-	}
-	if garble {
-		b.U8(0)
+	switch cp {
+	case 0x1107:
+		lu32(b, uint32(m.Severity))
+		lstr(b, m.ID)
+		b.U32(2).Raw(digits(m.Type))
+		b.U32(4).Raw([]byte{0, 0, 0, 1}) // message key
+		lstr(b, m.File)
+		lstr(b, "*LIBL")
+		lstr(b, m.Library)
+		for _, filler := range []string{"", "", "", "QCMD", "", "1120260109", "123456", "QZRCSRVS", "", "*PGM", "*PGM"} {
+			lstr(b, filler)
+		}
+		lu32(b, 0)
+		lu32(b, 0)
+		lstr(b, "*NO")
+		lu32(b, 37)                            // CCSID of the text
+		lu32(b, 37)                            // CCSID of the replacement data
+		b.U32(3).Raw([]byte{0xC1, 0xC2, 0xC3}) // replacement data
+		lstr(b, m.Text)
+		lstr(b, m.Help)
+	case 0x1106:
+		b.U32(37).U32(37).U16(m.Severity)
+		b.U32(2).Raw(digits(m.Type))
+		lstr(b, m.ID)
+		lstr(b, m.File)
+		lstr(b, m.Library)
+		lstr(b, m.Text)
+		b.U32(3).Raw([]byte{0xC1, 0xC2, 0xC3})
+		lstr(b, m.Help)
+	default:
+		text, _ := hs.EBCDIC(m.Text)
+		b.Raw(ebcdic(m.ID, 7)).Raw(digits(m.Type)).U16(m.Severity).Raw(ebcdic(m.File, 10)).Raw(ebcdic(m.Library, 10))
+		b.U16(3).U16(uint16(len(text))).Raw([]byte{0xC1, 0xC2, 0xC3}).Raw(text)
+		if garble {
+			b.U8(0)
+		}
 	}
 	return b.Bytes()
+}
+
+// messageCP is the layout the host answers with for a message option byte.
+func messageCP(option byte) uint16 {
+	switch option {
+	case 5, 6:
+		return 0x1107
+	case 3, 4:
+		return 0x1106
+	default:
+		return 0x1102
+	}
 }
 
 func (s *Server) answer(req *hs.Frame, clientSeed *[]byte) *hs.Frame {
@@ -149,30 +198,38 @@ func (s *Server) answer(req *hs.Frame, clientSeed *[]byte) *hs.Frame {
 		}
 		return rep(req, 0xF002, 4, (&hs.Builder{}).U32(code).Bytes())
 	case 0x1001:
-		// rc, server CCSID 37, NLV, version, datastream level 10
-		body := (&hs.Builder{}).U16(0).U32(37).Raw(ebcdic("2924", 4)).U32(1).U16(10).Bytes()
+		// rc, server CCSID 37, NLV, version, datastream level
+		body := (&hs.Builder{}).U16(0).U32(37).Raw(ebcdic("2924", 4)).U32(1).U16(s.DSL).Bytes()
 		return rep(req, 0x8001, 16, body)
 	case 0x1002:
+		option := b.U8(20)
 		params, _ := b.Params(hs.HeaderLen + int(req.TemplateLen))
-		data, _ := hs.Find(params, 0x1104)
 		command := ""
-		if len(data) > 4 {
-			command = hs.FromEBCDIC(data[4:])
+		if data, ok := hs.Find(params, 0x1104); ok {
+			// The host takes only CCSID 1200 here; anything else is "invalid CCSID value".
+			if len(data) < 4 || binary.BigEndian.Uint32(data) != 1200 {
+				return rep(req, 0x8002, 2, (&hs.Builder{}).U16(0x0401).U16(0).Bytes())
+			}
+			u := make([]uint16, 0, len(data)/2)
+			for i := 4; i+1 < len(data); i += 2 {
+				u = append(u, binary.BigEndian.Uint16(data[i:]))
+			}
+			command = string(utf16.Decode(u))
+		} else if data, ok := hs.Find(params, 0x1101); ok {
+			command = hs.FromEBCDIC(data)
 		}
 		s.mu.Lock()
 		s.Commands = append(s.Commands, command)
+		s.Options = append(s.Options, option)
 		s.mu.Unlock()
 		code, msgs := uint16(0), []Message(nil)
 		if s.Handler != nil {
 			code, msgs = s.Handler(command)
 		}
-		out := (&hs.Builder{}).U16(code)
-		cp := uint16(0x1102)
-		if s.WithHelp {
-			cp = 0x1106
-		}
+		cp := messageCP(option)
+		out := (&hs.Builder{}).U16(code).U16(uint16(len(msgs)))
 		for _, m := range msgs {
-			out.Param(cp, EncodeMessage(m, s.WithHelp, s.Garble))
+			out.Param(cp, EncodeMessage(m, cp, s.Garble))
 		}
 		return rep(req, 0x8002, 2, out.Bytes())
 	}

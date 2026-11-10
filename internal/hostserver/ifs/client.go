@@ -367,10 +367,11 @@ func (cl *Client) open(p string, mode int, dataCCSID uint16) (uint32, uint16, er
 		return 0, 0, fmt.Errorf("%s %s: unexpected reply %04X", op, p, rep.ReqRepID)
 	}
 	r := hs.At(rep.Body)
-	// Open reply: file handle at 22, the file's data CCSID at 26 (JTOpen IFSOpenRep).
+	// Open reply (JTOpen IFSOpenRep): file handle u32 at 22, file id 8 bytes at 26, the
+	// file's data CCSID u16 at 34. (Reading the CCSID at 26 gave two bytes of the file id.)
 	var ccsid uint16
-	if len(rep.Body) >= 28-hs.HeaderLen { // offsets count from the frame start; Body starts after the header
-		ccsid = r.U16(26)
+	if len(rep.Body) >= 36-hs.HeaderLen { // offsets count from the frame start; Body starts after the header
+		ccsid = r.U16(34)
 	}
 	return r.U32(22), ccsid, nil
 }
@@ -443,11 +444,16 @@ func (cl *Client) download(p string, w io.Writer, progress func(done int64)) (ui
 	var done int64
 	readErr := func() error {
 		for {
-			rb := (&hs.Builder{}).U16(0).U32(h).U32(0).U32(uint32(done)).U32(chunk).U32(0)
-			tmpl := uint16(18)
+			// Read request (JTOpen IFSReadReq): handle at 22, base offset at 26, relative
+			// offset at 30, length at 34, pre-read length at 38 (template 22); from level
+			// 16 the offsets are the 64-bit ones at 42 and 50 and the 32-bit ones stay zero.
+			rb := (&hs.Builder{}).U16(0).U32(h).U32(0)
+			tmpl := uint16(22)
 			if cl.level >= 16 {
-				rb.U64(0).U64(uint64(done)) // 64-bit offset for files over 4 GB
+				rb.U32(0).U32(chunk).U32(0).U64(0).U64(uint64(done))
 				tmpl = 38
+			} else {
+				rb.U32(uint32(done)).U32(chunk).U32(0)
 			}
 			if err := cl.c.Send(&hs.Frame{TemplateLen: tmpl, ReqRepID: reqRead, Body: rb.Bytes()}); err != nil {
 				return err
