@@ -65,6 +65,19 @@
   border-radius: 3px;
 }
 
+/* Fallback notice: the database server is not reachable, statements run through CL. */
+.sql-notice {
+  padding: 5px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 18%, var(--vscode-editor-background));
+  border-bottom: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 50%, transparent);
+}
+
+.sql-notice[hidden] {
+  display: none;
+}
+
 .sql-editor {
   flex: 0 0 38%;
   min-height: 80px;

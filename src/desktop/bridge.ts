@@ -56,6 +56,18 @@ export interface SqlMessage {
   text: string;
 }
 
+/** How a Run SQL Scripts session talks to the host (SqlInfo). */
+export interface SqlConnInfo {
+  /** 'database' = the database host server; 'cl' = the RUNSQL/CPYTOIMPF fallback. */
+  transport: 'database' | 'cl';
+  /** Why the fallback is in use. */
+  reason?: string;
+  release?: string;
+  job?: string;
+  ccsid?: number;
+  warnings?: SqlMessage[];
+}
+
 export interface SqlResult {
   kind: 'rows' | 'count' | 'none' | 'error';
   columns?: SqlColumn[];
@@ -166,6 +178,7 @@ interface GoApp {
   UpdateCheck(): Promise<UpdateInfo>;
   UpdateInstall(tag: string): Promise<void>;
   SqlConnect(request: SqlConnectRequest): Promise<string>;
+  SqlInfo(id: string): Promise<SqlConnInfo>;
   SqlClose(id: string): Promise<void>;
   SqlRun(id: string, statement: string, maxRows: number): Promise<SqlResult>;
   SqlFetch(id: string, cursor: string, maxRows: number): Promise<SqlResult>;
