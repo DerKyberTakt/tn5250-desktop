@@ -76,7 +76,7 @@ func TestMaterialise(t *testing.T) {
 
 func TestExportDropMetadata(t *testing.T) {
 	cmd := Export("TN5250Q1", "/tmp/tn5250-jsmith-1.csv", true)
-	for _, part := range []string{"CPYTOIMPF FROMFILE(QTEMP/TN5250Q1)", "TOSTMF('/tmp/tn5250-jsmith-1.csv')", "STMFCODPAG(*UTF8)", "RCDDLM(*LF)", "DTAFMT(*DLM)", `STRDLM('"')`, "FLDDLM(',')", "DECPNT(*PERIOD)", "ADDCOLNAM(*SQL)"} {
+	for _, part := range []string{"CPYTOIMPF FROMFILE(QTEMP/TN5250Q1)", "TOSTMF('/tmp/tn5250-jsmith-1.csv')", "STMFCCSID(1208)", "RCDDLM(*LF)", "DTAFMT(*DLM)", `STRDLM('"')`, "FLDDLM(',')", "DECPNT(*PERIOD)", "ADDCOLNAM(*SQL)"} {
 		if !strings.Contains(cmd, part) {
 			t.Errorf("export lacks %s: %s", part, cmd)
 		}
