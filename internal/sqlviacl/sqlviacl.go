@@ -132,11 +132,13 @@ func Materialise(stmt, table string, maxRows int, o Options) (string, error) {
 	return "RUNSQL SQL(" + Quote(sql) + ")" + o.runsqlTail(), nil
 }
 
-// Export is the CPYTOIMPF that writes a QTEMP table as UTF-8 CSV with a header row.
+// Export is the CPYTOIMPF that writes a QTEMP table as UTF-8 CSV with a header row
+// (STMFCCSID(1208): the code-page parameter takes only numbers and the *STMF/*PCASCII/
+// *STDASCII specials, so STMFCODPAG(*UTF8) failed with CPD0076 on a real host).
 // Without the header (hosts before 7.2 do not know ADDCOLNAM), the names come from
 // the metadata query.
 func Export(table, stmf string, header bool) string {
-	cmd := "CPYTOIMPF FROMFILE(QTEMP/" + table + ") TOSTMF(" + Quote(stmf) + ") MBROPT(*REPLACE) STMFCODPAG(*UTF8) RCDDLM(*LF) DTAFMT(*DLM) STRDLM('\"') FLDDLM(',') DECPNT(*PERIOD) RMVBLANK(*TRAILING)"
+	cmd := "CPYTOIMPF FROMFILE(QTEMP/" + table + ") TOSTMF(" + Quote(stmf) + ") MBROPT(*REPLACE) STMFCCSID(1208) RCDDLM(*LF) DTAFMT(*DLM) STRDLM('\"') FLDDLM(',') DECPNT(*PERIOD) RMVBLANK(*TRAILING)"
 	if header {
 		cmd += " ADDCOLNAM(*SQL)"
 	}
