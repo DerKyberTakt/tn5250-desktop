@@ -34,7 +34,16 @@ export class SqlTab {
   private readonly grid: HTMLDivElement;
   private readonly messages: HTMLUListElement;
   private readonly statusEl: HTMLSpanElement;
+  /** Right side of the foot: the server job and the transport. */
+  private readonly jobEl: HTMLSpanElement;
+  /** Under the grid: what the last statement did ("Loaded 50 rows in 368 ms. End of data."). */
+  private readonly resultStatus: HTMLDivElement;
   private readonly connEl: HTMLSpanElement;
+  /** Milliseconds spent in "Fetch more" for the result on show. */
+  private fetchMs = 0;
+  private runStart = 0;
+  private runLabel = '';
+  private ticker: ReturnType<typeof setInterval> | undefined;
   private readonly naming: HTMLSelectElement;
   private readonly buttons: Record<string, HTMLButtonElement> = {};
   private readonly panes: Record<'results' | 'messages', { button: HTMLButtonElement; pane: HTMLElement }>;
@@ -65,9 +74,10 @@ export class SqlTab {
       btn('runSel', '▶ Run', 'Run the selected statements, or the one at the cursor (Ctrl+R)', () => void this.runSelected(), true),
       btn('runAll', 'Run All', 'Run every statement (Ctrl+Shift+R)', () => void this.runAll()),
       btn('runFrom', 'Run From Cursor', 'Run from the statement at the cursor to the end (Ctrl+Alt+R)', () => void this.runFromCursor()),
-      btn('stop', 'Stop', 'Stop after the current statement', () => {
+      btn('stop', 'Stop', 'Cancel the current statement and stop', () => {
         this.stopRequested = true;
         void goApp().SqlCancel(this.connection);
+        if (this.busy) this.tick();
       }),
     );
     const file = el('div', 'group');
@@ -106,7 +116,11 @@ export class SqlTab {
 
     const bottom = el('div', 'sql-bottom');
     const tabs = el('div', 'sql-tabs');
-    this.grid = el('div', 'sql-pane');
+    const resultsPane = el('div', 'sql-pane sql-results');
+    this.grid = el('div', 'sql-grid-wrap');
+    this.resultStatus = el('div', 'sql-results-status', 'No statement has run yet.');
+    this.resultStatus.setAttribute('role', 'status');
+    resultsPane.append(this.grid, this.resultStatus);
     this.messages = el('ul', 'sql-messages');
     const messagesPane = el('div', 'sql-pane');
     messagesPane.append(this.messages);
@@ -118,16 +132,18 @@ export class SqlTab {
       return b;
     };
     this.panes = {
-      results: { button: tab('Results'), pane: this.grid },
+      results: { button: tab('Results'), pane: resultsPane },
       messages: { button: tab('Messages'), pane: messagesPane },
     };
     for (const key of ['results', 'messages'] as const) this.panes[key].button.addEventListener('click', () => this.showPane(key));
-    bottom.append(tabs, this.grid, messagesPane);
+    bottom.append(tabs, resultsPane, messagesPane);
     this.showPane('messages');
 
     const foot = el('div', 'sql-foot');
     this.statusEl = el('span', undefined, 'Ready');
-    foot.append(this.statusEl);
+    this.jobEl = el('span', 'sql-job');
+    this.jobEl.title = 'The server job this session runs in';
+    foot.append(this.statusEl, this.jobEl);
 
     this.frame.append(top, this.notice, this.editor, split, bottom, foot);
     this.updateButtons();
@@ -169,6 +185,7 @@ export class SqlTab {
       this.connEl.textContent = `${this.request.user.toUpperCase()}@${this.request.host} · ${this.naming.value === 'sys' ? 'system' : 'SQL'} naming`;
       this.host.log(`[SQL ${this.request.host}] signed on as ${this.request.user.toUpperCase()}`);
       await this.showTransport();
+      this.statusEl.textContent = 'Ready';
       this.onSignon?.();
       return true;
     } catch (err) {
@@ -195,6 +212,7 @@ export class SqlTab {
       this.notice.textContent = '';
       const job = info.job ? ` · job ${info.job}` : '';
       this.connEl.textContent += ` · database server${info.release ? ` ${info.release}` : ''}`;
+      this.jobEl.textContent = `${info.job ? `${info.job} · ` : ''}database server${info.release ? ` ${info.release}` : ''}`;
       this.host.log(`[SQL ${this.request.host}] database host server${info.release ? ` ${info.release}` : ''}${job}`);
       for (const w of info.warnings ?? []) this.addMessage('ok', `${w.id ? `${w.id}: ` : ''}${w.text}`);
       return;
@@ -203,6 +221,7 @@ export class SqlTab {
     this.notice.textContent = `The database host server could not be reached${why}. Running on the CL fallback: statements go through RUNSQL and CPYTOIMPF, so they are slower and column types are not available. Start it on the host with STRHOSTSVR SERVER(*DATABASE).`;
     this.notice.hidden = false;
     this.connEl.textContent += ' · CL fallback';
+    this.jobEl.textContent = 'CL fallback';
     this.host.log(`[SQL ${this.request.host}] database host server unavailable${why}; using the CL fallback`);
     this.addMessage('error', `Database host server unavailable${why}. Using the CL fallback (slower, untyped columns).`);
   }
@@ -211,6 +230,7 @@ export class SqlTab {
     if (this.connection) {
       void goApp().SqlClose(this.connection);
       this.connection = '';
+      this.jobEl.textContent = '';
     }
     await this.connect();
   }
@@ -250,7 +270,7 @@ export class SqlTab {
           this.addMessage('ok', `Stopped before statement ${i + 1} of ${list.length}.`);
           break;
         }
-        this.statusEl.textContent = `Running ${i + 1} of ${list.length}: ${statementLabel(s)}`;
+        this.beginStatement(i + 1, list.length, s);
         let r: SqlResult;
         try {
           r =
@@ -261,28 +281,70 @@ export class SqlTab {
                 : await goApp().SqlRun(this.connection, s.text, FETCH_ROWS);
         } catch (err) {
           const why = explainToolError(s.kind === 'cl' ? 'CL' : s.kind === 'qsh' ? 'QSH' : 'SQL', this.request.host, errorText(err));
+          this.endStatement();
+          this.showOutcome(undefined, `${why.message}${why.hint ? ` ${why.hint}` : ''}`);
           this.addMessage('error', `[line ${s.line}] ${statementLabel(s)}\n${why.message}${why.hint ? `\n${why.hint}` : ''}`);
           this.showPane('messages');
           if (!(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue'))) break;
           continue;
         }
+        this.endStatement();
         this.report(s, r);
+        this.showOutcome(r);
         if (r.kind === 'error') {
           this.showPane('messages');
           if (i < list.length - 1 && !(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue'))) break;
           continue;
         }
         ok++;
-        if (r.kind === 'rows') {
-          this.result = r;
-          this.renderGrid();
-          this.showPane('results');
-        }
+        if (r.kind === 'rows') this.showPane('results');
       }
     } finally {
+      this.endStatement();
       this.setBusy(false);
       this.statusEl.textContent = `${ok} of ${list.length} statement${list.length === 1 ? '' : 's'} ran`;
     }
+  }
+
+  /** A statement is on its way: the old grid is visibly stale and the foot counts the seconds. */
+  private beginStatement(n: number, total: number, s: Statement): void {
+    this.grid.classList.add('stale');
+    this.resultStatus.textContent = 'Running…';
+    this.runLabel = `${n} of ${total}: ${statementLabel(s)}`;
+    this.runStart = Date.now();
+    this.tick();
+    if (this.ticker === undefined) this.ticker = setInterval(() => this.tick(), 1000);
+  }
+
+  private tick(): void {
+    const secs = Math.floor((Date.now() - this.runStart) / 1000);
+    const t = secs >= 2 ? ` (${secs} s)` : '';
+    this.statusEl.textContent = `${this.stopRequested ? 'Stopping after' : 'Running'} ${this.runLabel}${t}`;
+    if (secs >= 2) this.resultStatus.textContent = `Running… ${secs} s`;
+  }
+
+  private endStatement(): void {
+    if (this.ticker !== undefined) {
+      clearInterval(this.ticker);
+      this.ticker = undefined;
+    }
+  }
+
+  /**
+   * The Results pane always shows the last statement: rows become the grid, anything
+   * else clears it and the status line carries the outcome (as Db2 for i and ACS do).
+   */
+  private showOutcome(r: SqlResult | undefined, failure?: string): void {
+    this.grid.classList.remove('stale');
+    if (r?.kind === 'rows') {
+      this.result = r;
+      this.fetchMs = 0;
+      this.renderGrid();
+      return;
+    }
+    this.result = undefined;
+    this.grid.replaceChildren();
+    this.resultStatus.textContent = failure ? `Failed: ${failure}` : r ? outcomeText(r, 0) : '';
   }
 
   private report(s: Statement, r: SqlResult): void {
@@ -294,9 +356,9 @@ export class SqlTab {
       return;
     }
     const extra = r.messages.filter((m) => m.text).map((m) => `\n${m.id}: ${m.text}`).join('');
-    if (r.kind === 'rows') this.addMessage('ok', `${where}\n${r.rows?.length ?? 0}${r.more ? '+' : ''} row(s) · ${ms}${extra}`);
-    else if (r.kind === 'count') this.addMessage('ok', `${where}\n${r.updateCount} row(s) affected · ${ms}${extra}`);
-    else this.addMessage('ok', `${where}\nOK · ${ms}${extra}`);
+    if (r.kind === 'rows') this.addMessage('ok', `${where}\nLoaded ${plural(r.rows?.length ?? 0, 'row')} in ${ms}${r.more ? ' (more available)' : ''}${extra}`);
+    else if (r.kind === 'count') this.addMessage('ok', `${where}\n${plural(r.updateCount, 'row')} affected in ${ms}${extra}`);
+    else this.addMessage('ok', `${where}\nOK in ${ms}${extra}`);
   }
 
   private async fetchMore(): Promise<void> {
@@ -308,12 +370,14 @@ export class SqlTab {
       r.rows = [...(r.rows ?? []), ...(next.rows ?? [])];
       r.more = next.more;
       r.cursor = next.cursor;
+      this.fetchMs += next.elapsedMs;
       this.renderGrid();
     } catch (err) {
       this.addMessage('error', `Fetch failed: ${errorText(err)}`);
       this.showPane('messages');
     } finally {
       this.setBusy(false);
+      this.statusEl.textContent = 'Ready';
     }
   }
 
@@ -360,6 +424,7 @@ export class SqlTab {
     csv.addEventListener('click', () => void goApp().SaveTextFile('Save result', 'result.csv', this.resultAsText(','), [{ name: 'CSV', patterns: '*.csv' }]));
     tools.append(copy, ' ', csv);
     this.grid.append(tools);
+    this.resultStatus.textContent = outcomeText(r, this.fetchMs);
   }
 
   private resultAsText(sep: string): string {
@@ -472,6 +537,33 @@ export class SqlTab {
       this.title = next;
       this.host.changed(this);
     }
+  }
+}
+
+const fmt = (n: number): string => n.toLocaleString('en-US');
+
+function plural(n: number, word: string): string {
+  return `${fmt(n)} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/** The one-line outcome of a result, the way Db2 for i words it. */
+export function outcomeText(r: SqlResult, fetchMs: number): string {
+  const ms = `${fmt(r.elapsedMs)} ms`;
+  switch (r.kind) {
+    case 'rows': {
+      const n = r.rows?.length ?? 0;
+      if (r.columns?.length === 1 && r.columns[0]!.name.toUpperCase() === 'OUTPUT') return `Output: ${plural(n, 'line')} in ${ms}.`;
+      const fetched = fetchMs ? ` + ${fmt(fetchMs)} ms` : '';
+      return `Loaded ${plural(n, 'row')} in ${ms}${fetched}. ${r.more ? 'More rows available.' : 'End of data.'}`;
+    }
+    case 'count':
+      return `${plural(r.updateCount, 'row')} affected in ${ms}.`;
+    case 'error': {
+      const m = r.messages[0];
+      return m ? `${m.id}${m.code ? ` (SQLCODE ${m.code})` : ''}: ${m.text} · ${ms}` : `Failed after ${ms}.`;
+    }
+    default:
+      return `Statement ran in ${ms}.`;
   }
 }
 

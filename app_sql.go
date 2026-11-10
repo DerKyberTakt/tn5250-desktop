@@ -210,11 +210,21 @@ func (a *App) SqlInfo(id string) (SqlConnInfo, error) {
 		return SqlConnInfo{Transport: "cl", Reason: s.fallback}, nil
 	}
 	at := s.db.Attributes()
-	info := SqlConnInfo{Transport: "database", Release: at.Release, Job: strings.Join(strings.Fields(at.JobID), "/"), CCSID: int(at.CCSID)}
+	info := SqlConnInfo{Transport: "database", Release: at.Release, Job: qualifiedJob(at.JobID), CCSID: int(at.CCSID)}
 	for _, w := range s.db.Warnings {
 		info.Warnings = append(info.Warnings, dbMessage(w))
 	}
 	return info, nil
+}
+
+// qualifiedJob turns the server's 26-character job id (name, user, number) into
+// IBM's qualified form number/user/name, the one WRKJOB and the SQL services show.
+func qualifiedJob(id string) string {
+	f := strings.Fields(id)
+	if len(f) != 3 {
+		return strings.Join(f, "/")
+	}
+	return f[2] + "/" + f[1] + "/" + f[0]
 }
 
 // SqlCancel stops the running statement: on the database server with a CANCEL from a
