@@ -1,3 +1,4 @@
+import type { PasteSettings } from '../shared/screenText';
 import { CodePage } from './codepage';
 import { DataStreamProcessor } from './datastream';
 import {
@@ -31,7 +32,7 @@ export interface SessionOptions {
 /** Most keys kept while the keyboard is locked; ACS keeps a similar small buffer. */
 export const TYPE_AHEAD_LIMIT = 256;
 
-type QueuedKey = { kind: 'press'; action: KeyAction } | { kind: 'type'; text: string };
+type QueuedKey = { kind: 'press'; action: KeyAction } | { kind: 'type'; text: string } | { kind: 'paste'; text: string; options: PasteSettings };
 
 /** Keys that act immediately even while the keyboard is locked. */
 const IMMEDIATE_ACTIONS = new Set<KeyAction>(['reset', 'attn', 'sysreq', 'testRequest', 'printScreen']);
@@ -166,6 +167,13 @@ export class Session5250 {
     this.notify();
   }
 
+  /** Pastes a block of text at the cursor (see Keyboard.paste). */
+  paste(text: string, options: PasteSettings): void {
+    if (this.enqueue({ kind: 'paste', text, options })) return;
+    this.keyboard.paste(text, options);
+    this.notify();
+  }
+
   private notify(): void {
     if (!this.quiet) this.events.update?.();
   }
@@ -193,7 +201,8 @@ export class Session5250 {
     while (this.queue.length > 0 && this.state.inputInhibited === 'none') {
       const key = this.queue.shift()!;
       if (key.kind === 'press') this.keyboard.press(key.action);
-      else this.keyboard.type(key.text);
+      else if (key.kind === 'type') this.keyboard.type(key.text);
+      else this.keyboard.paste(key.text, key.options);
     }
     if (this.state.inputInhibited === 'error') this.queue = [];
   }

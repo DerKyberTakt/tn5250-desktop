@@ -143,6 +143,16 @@ export class MacroRecorder {
     else this.steps.push({ type: 'text', text });
   }
 
+  /** A paste: its lines as typed text, a New Line between them (the nearest a macro step comes to the block paste). */
+  paste(text: string): void {
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+    lines.forEach((line, i) => {
+      if (i > 0) this.key('newline');
+      this.text(line);
+    });
+  }
+
   key(action: KeyAction): void {
     if (LOCAL_ACTIONS.has(action)) return;
     this.lastInputAt = this.now();

@@ -1,3 +1,4 @@
+import type { PasteSettings } from './screenText';
 import type { KeyAction } from './keymap';
 import type { TerminalSettings } from './settings';
 
@@ -166,6 +167,8 @@ export type WebviewToHost =
   | { type: 'macro'; key: string }
   | { type: 'action'; action: KeyAction }
   | { type: 'text'; text: string }
+  /** Clipboard text to paste as a block at the cursor (see Keyboard.paste), with the Paste settings. */
+  | { type: 'pasteText'; text: string; options: PasteSettings }
   | { type: 'click'; row: number; col: number }
   /** Pointer use of a host scroll bar: forward = toward the end (Roll Up / Roll Right); increment rows or columns (1 = arrow, 0 = a page). */
   | { type: 'scroll'; addr: number; forward: boolean; increment: number }

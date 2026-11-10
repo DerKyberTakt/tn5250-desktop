@@ -277,6 +277,9 @@ class Broker {
       case 'text':
         c.type(m.text);
         break;
+      case 'pasteText':
+        c.paste(m.text, m.options);
+        break;
       case 'click':
         c.setCursor(m.row, m.col);
         break;

@@ -12,6 +12,7 @@ interface Stop {
   sel?: GuiSelection;
 }
 import type { KeyAction } from '../shared/keymap';
+import { expandTabs, type PasteSettings } from '../shared/screenText';
 
 /** Attention identifiers sent with a read response. */
 export const AID: Partial<Record<KeyAction, number>> = {
@@ -126,6 +127,80 @@ export class Keyboard {
   /** Types characters as if pressed one by one. */
   type(text: string): void {
     for (const ch of text) this.typeChar(ch);
+  }
+
+  /**
+   * Pastes text as a block, the way ACS and Host On-Demand do: the first line at the
+   * cursor, each following line one row down at the column the paste started in (never
+   * Field Exit between lines: on a screen with one entry field, a command line or STRSQL,
+   * that would wipe each line with the next). A line that reaches the end of its field
+   * continues in the next field (Field Wrap) or is cut there. A row whose paste column is
+   * protected ends the paste (Stop at protected line) or is skipped. A trailing line break
+   * pastes nothing. The keyboard is left usable: an operator error the paste raised is
+   * cleared.
+   */
+  paste(text: string, opt: PasteSettings): void {
+    if (this.state.inputInhibited !== 'none' || !text) return;
+    const s = this.screen;
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+    const start = s.cursor;
+    const col = s.colOf(start);
+    let row = s.rowOf(start);
+    for (let i = 0; i < lines.length; i++) {
+      if (i > 0) {
+        row = this.pasteRow(row + 1, col, opt.stopAtProtected);
+        if (row < 0) break;
+        this.leaveSelection();
+        s.cursor = s.addr(row, col);
+        this.state.cursorPastEnd = false;
+        this.state.autoAdvanced = false;
+      }
+      if (!this.pasteLine(lines[i]!, opt)) break;
+    }
+    this.clearError();
+    if (!opt.moveCursorToEnd) {
+      this.state.cursorPastEnd = false;
+      this.state.autoAdvanced = false;
+      s.cursor = start;
+    }
+  }
+
+  /** The first row at or below `from` whose cell in column `col` takes input; -1 when there is none, or `stop` and row `from` itself does not. */
+  private pasteRow(from: number, col: number, stop: boolean): number {
+    const s = this.screen;
+    for (let row = from; row < s.rows; row++) {
+      const addr = s.addr(row, col);
+      const f = s.fieldAt(addr);
+      if (f && !f.bypass && s.cursorAllowed(addr)) return row;
+      if (stop) return -1;
+    }
+    return -1;
+  }
+
+  /** Types one pasted line; false when an operator error stopped it (the rest of the paste is dropped, as typing would be). */
+  private pasteLine(line: string, opt: PasteSettings): boolean {
+    for (const part of expandTabs(line, opt)) {
+      if ('action' in part) {
+        this.press('tab');
+        if (this.state.inputInhibited !== 'none') return false;
+        continue;
+      }
+      for (const ch of part.text) {
+        // The previous character filled the field: Field Wrap carries on in the next field
+        // (the cursor is already there, or a Field Exit takes it there), otherwise the rest
+        // of the line is cut.
+        if (this.state.cursorPastEnd) {
+          if (!opt.fieldWrap) return true;
+          this.press('fieldExit');
+        } else if (this.state.autoAdvanced && !opt.fieldWrap) {
+          return true;
+        }
+        this.typeChar(ch);
+        if (this.state.inputInhibited !== 'none') return false;
+      }
+    }
+    return true;
   }
 
   /** Leaves the operator error state (X II), as Reset does, without touching insert mode. */

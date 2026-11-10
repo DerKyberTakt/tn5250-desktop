@@ -57,7 +57,7 @@ export interface RegistryEntry {
 }
 
 /** The iframe messages a window forwards to the session; the rest it handles itself. */
-const SESSION_INPUTS = new Set<WebviewToHost['type']>(['ready', 'action', 'text', 'click', 'scroll', 'mouse', 'reconnect', 'cancelReconnect']);
+const SESSION_INPUTS = new Set<WebviewToHost['type']>(['ready', 'action', 'text', 'pasteText', 'click', 'scroll', 'mouse', 'reconnect', 'cancelReconnect']);
 
 export function isSessionInput(msg: WebviewToHost): boolean {
   return SESSION_INPUTS.has(msg.type);

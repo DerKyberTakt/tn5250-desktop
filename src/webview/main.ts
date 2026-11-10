@@ -1,7 +1,7 @@
 import type { ConnectionStatus, HostToWebview, OiaState, TerminalConfig, WebviewToHost } from '../shared/protocol';
 import { DEFAULT_OIA } from '../shared/protocol';
 import { classifyKey, keyName, type Keymap } from '../shared/keymap';
-import { doubleClickRange, expandTabs, fieldRanges, hotspotAt, urlAt } from '../shared/screenText';
+import { doubleClickRange, fieldRanges, hotspotAt, urlAt } from '../shared/screenText';
 import { SETTINGS_DEFAULTS, effectiveKeymap } from '../shared/settings';
 import { isBareModifier, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
 import { ConnectionOverlay } from './connectionOverlay';
@@ -605,21 +605,22 @@ function copySelection(): void {
   if (!config.settings.copyKeepSelection) renderer.clearSelection();
 }
 
-/** Types clipboard text into the screen, line by line, honouring the paste settings. */
+/** Hands clipboard text to the engine, which pastes it as a block at the cursor with the paste settings. */
 function pasteText(text: string): void {
   if (!text) return;
   const st = config.settings;
-  const start = renderer.cursor;
-  const lines = text.replace(/\r\n?/g, '\n').split('\n');
-  lines.forEach((line, i) => {
-    for (const part of expandTabs(line, { tabMode: st.pasteTabMode, tabSpaces: st.pasteTabSpaces, tabColumns: st.pasteTabColumns })) {
-      if ('text' in part) post({ type: 'text', text: part.text });
-      else post({ type: 'action', action: 'tab' });
-    }
-    if (i < lines.length - 1) post({ type: 'action', action: st.pasteFieldWrap ? 'fieldExit' : 'newline' });
+  post({
+    type: 'pasteText',
+    text,
+    options: {
+      fieldWrap: st.pasteFieldWrap,
+      stopAtProtected: st.pasteStopAtProtected,
+      moveCursorToEnd: st.pasteMoveCursorToEnd,
+      tabMode: st.pasteTabMode,
+      tabSpaces: st.pasteTabSpaces,
+      tabColumns: st.pasteTabColumns,
+    },
   });
-  if (st.pasteStopAtProtected) post({ type: 'action', action: 'reset' });
-  if (!st.pasteMoveCursorToEnd && start) post({ type: 'click', row: start.row, col: start.col });
 }
 
 // Paste from a context menu or the host's Edit > Paste.
