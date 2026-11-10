@@ -7,7 +7,7 @@
  * and user themes flow through. CodeMirror injects its own style sheets; the page's
  * CSP allows them through EDITOR_STYLE_NONCE (static/index.html).
  */
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
+import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { HighlightStyle, bracketMatching, indentUnit, syntaxHighlighting, syntaxTree } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
@@ -164,7 +164,8 @@ export function sqlEditorExtensions(): Extension[] {
     autocompletion(),
     EditorState.tabSize.of(4),
     indentUnit.of('    '),
-    keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap, indentWithTab]),
+    // Tab takes the completion on offer (as VS Code does); with none open it indents.
+    keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap, { key: 'Tab', run: acceptCompletion }, indentWithTab]),
     EditorView.cspNonce.of(EDITOR_STYLE_NONCE),
   ];
 }
