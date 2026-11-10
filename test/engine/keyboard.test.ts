@@ -508,3 +508,94 @@ describe('command attention keys send no field data', () => {
     expect(h.sent[0]!.data).toBe('0203' + '33' + '110202' + e('1'));
   });
 });
+
+describe('Paste', () => {
+  /** Like TWO_FIELDS, with the second field on row 4: row 3 is protected. */
+  const GAP_FIELDS = '04110008' + '110201' + '1d4000200005' + '110401' + '1d4300200006' + '130202' + '0452' + '0000';
+  const PASTE = { fieldWrap: true, stopAtProtected: true, moveCursorToEnd: true, tabMode: 'spaces' as const, tabSpaces: 1, tabColumns: 4 };
+
+  it('puts each line one row down at the column the paste started in', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(1, 1);
+    h.session.paste('abc\r\n12', PASTE);
+    expect(text(h, 0)).toBe('abc  ');
+    expect(text(h, 1)).toBe('12    ');
+    expect(h.screen.cursor).toBe(h.screen.addr(2, 3));
+    expect(h.state.inputInhibited).toBe('none');
+  });
+
+  it('keeps the first line when the screen has one entry field below the cursor (command line, STRSQL)', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(2, 1);
+    h.session.paste('12\n34\n56', PASTE);
+    expect(text(h, 1)).toBe('12    ');
+    expect(text(h, 0)).toBe('     ');
+    expect(h.state.inputInhibited).toBe('none');
+  });
+
+  it('skips a protected row when Stop at protected line is off, stops on it when on', () => {
+    const on = harness();
+    on.host(GAP_FIELDS);
+    on.session.setCursor(1, 1);
+    on.session.paste('abc\n12', PASTE);
+    expect(text(on, 0)).toBe('abc  ');
+    expect(text(on, 1)).toBe('      ');
+    const off = harness();
+    off.host(GAP_FIELDS);
+    off.session.setCursor(1, 1);
+    off.session.paste('abc\n12', { ...PASTE, stopAtProtected: false });
+    expect(text(off, 0)).toBe('abc  ');
+    expect(text(off, 1)).toBe('12    ');
+  });
+
+  it('Field Wrap carries a long line into the next field; off cuts it', () => {
+    const wrap = harness();
+    wrap.host(TWO_FIELDS);
+    wrap.session.setCursor(1, 1);
+    wrap.session.paste('abcde123', PASTE);
+    expect(text(wrap, 0)).toBe('abcde');
+    expect(text(wrap, 1)).toBe('123   ');
+    const cut = harness();
+    cut.host(TWO_FIELDS);
+    cut.session.setCursor(1, 1);
+    cut.session.paste('abcde123', { ...PASTE, fieldWrap: false });
+    expect(text(cut, 0)).toBe('abcde');
+    expect(text(cut, 1)).toBe('      ');
+    expect(cut.state.inputInhibited).toBe('none');
+  });
+
+  it('returns the cursor to the start when Move cursor to end is off', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(1, 1);
+    h.session.paste('ab\n12', { ...PASTE, moveCursorToEnd: false });
+    expect(text(h, 1)).toBe('12    ');
+    expect(h.screen.cursor).toBe(h.screen.addr(1, 1));
+  });
+
+  it('ignores a trailing line break and clears an operator error it raised', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(2, 1);
+    h.session.paste('12\n', PASTE);
+    expect(text(h, 1)).toBe('12    ');
+    expect(h.screen.cursor).toBe(h.screen.addr(2, 3));
+    const e = harness();
+    e.host(TWO_FIELDS);
+    e.session.setCursor(2, 1);
+    e.session.paste('3x4', PASTE); // x is not valid in a numeric-only field: the paste ends there
+    expect(text(e, 1)).toBe('3     ');
+    expect(e.state.inputInhibited).toBe('none');
+  });
+
+  it('a tab moves to the next field when Tab characters = Paste data to fields', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(1, 1);
+    h.session.paste('ab\t12', { ...PASTE, tabMode: 'nextField' });
+    expect(text(h, 0)).toBe('ab   ');
+    expect(text(h, 1)).toBe('12    ');
+  });
+});

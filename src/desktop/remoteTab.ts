@@ -340,6 +340,7 @@ export class TerminalTab {
     if (isSessionInput(msg)) {
       if (this.recorder) {
         if (msg.type === 'text') this.recorder.text(msg.text);
+        else if (msg.type === 'pasteText') this.recorder.paste(msg.text);
         else if (msg.type === 'action') this.recorder.key(msg.action);
       }
       this.forward(msg);

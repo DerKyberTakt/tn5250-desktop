@@ -1,3 +1,4 @@
+import type { PasteSettings } from '../shared/screenText';
 import type { PcCommandRequest } from '../engine/pco';
 import type { Field } from '../engine/screen';
 import { Session5250 } from '../engine/session';
@@ -380,6 +381,13 @@ export class SessionController {
   type(text: string): void {
     if (!this.connected) return;
     this.session.type(text);
+    this.touch();
+  }
+
+  /** Pastes a block of text at the cursor with the paste settings (see Keyboard.paste). */
+  paste(text: string, options: PasteSettings): void {
+    if (!this.connected) return;
+    this.session.paste(text, options);
     this.touch();
   }
 

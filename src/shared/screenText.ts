@@ -194,6 +194,16 @@ export interface PasteOptions {
   tabColumns: number;
 }
 
+/** Everything the engine needs to paste a block of text (the Paste settings). */
+export interface PasteSettings extends PasteOptions {
+  /** A line that runs past the end of its field continues in the next field; off: the rest of the line is dropped. */
+  fieldWrap: boolean;
+  /** Stop when the next line's position is protected; off: skip to the next row where it is not. */
+  stopAtProtected: boolean;
+  /** Leave the cursor after the pasted text; off: put it back where the paste started. */
+  moveCursorToEnd: boolean;
+}
+
 /** Splits a pasted line into text runs and tab actions according to the paste options. */
 export function expandTabs(line: string, opt: PasteOptions): Array<{ text: string } | { action: 'tab' }> {
   const out: Array<{ text: string } | { action: 'tab' }> = [];
