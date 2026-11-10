@@ -12,17 +12,19 @@ import (
 	"time"
 
 	hs "github.com/DerKyberTakt/tn5250-desktop/internal/hostserver"
+	"github.com/DerKyberTakt/tn5250-desktop/internal/hostserver/db"
 	"github.com/DerKyberTakt/tn5250-desktop/internal/hostserver/ifs"
 	"github.com/DerKyberTakt/tn5250-desktop/internal/hostserver/rmtcmd"
 	"github.com/DerKyberTakt/tn5250-desktop/internal/sqlviacl"
 )
 
-// Run SQL Scripts and the Console, on two host servers every IBM i offers: the remote
-// command server runs CL (and SQL through RUNSQL), the file server brings query
-// results back as CSV stream files (internal/sqlviacl explains the mechanics and the
-// limits). The database host server client, which would give typed rows and update
-// counts directly, is still to be recorded; the page-facing model below stays the same
-// when it replaces this.
+// Run SQL Scripts and the Console. SQL goes to the database host server
+// (internal/hostserver/db: prepared statements, typed columns, blocks of rows, update
+// counts, one round trip each). When that server cannot be reached (not started, port
+// blocked) the session falls back to the remote command server: RUNSQL materialises
+// the query in QTEMP and CPYTOIMPF + the file server bring it back as CSV
+// (internal/sqlviacl explains the mechanics and the limits). CL commands always run on
+// the remote command server. SqlInfo tells the page which path a session uses.
 
 // SqlConnectRequest opens a connection for one Run SQL Scripts or Console tab.
 type SqlConnectRequest struct {
@@ -82,16 +84,21 @@ type sqlCache struct {
 }
 
 type sqlSession struct {
-	mu      sync.Mutex
-	cmd     *rmtcmd.Client
-	files   *ifs.Client // opened on first use, with the same sign-on
-	options hs.DialOptions
-	naming  sqlviacl.Options
-	user    string
-	seq     int
-	results map[string]*sqlCache
-	order   []string // cursors, oldest first (a few are kept)
-	cancel  atomic.Bool
+	mu  sync.Mutex
+	cmd *rmtcmd.Client
+	// db is the database server connection; nil when the session runs on the CL
+	// fallback, and fallback then says why.
+	db       *db.Client
+	dbRows   *db.Rows
+	fallback string
+	files    *ifs.Client // opened on first use, with the same sign-on
+	options  hs.DialOptions
+	naming   sqlviacl.Options
+	user     string
+	seq      int
+	results  map[string]*sqlCache
+	order    []string // cursors, oldest first (a few are kept)
+	cancel   atomic.Bool
 	// header is false once this host refused CPYTOIMPF ADDCOLNAM (releases before 7.2).
 	header bool
 }
@@ -118,7 +125,9 @@ func (a *App) sqlSession(id string) (*sqlSession, error) {
 	return s, nil
 }
 
-// SqlConnect signs on to the remote command server; it returns a connection id.
+// SqlConnect signs on to the remote command server (every session needs it for CL)
+// and then to the database server; when the latter fails the session stays usable on
+// the CL fallback. It returns a connection id.
 func (a *App) SqlConnect(r SqlConnectRequest) (string, error) {
 	o := hs.DialOptions{Host: r.Host, TLS: r.TLS, TrustAnyCertificate: r.TrustAnyCertificate, Timeout: time.Duration(r.TimeoutMs) * time.Millisecond, User: r.User, Password: r.Password}
 	c, err := rmtcmd.Open(o)
@@ -132,6 +141,11 @@ func (a *App) SqlConnect(r SqlConnectRequest) (string, error) {
 		user:    strings.ToUpper(strings.TrimSpace(r.User)),
 		results: map[string]*sqlCache{},
 		header:  true,
+	}
+	if d, err := db.Open(db.Options{DialOptions: o, Naming: r.Naming, DefaultSchema: r.DefaultSchema}); err != nil {
+		s.fallback = err.Error()
+	} else {
+		s.db = d
 	}
 	st := a.sql()
 	st.mu.Lock()
@@ -158,13 +172,56 @@ func (a *App) SqlClose(id string) {
 	if s.files != nil {
 		_ = s.files.Close()
 	}
+	if s.db != nil {
+		_ = s.db.Close()
+	}
 }
 
-// SqlCancel asks the running statement to stop between its steps. The host command
-// that is running at that moment finishes on the host; its result is discarded.
+// SqlConnInfo says how a session talks to the host.
+type SqlConnInfo struct {
+	// Transport is "database" (the database host server) or "cl" (the RUNSQL /
+	// CPYTOIMPF fallback over the remote command server).
+	Transport string `json:"transport"`
+	// Reason says why the fallback is in use (empty on the database server).
+	Reason string `json:"reason,omitempty"`
+	// Release ("V7R5M0"), Job (the server job, "name/user/number") and CCSID of the
+	// database server job; empty on the fallback.
+	Release  string       `json:"release,omitempty"`
+	Job      string       `json:"job,omitempty"`
+	CCSID    int          `json:"ccsid,omitempty"`
+	Warnings []SqlMessage `json:"warnings,omitempty"`
+}
+
+// SqlInfo reports the transport of a session.
+func (a *App) SqlInfo(id string) (SqlConnInfo, error) {
+	s, err := a.sqlSession(id)
+	if err != nil {
+		return SqlConnInfo{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return SqlConnInfo{Transport: "cl", Reason: s.fallback}, nil
+	}
+	at := s.db.Attributes()
+	info := SqlConnInfo{Transport: "database", Release: at.Release, Job: strings.Join(strings.Fields(at.JobID), "/"), CCSID: int(at.CCSID)}
+	for _, w := range s.db.Warnings {
+		info.Warnings = append(info.Warnings, dbMessage(w))
+	}
+	return info, nil
+}
+
+// SqlCancel stops the running statement: on the database server with a CANCEL from a
+// second connection (the statement ends with an SQL error); on the fallback between
+// its steps, the host command of the moment finishing on the host.
 func (a *App) SqlCancel(id string) {
-	if s, err := a.sqlSession(id); err == nil {
-		s.cancel.Store(true)
+	s, err := a.sqlSession(id)
+	if err != nil {
+		return
+	}
+	s.cancel.Store(true)
+	if d := s.db; d != nil {
+		go func() { _ = d.Cancel() }()
 	}
 }
 
@@ -182,6 +239,14 @@ func (a *App) SqlRun(id string, statement string, maxRows int) (SqlResult, error
 	}
 	start := time.Now()
 	stmt := strings.TrimSpace(statement)
+	if s.db != nil {
+		out, err := s.runDB(stmt, maxRows, start)
+		if err == nil {
+			return out, nil
+		}
+		// The database connection is gone: give it up and continue on the fallback.
+		s.dropDB(err)
+	}
 	if sqlviacl.Classify(stmt) == sqlviacl.Query {
 		return s.query(stmt, maxRows, start)
 	}
@@ -213,6 +278,9 @@ func (a *App) SqlFetch(id string, cursor string, maxRows int) (SqlResult, error)
 	defer s.mu.Unlock()
 	if maxRows <= 0 {
 		maxRows = defaultPageRows
+	}
+	if cursor == dbCursor {
+		return s.fetchDB(time.Now())
 	}
 	table, offsetText, ok := strings.Cut(cursor, ":")
 	offset, _ := strconv.Atoi(offsetText)
@@ -281,7 +349,123 @@ func (a *App) QshRun(id string, command string) (SqlResult, error) {
 	return out, nil
 }
 
-// --- the query path ---------------------------------------------------------------
+// --- the database server path ------------------------------------------------------
+
+// dbCursor is the cursor the page hands back to fetch the next block of the open
+// result on the database server (one result is open at a time).
+const dbCursor = "db"
+
+// runDB runs a statement on the database server. A *db.Error (the host refused the
+// statement) becomes an "error" result; any other error means the connection itself
+// failed and the caller falls back.
+func (s *sqlSession) runDB(stmt string, maxRows int, start time.Time) (SqlResult, error) {
+	if sqlviacl.Classify(stmt) == sqlviacl.Query {
+		rows, data, err := s.db.Query(stmt, maxRows)
+		if err != nil {
+			return dbFailure(err, start)
+		}
+		s.dbRows = rows
+		return s.dbPage(data, start), nil
+	}
+	s.dbRows = nil
+	res, err := s.db.Exec(stmt)
+	if err != nil {
+		return dbFailure(err, start)
+	}
+	out := SqlResult{Kind: "none", UpdateCount: res.UpdateCount, ElapsedMs: elapsed(start), Messages: []SqlMessage{}}
+	if isDML(stmt) {
+		out.Kind = "count"
+	}
+	for _, m := range res.Messages {
+		out.Messages = append(out.Messages, dbMessage(m))
+	}
+	return out, nil
+}
+
+// fetchDB brings the next block of the open result.
+func (s *sqlSession) fetchDB(start time.Time) (SqlResult, error) {
+	if s.db == nil || s.dbRows == nil {
+		return SqlResult{}, errors.New("that result is no longer available; run the query again")
+	}
+	data, err := s.dbRows.Next()
+	if err != nil {
+		var e *db.Error
+		if errors.As(err, &e) {
+			return dbFailureResult(e, start), nil
+		}
+		s.dropDB(err)
+		return SqlResult{}, err
+	}
+	return s.dbPage(data, start), nil
+}
+
+// dbPage is a block of rows as the page shows it.
+func (s *sqlSession) dbPage(data [][]*string, start time.Time) SqlResult {
+	rows := s.dbRows
+	out := SqlResult{Kind: "rows", Rows: data, ElapsedMs: elapsed(start), Messages: []SqlMessage{}}
+	if out.Rows == nil {
+		out.Rows = [][]*string{}
+	}
+	for _, c := range rows.Columns {
+		out.Columns = append(out.Columns, SqlColumn{Name: c.Name, Type: c.Type, Length: c.Length, Scale: c.Scale, Nullable: c.Nullable, CCSID: int(c.CCSID)})
+	}
+	for _, m := range rows.Messages {
+		out.Messages = append(out.Messages, dbMessage(m))
+	}
+	rows.Messages = nil
+	if !rows.Done {
+		out.More = true
+		out.Cursor = dbCursor
+	} else {
+		_ = rows.Close()
+	}
+	return out
+}
+
+func dbFailure(err error, start time.Time) (SqlResult, error) {
+	var e *db.Error
+	if errors.As(err, &e) {
+		return dbFailureResult(e, start), nil
+	}
+	return SqlResult{}, err
+}
+
+func dbFailureResult(e *db.Error, start time.Time) SqlResult {
+	return SqlResult{Kind: "error", Messages: []SqlMessage{dbMessage(e.Message)}, ElapsedMs: elapsed(start)}
+}
+
+func dbMessage(m db.Message) SqlMessage {
+	out := SqlMessage{ID: m.ID, Code: int(m.SQLCode), Text: m.Text}
+	if out.ID == "" && m.SQLState != "" {
+		out.ID = m.SQLState
+	}
+	return out
+}
+
+// dropDB gives up the database server after a connection failure; the session goes
+// on with the fallback and SqlInfo says why.
+func (s *sqlSession) dropDB(err error) {
+	if s.db != nil {
+		_ = s.db.Close()
+	}
+	s.db, s.dbRows = nil, nil
+	s.fallback = "the database server connection failed: " + err.Error()
+}
+
+// isDML tells whether a statement changes rows, so its update count is worth showing.
+func isDML(stmt string) bool {
+	f := strings.Fields(strings.ToUpper(stmt))
+	if len(f) == 0 {
+		return false
+	}
+	switch f[0] {
+	case "INSERT", "UPDATE", "DELETE", "MERGE", "TRUNCATE":
+		return true
+	}
+	return false
+}
+
+// --- the query path (CL fallback) ---------------------------------------------------
 
 // query materialises a SELECT into QTEMP, exports it as CSV, reads the file over the
 // IFS and keeps the rows for paging. The QTEMP tables and the file are removed again

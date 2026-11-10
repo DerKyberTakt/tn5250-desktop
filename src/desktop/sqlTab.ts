@@ -1,4 +1,4 @@
-import { errorText, goApp, type SqlColumn, type SqlConnectRequest, type SqlResult } from './bridge';
+import { errorText, goApp, type SqlColumn, type SqlConnInfo, type SqlConnectRequest, type SqlResult } from './bridge';
 import { confirmDialog } from './dialogs';
 import { splitStatements, statementLabel, statementsFrom, statementsIn, type Statement } from './sqlScript';
 import { explainToolError } from './toolErrors';
@@ -38,6 +38,8 @@ export class SqlTab {
   private readonly naming: HTMLSelectElement;
   private readonly buttons: Record<string, HTMLButtonElement> = {};
   private readonly panes: Record<'results' | 'messages', { button: HTMLButtonElement; pane: HTMLElement }>;
+  /** Shown while the session runs on the CL fallback instead of the database server. */
+  private readonly notice: HTMLElement;
 
   constructor(
     private readonly host: SqlHost,
@@ -85,6 +87,9 @@ export class SqlTab {
     this.naming.addEventListener('change', () => void this.reconnect());
     this.connEl = el('span', 'conn', `${request.user.toUpperCase()}@${request.host} · not connected`);
     top.append(run, el('span', 'sep'), file, el('span', 'sep'), this.naming, this.connEl);
+    this.notice = el('div', 'sql-notice');
+    this.notice.setAttribute('role', 'status');
+    this.notice.hidden = true;
 
     this.editor = el('textarea', 'sql-editor');
     this.editor.spellcheck = false;
@@ -124,7 +129,7 @@ export class SqlTab {
     this.statusEl = el('span', undefined, 'Ready');
     foot.append(this.statusEl);
 
-    this.frame.append(top, this.editor, split, bottom, foot);
+    this.frame.append(top, this.notice, this.editor, split, bottom, foot);
     this.updateButtons();
   }
 
@@ -163,6 +168,7 @@ export class SqlTab {
       this.connection = await goApp().SqlConnect({ ...this.request, naming: this.naming.value });
       this.connEl.textContent = `${this.request.user.toUpperCase()}@${this.request.host} · ${this.naming.value === 'sys' ? 'system' : 'SQL'} naming`;
       this.host.log(`[SQL ${this.request.host}] signed on as ${this.request.user.toUpperCase()}`);
+      await this.showTransport();
       this.onSignon?.();
       return true;
     } catch (err) {
@@ -174,6 +180,31 @@ export class SqlTab {
     } finally {
       this.setBusy(false);
     }
+  }
+
+  /** Tells the user which path the session took: the database server, or the fallback and why. */
+  private async showTransport(): Promise<void> {
+    let info: SqlConnInfo;
+    try {
+      info = await goApp().SqlInfo(this.connection);
+    } catch {
+      return;
+    }
+    if (info.transport === 'database') {
+      this.notice.hidden = true;
+      this.notice.textContent = '';
+      const job = info.job ? ` · job ${info.job}` : '';
+      this.connEl.textContent += ` · database server${info.release ? ` ${info.release}` : ''}`;
+      this.host.log(`[SQL ${this.request.host}] database host server${info.release ? ` ${info.release}` : ''}${job}`);
+      for (const w of info.warnings ?? []) this.addMessage('ok', `${w.id ? `${w.id}: ` : ''}${w.text}`);
+      return;
+    }
+    const why = info.reason ? ` (${info.reason})` : '';
+    this.notice.textContent = `The database host server could not be reached${why}. Running on the CL fallback: statements go through RUNSQL and CPYTOIMPF, so they are slower and column types are not available. Start it on the host with STRHOSTSVR SERVER(*DATABASE).`;
+    this.notice.hidden = false;
+    this.connEl.textContent += ' · CL fallback';
+    this.host.log(`[SQL ${this.request.host}] database host server unavailable${why}; using the CL fallback`);
+    this.addMessage('error', `Database host server unavailable${why}. Using the CL fallback (slower, untyped columns).`);
   }
 
   private async reconnect(): Promise<void> {
