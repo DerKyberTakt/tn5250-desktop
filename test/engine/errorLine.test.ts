@@ -38,6 +38,22 @@ describe('Write Error Code and the error line', () => {
     expect(screen.cursor).toBe(here); // not homed to the first field
   });
 
+  it('Write Error Code to Window writes between the given columns and leaves the rest of the row', () => {
+    const { screen, state, proc } = setup();
+    // A window whose left border sits in column 5 of the error row; the host says the error line runs from column 7 to 40.
+    proc.process(hexToBytes('04110008' + SBA(24, 1) + e('Roll') + SBA(24, 5) + e('|') + SBA(2, 2) + '1d4000200005' + '0452' + '0000'));
+    proc.process(hexToBytes('0422' + '07' + '28' + e('Roll up or down past the first record') + '0452' + '0000'));
+    const row = screen.rowText(screen.errorRow, cp);
+    expect(row.slice(0, 5)).toBe('Roll|');
+    expect(row.charAt(4)).toBe('|');
+    expect(row.slice(6).trim()).toBe('Roll up or down past the first record');
+    expect(state.errorMessage).toContain('Roll up or down past the first record');
+    // The repaint restores the whole row.
+    proc.process(hexToBytes('04110000' + SBA(2, 10) + e('x') + '0452' + '0000'));
+    expect(screen.rowText(screen.errorRow, cp).slice(0, 5)).toBe('Roll|');
+    expect(screen.rowText(screen.errorRow, cp).slice(6).trim()).toBe('');
+  });
+
   it('the next Write to Display takes the message off the error line', () => {
     const { screen, state, proc } = setup();
     proc.process(hexToBytes('04110008' + SBA(24, 2) + e('F3=Exit') + SBA(2, 2) + '1d4000200005' + '0452' + '0000'));

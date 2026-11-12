@@ -722,13 +722,15 @@ export class Keyboard {
       return;
     }
     this.reflow(set, cells);
-    if (f.autoEnter) {
-      this.sendAid(AID_AUTO_ENTER);
+    if (f.fieldExitRequired) {
+      // Shown on the last cell, logically past it: Field Exit keeps this character. A field
+      // that is also Auto Enter (DDS CHECK(FE) with CHECK(ER)) sends its Enter from that
+      // Field Exit, not from the last character: the operator still gets to correct it.
+      this.state.cursorPastEnd = true;
       return;
     }
-    if (f.fieldExitRequired) {
-      // Shown on the last cell, logically past it: Field Exit keeps this character.
-      this.state.cursorPastEnd = true;
+    if (f.autoEnter) {
+      this.sendAid(AID_AUTO_ENTER);
       return;
     }
     const next = this.nextField(cells[cells.length - 1]!);

@@ -438,6 +438,34 @@ describe('Field Exit right after an automatic advance (paste)', () => {
   });
 });
 
+describe('Auto Enter (DDS CHECK(ER))', () => {
+  /** Field 1 auto enter (ffw 4080); field 2 numeric. */
+  const AE_FIELDS = '04110008' + '110201' + '1d4080200005' + '110301' + '1d4300200006' + '130202' + '0452' + '0000';
+  /** Field 1 auto enter and field exit required (ffw 40c0): CHECK(FE) with CHECK(ER). */
+  const AE_FER_FIELDS = '04110008' + '110201' + '1d40c0200005' + '110301' + '1d4300200006' + '130202' + '0452' + '0000';
+
+  it('sends the Enter when the last character fills the field', () => {
+    const h = harness();
+    h.host(AE_FIELDS);
+    h.session.type('abcde');
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]!.data.slice(4, 6)).toBe('3f'); // AID 0x3f Auto Enter
+  });
+
+  it('with Field Exit Required waits for the Field Exit, as ACS does', () => {
+    const h = harness();
+    h.host(AE_FER_FIELDS);
+    h.session.type('abcde');
+    expect(h.sent).toHaveLength(0);
+    expect(h.state.cursorPastEnd).toBe(true);
+    expect(text(h, 0)).toBe('abcde');
+    h.session.press('fieldExit');
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]!.data.slice(4, 6)).toBe('3f');
+    expect(text(h, 0)).toBe('abcde');
+  });
+});
+
 describe('End of Field', () => {
   it('moves just after the last typed character', () => {
     const h = harness();

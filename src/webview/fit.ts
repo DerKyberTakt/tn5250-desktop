@@ -16,6 +16,8 @@ export interface FitInput {
   zoom: number;
   /** Whole-pixel cell widths (crisp text rendering). */
   crisp: boolean;
+  /** Auto-fit at zoom 1 stretches the grid to fill the box, the text scaled sideways, as ACS does. */
+  fill?: boolean;
   measure(px: number): number;
 }
 
@@ -26,6 +28,8 @@ export interface FitResult {
   /** Canvas size in CSS px, padding included. */
   cssW: number;
   cssH: number;
+  /** Sideways scale of the whole drawing (1 unless `fill` stretched the grid to the box). */
+  scaleX: number;
 }
 
 export const LINE_HEIGHT = 1.2;
@@ -35,6 +39,17 @@ export function fitFont(input: FitInput): FitResult {
   const { rows, cols, pad } = input;
   const availW = input.boxW - pad * 2;
   const availH = input.boxH - pad * 2;
+
+  if (input.autoFit && input.fill && input.zoom === 1 && availW > 0 && availH > 0) {
+    // Fill the box: rows share the height, the font follows the row height, and the columns
+    // are stretched (or squeezed) sideways onto the width. Nothing is left over.
+    const cellH = Math.max(Math.round(MIN_FONT_PX * LINE_HEIGHT), Math.floor(availH / rows));
+    const px = Math.max(MIN_FONT_PX, Math.floor(cellH / LINE_HEIGHT));
+    let cellW = input.measure(px);
+    if (input.crisp) cellW = Math.max(1, Math.floor(cellW));
+    const scaleX = availW / cols / cellW;
+    return { px, cellW, cellH, cssW: Math.floor(cols * cellW * scaleX) + pad * 2, cssH: rows * cellH + pad * 2, scaleX };
+  }
 
   let px: number;
   if (input.autoFit) {
@@ -50,7 +65,7 @@ export function fitFont(input: FitInput): FitResult {
     let cellW = input.measure(size);
     if (input.crisp) cellW = Math.max(1, Math.floor(cellW));
     const cellH = Math.round(size * LINE_HEIGHT);
-    return { px: size, cellW, cellH, cssW: Math.ceil(cols * cellW) + pad * 2, cssH: rows * cellH + pad * 2 };
+    return { px: size, cellW, cellH, cssW: Math.ceil(cols * cellW) + pad * 2, cssH: rows * cellH + pad * 2, scaleX: 1 };
   };
   let m = measure(px);
   // Auto-fit must really fit: rounding the line height can overshoot by a pixel or two, which

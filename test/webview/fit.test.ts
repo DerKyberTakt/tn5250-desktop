@@ -6,6 +6,34 @@ const measure = (px: number): number => px * 0.6;
 
 const base: FitInput = { boxW: 1000, boxH: 600, pad: 0, rows: 24, cols: 80, autoFit: true, fontSize: 14, zoom: 1, crisp: false, measure };
 
+describe('fill the window', () => {
+  it('stretches the grid onto the box: no space left over, text scaled sideways', () => {
+    // A wide box: 27x132 would leave the bottom third empty with the font's own proportions.
+    const m = fitFont({ ...base, fill: true, rows: 27, cols: 132, boxW: 1200, boxH: 500 });
+    expect(m.cssH).toBeLessThanOrEqual(500);
+    expect(m.cssH).toBeGreaterThan(500 - 27);
+    expect(m.cssW).toBeLessThanOrEqual(1200);
+    expect(m.cssW).toBeGreaterThan(1200 - 132);
+    expect(m.scaleX).not.toBe(1);
+    expect(132 * m.cellW * m.scaleX).toBeCloseTo(1200, 0);
+  });
+
+  it('keeps the padding and the font floor', () => {
+    const m = fitFont({ ...base, fill: true, pad: 8, boxW: 500, boxH: 300 });
+    expect(m.cssH).toBeLessThanOrEqual(300);
+    expect(m.cssH).toBeGreaterThan(300 - 24);
+    expect(m.cssW).toBeLessThanOrEqual(500);
+    // A box too small for the smallest font: the font floor wins and the grid overflows, as without fill.
+    expect(fitFont({ ...base, fill: true, pad: 8, boxW: 300, boxH: 100 }).px).toBeGreaterThanOrEqual(6);
+  });
+
+  it('is off when auto-fit is off or the screen is zoomed', () => {
+    expect(fitFont({ ...base, fill: true, autoFit: false }).scaleX).toBe(1);
+    expect(fitFont({ ...base, fill: true, zoom: 1.1 }).scaleX).toBe(1);
+    expect(fitFont(base).scaleX).toBe(1);
+  });
+});
+
 describe('auto-fit font size', () => {
   it('fills the box without overshooting it', () => {
     const m = fitFont(base);

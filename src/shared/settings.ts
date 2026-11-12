@@ -60,6 +60,8 @@ export interface TerminalSettings {
 
   // Screen > Font
   autoFit: boolean;
+  /** With autoFit: stretch the screen to fill the window (text scaled sideways), as ACS does. */
+  fillWindow: boolean;
   fontFamily: string;
   /** A font file imported through Settings > Font (loaded with @font-face). */
   fontFile: string;
@@ -205,6 +207,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   showStatusLine: true,
 
   autoFit: true,
+  fillWindow: true,
   fontFamily: '',
   fontFile: '',
   fontSize: 14,

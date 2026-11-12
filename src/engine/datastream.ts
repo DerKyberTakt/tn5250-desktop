@@ -246,13 +246,16 @@ export class DataStreamProcessor {
           break;
         }
         case CMD_WRITE_ERROR_CODE:
-          this.writeErrorCode(r);
+          this.writeErrorCode(r, 1, this.screen.cols);
           break;
-        case CMD_WRITE_ERROR_CODE_WINDOW:
-          r.u8();
-          r.u8();
-          this.writeErrorCode(r);
+        case CMD_WRITE_ERROR_CODE_WINDOW: {
+          // The message goes on the error row (the window's message line, from the SOH of
+          // its Write to Display) between the given columns, inside the window's border.
+          const from = r.u8();
+          const to = r.u8();
+          this.writeErrorCode(r, from, to);
           break;
+        }
         case CMD_WSF: {
           // One WSF carries one or more structured fields (LL, class, type, data), each
           // walked by its length: a X'04' inside one is data, not the next ESC.
@@ -915,15 +918,18 @@ export class DataStreamProcessor {
     if (cc2 & 0x01) this.state.messageWaiting = false;
   }
 
-  private writeErrorCode(r: Reader): void {
+  /** Writes the error message on the error row, columns `from` to `to` (1-based, inclusive); the whole row is saved for the restore. */
+  private writeErrorCode(r: Reader, from: number, to: number): void {
     const s = this.screen;
     const rowStart = s.errorRow * s.cols;
+    const first = Math.min(s.cols - 1, Math.max(0, from - 1));
+    const end = Math.min(s.cols, Math.max(first + 1, to));
     if (this.state.savedCursor === undefined) {
       this.state.savedCursor = s.cursor;
       this.state.savedErrorRow = s.buffer.slice(rowStart, rowStart + s.cols);
     }
-    s.buffer.fill(0, rowStart, rowStart + s.cols);
-    this.addr = rowStart;
+    s.buffer.fill(0, rowStart + first, rowStart + end);
+    this.addr = rowStart + first;
     this.writeOrders(r);
     this.state.errorMessage = s.rowText(s.errorRow, this.codePage).trim();
     this.state.inputInhibited = 'error';

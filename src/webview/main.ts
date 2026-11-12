@@ -147,6 +147,7 @@ function applyConfig(): void {
   renderer.setOptions({
     uiMode: st.uiMode,
     autoFit: st.autoFit,
+    fillWindow: st.fillWindow,
     fontFamily: st.fontFamily,
     fontSize: st.fontSize,
     fontStyle: st.fontStyle,
@@ -557,7 +558,7 @@ window.addEventListener('mousemove', (e) => {
     const p = canvasPoint(e);
     const bar = target.ref.bar;
     const page = bar.horizontal ? bar.size - 2 : bar.size;
-    thumbDrag.units = dragUnits(target.geometry, (target.geometry.horizontal ? p.x : p.y) - startPx, bar.total, bar.pos, page);
+    thumbDrag.units = dragUnits(target.geometry, target.geometry.horizontal ? (p.x - startPx) / renderer.scaleX : p.y - startPx, bar.total, bar.pos, page);
     renderer.setThumbPreview(bar.addr, bar.pos + thumbDrag.units);
     return;
   }
