@@ -147,6 +147,8 @@ export interface RendererOptions {
   uiMode: 'classic' | 'enhanced';
   fontFamily: string;
   autoFit: boolean;
+  /** Auto-fit stretches the screen to fill the viewport (text scaled sideways), as ACS does; off keeps the font's proportions and leaves space. */
+  fillWindow: boolean;
   /** Font size in CSS pixels when autoFit is off. */
   fontSize: number;
   fontStyle: 'plain' | 'bold';
@@ -199,6 +201,7 @@ export class Renderer {
     uiMode: 'classic',
     fontFamily: '',
     autoFit: true,
+    fillWindow: true,
     fontSize: 14,
     fontStyle: 'plain',
     textRendering: 'smooth',
@@ -233,6 +236,8 @@ export class Renderer {
   private fontPx = 16;
   private cellW = 10;
   private cellH = 19;
+  /** Sideways scale of the drawing (fill the window); pointer x in CSS px divides by it. */
+  private scaleXValue = 1;
   private pad = 0;
   private blinkOn = true;
   private watermarkImage: HTMLImageElement | undefined;
@@ -268,6 +273,11 @@ export class Renderer {
 
   get size(): { rows: number; cols: number } | undefined {
     return this.screen ? { rows: this.screen.rows, cols: this.screen.cols } : undefined;
+  }
+
+  /** Sideways scale of the drawing: canvas CSS px per drawing px (1 unless the screen fills the window). */
+  get scaleX(): number {
+    return this.scaleXValue;
   }
 
   get zoom(): number {
@@ -320,9 +330,9 @@ export class Renderer {
     const size = a.bottom - a.top + 1;
     return scrollBarGeometry({
       horizontal: false,
-      x: this.x(this.screen?.cols ?? 80) + 2,
+      x: this.x(this.screen?.cols ?? 80) + 2 / this.scaleXValue,
       y: this.y(a.top),
-      cellW: GUTTER - 4,
+      cellW: (GUTTER - 4) / this.scaleXValue,
       cellH: this.cellH,
       size,
       // Position is unknown for a synthetic bar: the thumb sits at the top while there is more, at the bottom on the last page.
@@ -335,7 +345,7 @@ export class Renderer {
 
   /** The scroll bar part at a point in canvas CSS pixels, if any. */
   scrollBarAt(x: number, y: number): ScrollBarTarget | undefined {
-    const px = x - this.pad;
+    const px = (x - this.pad) / this.scaleXValue;
     const py = y - this.pad;
     for (const ref of this.scrollBars()) {
       const geometry = this.geometryFor(ref);
@@ -412,7 +422,7 @@ export class Renderer {
   /** Converts a point in canvas CSS pixels to a cell, clamped to the screen. */
   cellAt(x: number, y: number): { row: number; col: number } | undefined {
     if (!this.screen) return undefined;
-    const col = Math.min(this.screen.cols - 1, Math.max(0, Math.floor((x - this.pad) / this.cellW)));
+    const col = Math.min(this.screen.cols - 1, Math.max(0, Math.floor((x - this.pad) / this.scaleXValue / this.cellW)));
     const row = Math.min(this.screen.rows - 1, Math.max(0, Math.floor((y - this.pad) / this.cellH)));
     return { row, col };
   }
@@ -457,6 +467,7 @@ export class Renderer {
       rows,
       cols,
       autoFit: this.options.autoFit,
+      fill: this.options.fillWindow,
       fontSize: this.options.fontSize,
       zoom: this.options.zoom,
       crisp: this.options.textRendering === 'crisp',
@@ -466,6 +477,7 @@ export class Renderer {
     this.fontPx = m.px;
     this.cellW = m.cellW;
     this.cellH = m.cellH;
+    this.scaleXValue = m.scaleX;
     const cssW = m.cssW + this.gutter;
     const cssH = m.cssH;
     const dpr = window.devicePixelRatio || 1;
@@ -473,7 +485,9 @@ export class Renderer {
     this.canvas.style.height = `${cssH}px`;
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
-    this.ctx.setTransform(dpr, 0, 0, dpr, this.pad, this.pad);
+    // The whole drawing is stretched sideways by scaleX: cells, text, boxes and scroll bars
+    // keep their drawing coordinates and land on the stretched canvas.
+    this.ctx.setTransform(dpr * this.scaleXValue, 0, 0, dpr, this.pad, this.pad);
     // Only a zoomed-in screen may scroll. A fitted one never shows scrollbars, so they can
     // never narrow the box and start the resize loop again.
     this.canvas.parentElement?.classList.toggle('overflow', cssW > this.viewportW || cssH > this.viewportH);
@@ -512,7 +526,7 @@ export class Renderer {
 
     ctx.save();
     ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
-    this.drawBackground(w + this.pad * 2 + this.gutter, h + this.pad * 2, enhanced);
+    this.drawBackground(w * this.scaleXValue + this.pad * 2 + this.gutter, h + this.pad * 2, enhanced);
     ctx.restore();
     if (enhanced) this.drawWindowFrames();
     this.drawSelections(enhanced);

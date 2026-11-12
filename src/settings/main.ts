@@ -202,6 +202,7 @@ const HELP: Partial<Record<Key, string>> = {
   columnSeparators: 'How the 5250 column separator attribute (turquoise and yellow fields) is drawn: a dot at the base of each cell, a vertical line, or nothing.',
   showStatusLine: 'Show the operator information area under the screen: connection, X SYSTEM / X II, insert mode, message waiting, cursor position.',
   autoFit: 'On: the font scales so the whole screen fits the tab (zoom with Ctrl+wheel, Ctrl+0 resets). Off: the fixed font size below is used.',
+  fillWindow: 'On: the screen is stretched to fill the window, the characters scaled sideways to match, as ACS does. Off: the characters keep their proportions and the space left over stays empty.',
   fontSize: 'Font size in pixels when Font Scaling is off.',
   textRendering: 'Smooth = antialiased text. Crisp = cells snapped to whole pixels for sharper edges at small sizes.',
   fontFamily: 'Pick an installed font (monospaced fonts are listed first; untick the filter to see every font) or Browse to import a .ttf/.otf file, which is copied into the extension storage and loaded only for the terminal. Blank uses the VS Code editor font.',
@@ -383,6 +384,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     group: 'Screen',
     fields: [
       YESNO('autoFit', 'Font Scaling'),
+      { ...YESNO('fillWindow', 'Fill the Window'), showIf: 'autoFit' },
       { kind: 'number', key: 'fontSize', label: 'Fixed Font Size', min: 6, max: 72, hideIf: 'autoFit' },
       { kind: 'select', key: 'textRendering', label: 'Antialiasing', options: [['smooth', 'Yes (smooth)'], ['crisp', 'No (crisp, pixel-aligned)']] },
       { kind: 'font', key: 'fontFamily', label: 'Font Name' },
@@ -746,6 +748,7 @@ function updatePreview(): void {
   r.setOptions({
     uiMode: v.uiMode,
     autoFit: true,
+    fillWindow: v.fillWindow,
     fontFamily: v.fontFamily,
     fontSize: v.fontSize,
     fontStyle: v.fontStyle,
