@@ -65,6 +65,29 @@ func Replace(exe, newFile string) error {
 	return nil
 }
 
+// ReplaceDir puts newDir in place of dir (a macOS .app bundle): dir becomes dir.old
+// first; on failure the original is put back.
+func ReplaceDir(dir, newDir string) error {
+	old := dir + OldSuffix
+	_ = os.RemoveAll(old)
+	if err := os.Rename(dir, old); err != nil {
+		return err
+	}
+	if err := os.Rename(newDir, dir); err != nil {
+		if back := os.Rename(old, dir); back != nil {
+			return errors.Join(err, back)
+		}
+		return err
+	}
+	return nil
+}
+
+// RemoveOldDir deletes the folder left behind by ReplaceDir; false while it is still in use.
+func RemoveOldDir(dir string) bool {
+	err := os.RemoveAll(dir + OldSuffix)
+	return err == nil || errors.Is(err, os.ErrNotExist)
+}
+
 // RemoveOld deletes the exe left behind by Replace; false while it is still in use.
 func RemoveOld(exe string) bool {
 	err := os.Remove(exe + OldSuffix)

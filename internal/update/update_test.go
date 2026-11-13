@@ -226,3 +226,54 @@ func TestLiveGitHub(t *testing.T) {
 	}
 	t.Logf("latest %s, verified %s", tag, filepath.Base(p))
 }
+
+func TestReplaceDir(t *testing.T) {
+	root := t.TempDir()
+	app := filepath.Join(root, "A.app")
+	newApp := filepath.Join(root, "new", "A.app")
+	for _, d := range []string{filepath.Join(app, "Contents"), filepath.Join(newApp, "Contents")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(app, "Contents", "v"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newApp, "Contents", "v"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceDir(app, newApp); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(app, "Contents", "v")); string(b) != "new" {
+		t.Fatalf("after ReplaceDir the bundle holds %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(app+OldSuffix, "Contents", "v")); string(b) != "old" {
+		t.Fatalf("the old bundle is not kept as .old: %q", b)
+	}
+	if !RemoveOldDir(app) {
+		t.Fatal("RemoveOldDir failed")
+	}
+	if _, err := os.Stat(app + OldSuffix); !os.IsNotExist(err) {
+		t.Fatal("the old bundle is still there")
+	}
+	// A missing source puts the original back.
+	if err := ReplaceDir(app, filepath.Join(root, "missing.app")); err == nil {
+		t.Fatal("expected an error for a missing new bundle")
+	}
+	if b, _ := os.ReadFile(filepath.Join(app, "Contents", "v")); string(b) != "new" {
+		t.Fatalf("the bundle was not put back: %q", b)
+	}
+}
+
+func TestCompareFourParts(t *testing.T) {
+	if Compare("v0.3.1.1", "0.3.1") <= 0 {
+		t.Fatal("0.3.1.1 should be newer than 0.3.1")
+	}
+	if Compare("v0.3.2", "0.3.1.1") <= 0 {
+		t.Fatal("0.3.2 should be newer than 0.3.1.1")
+	}
+	if Compare("v0.3.1.1", "0.3.1.1") != 0 {
+		t.Fatal("equal versions")
+	}
+}

@@ -88,7 +88,7 @@ export interface UpdateInfo {
   available: boolean;
   /** Release notes page. */
   page: string;
-  mode: 'installer' | 'portable' | 'appimage' | 'manual';
+  mode: 'installer' | 'portable' | 'appimage' | 'bundle' | 'manual';
   reason?: string;
 }
 

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.1.1 - unreleased
+- macOS updates itself like the other platforms: Help > Check for Updates downloads the universal zip from the release, checks it against SHA256SUMS, swaps the app bundle in place and reopens it. It works wherever the app sits in a folder you can write to (Applications owned by you, or ~/Applications); from the mounted disk image, or an Applications folder owned by an administrator, it still points you to the release page. The saved passwords stay: they live in the Keychain under Apple's `security` tool, not under the app's signature.
+
 ## 0.3.1 - 2026-11-13
 - macOS: Cmd+C copies, Cmd+V pastes and Cmd+Enter toggles Insert mode by default (Apple keyboards have no Insert key); any other key can still be given to Insert on the Keyboard settings page. Ctrl+C, Ctrl+Insert, Ctrl+V and Shift+Insert work as before. Asked for in tn5250-terminal #12 and #13.
 - Right-click on the screen opens a menu with Copy (the selection, or Copy Screen when nothing is selected), Paste and Select All, as ACS offers; Escape or a click elsewhere closes it. A host that asked for the right mouse button keeps it.
