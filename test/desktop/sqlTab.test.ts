@@ -40,7 +40,7 @@ function fakeHost() {
   };
   window.go = { main: { App: app as never } };
   window.runtime = { EventsOn: () => () => undefined } as never;
-  // jsdom has no layout: the Messages list scrolls its newest line into view, and
+  // jsdom has no layout: the Output pane scrolls its newest line into view, and
   // CodeMirror measures text ranges.
   Element.prototype.scrollIntoView = () => undefined;
   const rect = { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) };
@@ -60,13 +60,17 @@ async function openTab(): Promise<SqlTab> {
   return tab;
 }
 
-const status = (tab: SqlTab): string => tab.frame.querySelector('.sql-results-status')!.textContent ?? '';
+/** The status line of the pane on show (a result tab). */
+const status = (tab: SqlTab): string => tab.frame.querySelector('.sql-pane:not([hidden]) .sql-results-status')?.textContent ?? '';
 const foot = (tab: SqlTab): string => tab.frame.querySelector('.sql-foot span')!.textContent ?? '';
 const job = (tab: SqlTab): string => tab.frame.querySelector('.sql-job')!.textContent ?? '';
-const selectedPane = (tab: SqlTab): string => tab.frame.querySelector('.sql-tabs button[aria-selected="true"]')!.textContent ?? '';
-const gridRows = (tab: SqlTab): number => tab.frame.querySelectorAll('.sql-grid tbody tr').length;
+const selectedPane = (tab: SqlTab): string => tab.frame.querySelector('.sql-tabs button[aria-selected="true"]')!.firstChild?.textContent ?? '';
+const resultTabs = (tab: SqlTab): string[] => [...tab.frame.querySelectorAll('.sql-tabs button[role="tab"]')].map((b) => b.firstChild?.textContent ?? '').filter((t) => t.startsWith('Result'));
+const gridRows = (tab: SqlTab): number => tab.frame.querySelectorAll('.sql-pane:not([hidden]) .sql-grid tbody tr').length;
+const outputLines = (tab: SqlTab): string[] => [...tab.frame.querySelectorAll('.sql-output .sql-out-line')].map((e) => e.textContent ?? '');
+const lastLine = (tab: SqlTab): string => outputLines(tab).at(-1) ?? '';
 
-describe('Run SQL Scripts: feedback like Db2 for i', () => {
+describe('Run SQL Scripts: one Output pane and numbered Result tabs', () => {
   let fake: ReturnType<typeof fakeHost>;
   beforeEach(() => {
     document.body.replaceChildren();
@@ -78,90 +82,146 @@ describe('Run SQL Scripts: feedback like Db2 for i', () => {
     const tab = await openTab();
     expect(job(tab)).toBe('726603/QUSER/QZDASOINIT · database server V7R5M0');
     expect(foot(tab)).toBe('Ready');
+    expect(selectedPane(tab)).toBe('Output');
   });
 
-  it('a SELECT reports rows loaded, time and whether more are available', async () => {
+  it('a SELECT opens Result 1 with the rows and reports it in Output', async () => {
     const tab = await openTab();
     tab.setScript('SELECT * FROM QSYS2.SYSTABLES;');
     await tab.runAll();
+    expect(resultTabs(tab)).toEqual(['Result 1']);
+    expect(selectedPane(tab)).toBe('Result 1');
     expect(gridRows(tab)).toBe(2);
     expect(status(tab)).toBe('Loaded 2 rows in 12 ms. More rows available.');
-    expect(selectedPane(tab)).toBe('Results');
     expect(foot(tab)).toBe('1 of 1 statement ran');
+    expect(lastLine(tab)).toBe('✓ Loaded 2 rows in 12 ms. More rows available. Result 1');
+    // The statement is echoed with its keywords coloured.
+    expect(tab.frame.querySelector('.sql-out-stmt .sq-kw')?.textContent).toBe('SELECT');
+    expect(tab.frame.querySelector('.sql-out-head')?.textContent).toMatch(/] {2}Run All…$/);
   });
 
   it('Fetch more adds the rows and the time, then says End of data', async () => {
     const tab = await openTab();
     tab.setScript('SELECT * FROM QSYS2.SYSTABLES;');
     await tab.runAll();
-    (tab.frame.querySelector('.sql-more button') as HTMLButtonElement).click();
+    (tab.frame.querySelector('.sql-pane:not([hidden]) .sql-more button') as HTMLButtonElement).click();
     await tick();
     await tick();
     expect(gridRows(tab)).toBe(5);
     expect(status(tab)).toBe('Loaded 5 rows in 12 ms + 8 ms. End of data.');
-    expect(tab.frame.querySelector('.sql-more button')!.textContent).not.toMatch(/more rows/);
+    expect(tab.frame.querySelector('.sql-pane:not([hidden]) .sql-more button')!.textContent).not.toMatch(/more rows/);
   });
 
-  it('a DELETE clears the old grid and reports the rows affected', async () => {
+  it('a DELETE stays in Output with the rows affected and opens no result', async () => {
     const tab = await openTab();
     tab.setScript('SELECT * FROM QSYS2.SYSTABLES;');
     await tab.runAll();
     tab.setScript('DELETE FROM MYLIB.T WHERE ID = 1;');
     await tab.runAll();
-    expect(gridRows(tab)).toBe(0);
-    expect(status(tab)).toBe('3 rows affected in 24 ms.');
-    expect(selectedPane(tab)).toBe('Results');
+    expect(resultTabs(tab)).toEqual(['Result 1']);
+    expect(selectedPane(tab)).toBe('Output');
+    expect(lastLine(tab)).toBe('✓ 3 rows affected in 24 ms.');
   });
 
   it('a statement without rows or a count says it ran', async () => {
     const tab = await openTab();
     tab.setScript('CREATE TABLE QTEMP.T (A INT);');
     await tab.runAll();
-    expect(status(tab)).toBe('Statement ran in 7 ms.');
+    expect(lastLine(tab)).toBe('✓ Statement ran in 7 ms.');
   });
 
-  it('an SQL error shows up in the status line and opens Messages', async () => {
+  it('an SQL error is reported in Output, which stays on show', async () => {
     const tab = await openTab();
     tab.setScript('SELECT * FROM QSYS2.SYSTABLES;');
     await tab.runAll();
     tab.setScript('DROP TABLE QGPL.NOPE;');
     await tab.runAll();
-    expect(gridRows(tab)).toBe(0);
-    expect(status(tab)).toBe('42704 (SQLCODE -204): NOPE in QGPL type *FILE not found. · 5 ms');
-    expect(selectedPane(tab)).toBe('Messages');
+    expect(selectedPane(tab)).toBe('Output');
+    expect(lastLine(tab)).toBe('✗ 42704 (SQLCODE -204): NOPE in QGPL type *FILE not found. · 5 ms');
     expect(foot(tab)).toBe('0 of 1 statement ran');
   });
 
-  it('CL output counts lines', async () => {
+  it('CL output lines stay inline in Output', async () => {
     const tab = await openTab();
     tab.setScript('CL: DSPLIBL;');
     await tab.runAll();
-    expect(gridRows(tab)).toBe(2);
-    expect(status(tab)).toBe('Output: 2 lines in 30 ms.');
+    expect(resultTabs(tab)).toEqual([]);
+    expect(lastLine(tab)).toBe('✓ Output: 2 lines in 30 ms.');
+    expect(tab.frame.querySelector('.sql-out-lines')?.textContent).toBe('QSYS\nQGPL');
+    expect(tab.frame.querySelector('.sql-out-msg')?.textContent).toBe('Output: spooled file QPDSPLIB, 2 lines.');
+    expect(tab.frame.querySelector('.sql-out-stmt .sq-cmd')?.textContent).toBe('CL: ');
   });
 
-  it('while a statement runs the old grid is stale and the foot counts the seconds', async () => {
-    vi.useFakeTimers();
+  it('several statements run in order, each SELECT gets its own tab, the newest comes to the front', async () => {
+    const tab = await openTab();
+    tab.setScript('SELECT 1 FROM A;\nDELETE FROM B;\nSELECT 2 FROM C;');
+    await tab.runAll();
+    expect(resultTabs(tab)).toEqual(['Result 1', 'Result 2']);
+    expect(selectedPane(tab)).toBe('Result 2');
+    expect(tab.frame.querySelector('.sql-out-head')?.textContent).toMatch(/Run All… \(3 statements\)$/);
+    expect(outputLines(tab)).toEqual(['✓ Loaded 2 rows in 12 ms. More rows available. Result 1', '✓ 3 rows affected in 24 ms.', '✓ Loaded 2 rows in 12 ms. More rows available. Result 2']);
+    expect(foot(tab)).toBe('3 of 3 statements ran');
+    // Closing the tab on show returns to Output; Clear empties everything.
+    (tab.frame.querySelector('.sql-tabs button[aria-selected="true"] .close') as HTMLElement).click();
+    expect(resultTabs(tab)).toEqual(['Result 1']);
+    expect(selectedPane(tab)).toBe('Output');
+    (tab.frame.querySelector('.sql-tabs-clear') as HTMLButtonElement).click();
+    expect(resultTabs(tab)).toEqual([]);
+    expect(tab.frame.querySelector('.sql-out-head')?.textContent).toBe('No statement has run yet.');
+  });
+
+  it('Run with the cursor in a statement runs just that one, selected in the editor', async () => {
+    const tab = await openTab();
+    tab.setScript('SELECT 1 FROM A;\nDELETE FROM B;');
+    tab['editor'].setCursor(20);
+    await tab.runSelected();
+    expect(outputLines(tab)).toEqual(['✓ 3 rows affected in 24 ms.']);
+    expect(tab.frame.querySelector('.sql-out-head')?.textContent).toMatch(/Run…$/);
+    expect(tab['editor'].selection()).toEqual({ start: 17, end: 30 });
+  });
+
+  it('copies the rows as an aligned table, Markdown or TSV', async () => {
     const tab = await openTab();
     tab.setScript('SELECT * FROM QSYS2.SYSTABLES;');
     await tab.runAll();
+    const buttons = [...tab.frame.querySelectorAll('.sql-pane:not([hidden]) .sql-more button')] as HTMLButtonElement[];
+    const by = (text: string): HTMLButtonElement => buttons.find((b) => b.textContent === text)!;
+    by('Copy').click();
+    await tick();
+    expect(fake.app.ClipboardSet).toHaveBeenLastCalledWith('ID  NAME\r\n--  ------\r\n 1  name 1\r\n 2  -\r\n');
+    by('Copy as Markdown').click();
+    await tick();
+    expect(fake.app.ClipboardSet).toHaveBeenLastCalledWith('| ID | NAME |\r\n| ---: | --- |\r\n| 1 | name 1 |\r\n| 2 |  |\r\n');
+    by('Copy as TSV').click();
+    await tick();
+    expect(fake.app.ClipboardSet).toHaveBeenLastCalledWith('ID\tNAME\r\n1\tname 1\r\n2\t\r\n');
+    // A selected row narrows the copy.
+    (tab.frame.querySelector('.sql-pane:not([hidden]) .sql-grid tbody tr') as HTMLElement).click();
+    expect(status(tab)).toBe('Loaded 2 rows in 12 ms. More rows available. 1 row selected.');
+    by('Copy').click();
+    await tick();
+    expect(fake.app.ClipboardSet).toHaveBeenLastCalledWith('ID  NAME\r\n--  ------\r\n 1  name 1\r\n');
+  });
+
+  it('while a statement runs it is tinted in the editor, Output says so and the foot counts the seconds', async () => {
+    vi.useFakeTimers();
+    const tab = await openTab();
     tab.setScript('WAIT FOR A LOCK;');
     const run = tab.runAll();
     await Promise.resolve();
     await Promise.resolve();
-    const grid = tab.frame.querySelector('.sql-grid-wrap')!;
-    expect(grid.classList.contains('stale')).toBe(true);
+    expect(tab.frame.querySelector('.cm-running')?.textContent).toBe('WAIT FOR A LOCK');
     expect(foot(tab)).toBe('Running 1 of 1: WAIT FOR A LOCK');
-    expect(status(tab)).toBe('Running…');
+    expect(lastLine(tab)).toBe('Running…');
     vi.advanceTimersByTime(3000);
     expect(foot(tab)).toBe('Running 1 of 1: WAIT FOR A LOCK (3 s)');
-    expect(status(tab)).toBe('Running… 3 s');
+    expect(lastLine(tab)).toBe('Running… (3 s)');
     (tab.frame.querySelector('.sql-top button[title^="Cancel"]') as HTMLButtonElement).click();
     expect(foot(tab)).toMatch(/^Stopping after 1 of 1/);
     fake.finish({ kind: 'error', more: false, updateCount: 0, messages: [{ id: '57014', code: -952, severity: 0, text: 'Processing of the SQL statement ended.' }], elapsedMs: 3000 });
     await run;
-    expect(grid.classList.contains('stale')).toBe(false);
-    expect(status(tab)).toMatch(/^57014 \(SQLCODE -952\)/);
+    expect(tab.frame.querySelector('.cm-running')).toBeNull();
+    expect(lastLine(tab)).toMatch(/^✗ 57014 \(SQLCODE -952\)/);
     expect(fake.app.SqlCancel).toHaveBeenCalled();
   });
 });

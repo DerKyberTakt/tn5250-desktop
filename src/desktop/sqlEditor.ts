@@ -11,7 +11,7 @@ import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, c
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { HighlightStyle, bracketMatching, indentUnit, syntaxHighlighting, syntaxTree } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
-import { EditorState, Prec, RangeSetBuilder, type Extension } from '@codemirror/state';
+import { EditorState, Prec, RangeSetBuilder, StateEffect, StateField, type Extension } from '@codemirror/state';
 import {
   Decoration,
   EditorView,
@@ -26,7 +26,7 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view';
-import { tags as t } from '@lezer/highlight';
+import { highlightTree, tagHighlighter, tags as t } from '@lezer/highlight';
 import { SERVICE_REFERENCE, db2iLanguage } from './sqlDialect';
 
 /** The nonce the page's Content-Security-Policy grants to the editor's style sheets. */
@@ -80,6 +80,7 @@ const theme = EditorView.theme({
   '.cm-selectionMatch': { backgroundColor: 'var(--sql-match)' },
   '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': { backgroundColor: 'var(--sql-match)', outline: '1px solid var(--chrome-border)' },
   '.cm-sql-service': { color: 'var(--sql-fn)' },
+  '.cm-running': { backgroundColor: 'var(--sql-running)' },
   '.cm-cl-line': { backgroundColor: 'var(--sql-cmd-bg)' },
   '.cm-cl-prefix': { color: 'var(--sql-cmd)', fontWeight: '600' },
   '.cm-placeholder': { color: 'var(--sql-gutter)' },
@@ -124,6 +125,53 @@ const commandLines = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
+/** The statement on its way to the host: tinted until its answer is in (SqlEditor.showRunning). */
+const setRunning = StateEffect.define<{ from: number; to: number } | null>();
+const runningMark = Decoration.mark({ class: 'cm-running' });
+const runningField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(setRunning)) deco = e.value && e.value.to > e.value.from ? Decoration.set([runningMark.range(e.value.from, e.value.to)]) : Decoration.none;
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+/** Token classes for text highlighted outside an editor (the Output pane's echo); styled in sql.css. */
+const tokenClasses = tagHighlighter([
+  { tag: t.keyword, class: 'sq-kw' },
+  { tag: t.typeName, class: 'sq-type' },
+  { tag: t.standard(t.name), class: 'sq-fn' },
+  { tag: [t.string, t.special(t.string)], class: 'sq-str' },
+  { tag: [t.number, t.bool, t.null], class: 'sq-num' },
+  { tag: t.comment, class: 'sq-comment' },
+  { tag: t.operator, class: 'sq-op' },
+  { tag: t.special(t.name), class: 'sq-var' },
+]);
+
+/** SQL text with its syntax colours as spans, the same colours as the editor, for the Output pane. */
+export function highlightedSql(text: string): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  let pos = 0;
+  const plain = (to: number): void => {
+    if (to > pos) frag.append(document.createTextNode(text.slice(pos, to)));
+    pos = to;
+  };
+  highlightTree(db2iLanguage().language.parser.parse(text), tokenClasses, (from, to, classes) => {
+    plain(from);
+    const span = document.createElement('span');
+    span.className = classes;
+    span.textContent = text.slice(from, to);
+    frag.append(span);
+    pos = to;
+  });
+  plain(text.length);
+  return frag;
+}
+
 const serviceMark = Decoration.mark({ class: 'cm-sql-service' });
 
 /** `QSYS2.SYSTABLES` and friends, coloured like built-ins (not inside comments or strings). */
@@ -153,6 +201,7 @@ export function sqlEditorExtensions(): Extension[] {
     theme,
     commandLines,
     serviceReferencesPlugin,
+    runningField,
     lineNumbers(),
     highlightActiveLineGutter(),
     highlightActiveLine(),
@@ -220,6 +269,17 @@ export class SqlEditor {
   selection(): { start: number; end: number } {
     const { from, to } = this.view.state.selection.main;
     return { start: from, end: to };
+  }
+
+  /** Selects the statement and tints it while it runs (the selection stays when the tint goes). */
+  showRunning(from: number, to: number): void {
+    const end = Math.min(to, this.view.state.doc.length);
+    const start = Math.max(0, Math.min(from, end));
+    this.view.dispatch({ selection: { anchor: start, head: end }, effects: [setRunning.of({ from: start, to: end }), EditorView.scrollIntoView(start, { y: 'nearest' })] });
+  }
+
+  clearRunning(): void {
+    this.view.dispatch({ effects: setRunning.of(null) });
   }
 
   /** Puts the cursor at an offset (for tests and for "hand over a statement"). */

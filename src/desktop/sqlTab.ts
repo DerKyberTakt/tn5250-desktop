@@ -1,8 +1,12 @@
-import { errorText, goApp, type SqlColumn, type SqlConnInfo, type SqlConnectRequest, type SqlResult } from './bridge';
+import { errorText, goApp, type SqlConnInfo, type SqlConnectRequest, type SqlResult } from './bridge';
 import { confirmDialog } from './dialogs';
-import { SqlEditor } from './sqlEditor';
+import { SqlEditor, highlightedSql } from './sqlEditor';
+import { ResultView, type ResultHost } from './sqlResult';
 import { splitStatements, statementLabel, statementsFrom, statementsIn, type Statement } from './sqlScript';
+import { isOutputLines, outcomeText } from './sqlText';
 import { explainToolError } from './toolErrors';
+
+export { outcomeText } from './sqlText';
 
 export interface SqlHost {
   notify(text: string): void;
@@ -17,11 +21,22 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   return e;
 }
 
-const NUMERIC_TYPES = new Set(['SMALLINT', 'INTEGER', 'BIGINT', 'DECIMAL', 'NUMERIC', 'REAL', 'DOUBLE', 'FLOAT', 'DECFLOAT']);
 /** Rows asked for per fetch; ACS shows 500 and offers more. */
 const FETCH_ROWS = 500;
+const NOTHING_YET = 'No statement has run yet.';
 
-/** An ACS-style Run SQL Scripts tab: editor on top, results and messages below. */
+/** One statement's entry in the Output pane: its text, then what became of it. */
+interface OutputEntry {
+  box: HTMLDivElement;
+  line: HTMLDivElement;
+}
+
+/**
+ * An ACS-style Run SQL Scripts tab: the editor on top; below it one Output pane that
+ * tells the whole story in order (each statement as run, its outcome, its messages,
+ * the lines a CL command printed) and a numbered Result tab for every statement that
+ * returned rows.
+ */
 export class SqlTab {
   readonly frame: HTMLDivElement;
   title: string;
@@ -30,24 +45,24 @@ export class SqlTab {
   private stopRequested = false;
   private filePath = '';
   private dirty = false;
-  private result: SqlResult | undefined;
   private readonly editor: SqlEditor;
-  private readonly grid: HTMLDivElement;
-  private readonly messages: HTMLUListElement;
+  private readonly tabs: HTMLDivElement;
+  private readonly outputButton: HTMLButtonElement;
+  private readonly outputPane: HTMLDivElement;
+  private readonly output: HTMLDivElement;
+  private readonly bottom: HTMLDivElement;
+  private results: ResultView[] = [];
+  private resultSeq = 0;
   private readonly statusEl: HTMLSpanElement;
   /** Right side of the foot: the server job and the transport. */
   private readonly jobEl: HTMLSpanElement;
-  /** Under the grid: what the last statement did ("Loaded 50 rows in 368 ms. End of data."). */
-  private readonly resultStatus: HTMLDivElement;
   private readonly connEl: HTMLSpanElement;
-  /** Milliseconds spent in "Fetch more" for the result on show. */
-  private fetchMs = 0;
   private runStart = 0;
   private runLabel = '';
+  private running: OutputEntry | undefined;
   private ticker: ReturnType<typeof setInterval> | undefined;
   private readonly naming: HTMLSelectElement;
   private readonly buttons: Record<string, HTMLButtonElement> = {};
-  private readonly panes: Record<'results' | 'messages', { button: HTMLButtonElement; pane: HTMLElement }>;
   /** Shown while the session runs on the CL fallback instead of the database server. */
   private readonly notice: HTMLElement;
 
@@ -72,7 +87,7 @@ export class SqlTab {
     };
     const run = el('div', 'group');
     run.append(
-      btn('runSel', '▶ Run', 'Run the selected statements, or the one at the cursor (Ctrl+R)', () => void this.runSelected(), true),
+      btn('runSel', '▶ Run', 'Run the selected statements in order, or the one at the cursor (Ctrl+R)', () => void this.runSelected(), true),
       btn('runAll', 'Run All', 'Run every statement (Ctrl+Shift+R)', () => void this.runAll()),
       btn('runFrom', 'Run From Cursor', 'Run from the statement at the cursor to the end (Ctrl+Alt+R)', () => void this.runFromCursor()),
       btn('stop', 'Stop', 'Cancel the current statement and stop', () => {
@@ -120,30 +135,24 @@ export class SqlTab {
     split.title = 'Drag to resize';
     split.addEventListener('mousedown', (e) => this.startResize(e));
 
-    const bottom = el('div', 'sql-bottom');
-    const tabs = el('div', 'sql-tabs');
-    const resultsPane = el('div', 'sql-pane sql-results');
-    this.grid = el('div', 'sql-grid-wrap');
-    this.resultStatus = el('div', 'sql-results-status', 'No statement has run yet.');
-    this.resultStatus.setAttribute('role', 'status');
-    resultsPane.append(this.grid, this.resultStatus);
-    this.messages = el('ul', 'sql-messages');
-    const messagesPane = el('div', 'sql-pane');
-    messagesPane.append(this.messages);
-    const tab = (label: string): HTMLButtonElement => {
-      const b = el('button', undefined, label);
-      b.type = 'button';
-      b.setAttribute('role', 'tab');
-      tabs.append(b);
-      return b;
-    };
-    this.panes = {
-      results: { button: tab('Results'), pane: resultsPane },
-      messages: { button: tab('Messages'), pane: messagesPane },
-    };
-    for (const key of ['results', 'messages'] as const) this.panes[key].button.addEventListener('click', () => this.showPane(key));
-    bottom.append(tabs, resultsPane, messagesPane);
-    this.showPane('messages');
+    this.bottom = el('div', 'sql-bottom');
+    this.tabs = el('div', 'sql-tabs');
+    this.outputButton = el('button', undefined, 'Output');
+    this.outputButton.type = 'button';
+    this.outputButton.setAttribute('role', 'tab');
+    this.outputButton.title = 'Every statement as it ran, its outcome and its messages';
+    this.outputButton.addEventListener('click', () => this.showOutput());
+    const clear = el('button', 'sql-tabs-clear', 'Clear');
+    clear.type = 'button';
+    clear.title = 'Empty the Output pane and close every Result tab';
+    clear.addEventListener('click', () => this.clearAll());
+    this.tabs.append(this.outputButton, clear);
+    this.outputPane = el('div', 'sql-pane sql-output-pane');
+    this.output = el('div', 'sql-output');
+    this.output.append(el('div', 'sql-out-head', NOTHING_YET));
+    this.outputPane.append(this.output);
+    this.bottom.append(this.tabs, this.outputPane);
+    this.showOutput();
 
     const foot = el('div', 'sql-foot');
     this.statusEl = el('span', undefined, 'Ready');
@@ -151,7 +160,7 @@ export class SqlTab {
     this.jobEl.title = 'The server job this session runs in';
     foot.append(this.statusEl, this.jobEl);
 
-    this.frame.append(top, this.notice, this.editor.element, split, bottom, foot);
+    this.frame.append(top, this.notice, this.editor.element, split, this.bottom, foot);
     this.updateButtons();
   }
 
@@ -198,8 +207,8 @@ export class SqlTab {
       return true;
     } catch (err) {
       const why = explainToolError('SQL', this.request.host, errorText(err));
-      this.addMessage('error', `Could not connect: ${why.message}${why.hint ? ` ${why.hint}` : ''}`);
-      this.showPane('messages');
+      this.outputLine('error', `Could not connect: ${why.message}${why.hint ? ` ${why.hint}` : ''}`);
+      this.showOutput();
       this.onSignon?.(err);
       return false;
     } finally {
@@ -222,7 +231,7 @@ export class SqlTab {
       this.connEl.textContent += ` · database server${info.release ? ` ${info.release}` : ''}`;
       this.jobEl.textContent = `${info.job ? `${info.job} · ` : ''}database server${info.release ? ` ${info.release}` : ''}`;
       this.host.log(`[SQL ${this.request.host}] database host server${info.release ? ` ${info.release}` : ''}${job}`);
-      for (const w of info.warnings ?? []) this.addMessage('ok', `${w.id ? `${w.id}: ` : ''}${w.text}`);
+      for (const w of info.warnings ?? []) this.outputLine('info', `${w.id ? `${w.id}: ` : ''}${w.text}`);
       return;
     }
     const why = info.reason ? ` (${info.reason})` : '';
@@ -231,7 +240,7 @@ export class SqlTab {
     this.connEl.textContent += ' · CL fallback';
     this.jobEl.textContent = 'CL fallback';
     this.host.log(`[SQL ${this.request.host}] database host server unavailable${why}; using the CL fallback`);
-    this.addMessage('error', `Database host server unavailable${why}. Using the CL fallback (slower, untyped columns).`);
+    this.outputLine('error', `Database host server unavailable${why}. Using the CL fallback (slower, untyped columns).`);
   }
 
   private async reconnect(): Promise<void> {
@@ -249,20 +258,21 @@ export class SqlTab {
     return splitStatements(this.editor.value);
   }
 
+  /** The statement at the cursor, or every statement the selection touches, in order. */
   async runSelected(): Promise<void> {
     const { start, end } = this.editor.selection();
-    await this.runList(statementsIn(this.statements(), start, end, this.editor.value));
+    await this.runList(statementsIn(this.statements(), start, end, this.editor.value), start === end ? 'Run' : 'Run Selected');
   }
 
   async runAll(): Promise<void> {
-    await this.runList(this.statements());
+    await this.runList(this.statements(), 'Run All');
   }
 
   async runFromCursor(): Promise<void> {
-    await this.runList(statementsFrom(this.statements(), this.editor.selection().start, this.editor.value));
+    await this.runList(statementsFrom(this.statements(), this.editor.selection().start, this.editor.value), 'Run From Cursor');
   }
 
-  private async runList(list: Statement[]): Promise<void> {
+  private async runList(list: Statement[], label: string): Promise<void> {
     if (this.busy) return;
     if (!list.length) {
       this.host.notify('Nothing to run: put the cursor in a statement or select some');
@@ -271,14 +281,17 @@ export class SqlTab {
     if (!(await this.connect())) return;
     this.stopRequested = false;
     this.setBusy(true);
+    this.outputHead(`${label}…${list.length > 1 ? ` (${list.length} statements)` : ''}`);
     let ok = 0;
+    let failed = false;
+    let last: ResultView | undefined;
     try {
       for (const [i, s] of list.entries()) {
         if (this.stopRequested) {
-          this.addMessage('ok', `Stopped before statement ${i + 1} of ${list.length}.`);
+          this.outputLine('info', `Stopped before statement ${i + 1} of ${list.length}.`);
           break;
         }
-        this.beginStatement(i + 1, list.length, s);
+        const entry = this.beginStatement(i + 1, list.length, s);
         let r: SqlResult;
         try {
           r =
@@ -290,45 +303,48 @@ export class SqlTab {
         } catch (err) {
           const why = explainToolError(s.kind === 'cl' ? 'CL' : s.kind === 'qsh' ? 'QSH' : 'SQL', this.request.host, errorText(err));
           this.endStatement();
-          this.showOutcome(undefined, `${why.message}${why.hint ? ` ${why.hint}` : ''}`);
-          this.addMessage('error', `[line ${s.line}] ${statementLabel(s)}\n${why.message}${why.hint ? `\n${why.hint}` : ''}`);
-          this.showPane('messages');
-          if (!(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue'))) break;
+          this.setOutcome(entry, 'error', `Failed: ${why.message}${why.hint ? ` ${why.hint}` : ''}`);
+          failed = true;
+          if (i < list.length - 1 && !(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue'))) break;
           continue;
         }
         this.endStatement();
-        this.report(s, r);
-        this.showOutcome(r);
+        last = this.report(entry, s, r) ?? last;
         if (r.kind === 'error') {
-          this.showPane('messages');
+          failed = true;
           if (i < list.length - 1 && !(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue'))) break;
           continue;
         }
         ok++;
-        if (r.kind === 'rows') this.showPane('results');
       }
     } finally {
       this.endStatement();
+      this.editor.clearRunning();
       this.setBusy(false);
       this.statusEl.textContent = `${ok} of ${list.length} statement${list.length === 1 ? '' : 's'} ran`;
+      // ACS brings the newest result to the front; a failure anywhere keeps the story on show.
+      if (!failed && last) this.showResult(last);
+      else this.showOutput();
     }
   }
 
-  /** A statement is on its way: the old grid is visibly stale and the foot counts the seconds. */
-  private beginStatement(n: number, total: number, s: Statement): void {
-    this.grid.classList.add('stale');
-    this.resultStatus.textContent = 'Running…';
+  /** A statement is on its way: selected and tinted in the editor, logged in Output, the foot counting the seconds. */
+  private beginStatement(n: number, total: number, s: Statement): OutputEntry {
+    this.editor.showRunning(s.start, s.end);
+    const entry = this.outputEntry(s);
+    this.running = entry;
     this.runLabel = `${n} of ${total}: ${statementLabel(s)}`;
     this.runStart = Date.now();
     this.tick();
     if (this.ticker === undefined) this.ticker = setInterval(() => this.tick(), 1000);
+    return entry;
   }
 
   private tick(): void {
     const secs = Math.floor((Date.now() - this.runStart) / 1000);
     const t = secs >= 2 ? ` (${secs} s)` : '';
     this.statusEl.textContent = `${this.stopRequested ? 'Stopping after' : 'Running'} ${this.runLabel}${t}`;
-    if (secs >= 2) this.resultStatus.textContent = `Running… ${secs} s`;
+    if (this.running) this.running.line.textContent = `Running…${t}`;
   }
 
   private endStatement(): void {
@@ -336,129 +352,138 @@ export class SqlTab {
       clearInterval(this.ticker);
       this.ticker = undefined;
     }
+    this.running = undefined;
   }
 
-  /**
-   * The Results pane always shows the last statement: rows become the grid, anything
-   * else clears it and the status line carries the outcome (as Db2 for i and ACS do).
-   */
-  private showOutcome(r: SqlResult | undefined, failure?: string): void {
-    this.grid.classList.remove('stale');
-    if (r?.kind === 'rows') {
-      this.result = r;
-      this.fetchMs = 0;
-      this.renderGrid();
-      return;
-    }
-    this.result = undefined;
-    this.grid.replaceChildren();
-    this.resultStatus.textContent = failure ? `Failed: ${failure}` : r ? outcomeText(r, 0) : '';
-  }
-
-  private report(s: Statement, r: SqlResult): void {
-    const where = `[line ${s.line}] ${statementLabel(s)}`;
-    const ms = `${r.elapsedMs} ms`;
-    if (r.kind === 'error') {
-      const m = r.messages[0];
-      this.addMessage('error', `${where}\n${m ? `${m.id}${m.code ? ` (SQLCODE ${m.code})` : ''}: ${m.text}` : 'failed'} · ${ms}`);
-      return;
-    }
-    const extra = r.messages.filter((m) => m.text).map((m) => `\n${m.id}: ${m.text}`).join('');
-    if (r.kind === 'rows') this.addMessage('ok', `${where}\nLoaded ${plural(r.rows?.length ?? 0, 'row')} in ${ms}${r.more ? ' (more available)' : ''}${extra}`);
-    else if (r.kind === 'count') this.addMessage('ok', `${where}\n${plural(r.updateCount, 'row')} affected in ${ms}${extra}`);
-    else this.addMessage('ok', `${where}\nOK in ${ms}${extra}`);
-  }
-
-  private async fetchMore(): Promise<void> {
-    const r = this.result;
-    if (!r?.more || !r.cursor || this.busy) return;
-    this.setBusy(true, 'Fetching more rows…');
-    try {
-      const next = await goApp().SqlFetch(this.connection, r.cursor, FETCH_ROWS);
-      r.rows = [...(r.rows ?? []), ...(next.rows ?? [])];
-      r.more = next.more;
-      r.cursor = next.cursor;
-      this.fetchMs += next.elapsedMs;
-      this.renderGrid();
-    } catch (err) {
-      this.addMessage('error', `Fetch failed: ${errorText(err)}`);
-      this.showPane('messages');
-    } finally {
-      this.setBusy(false);
-      this.statusEl.textContent = 'Ready';
-    }
-  }
-
-  // ---- results --------------------------------------------------------------------
-
-  private renderGrid(): void {
-    const r = this.result;
-    this.grid.replaceChildren();
-    if (!r?.columns) return;
-    const table = el('table', 'sql-grid');
-    const head = el('thead');
-    const hr = el('tr');
-    for (const c of r.columns) {
-      const th = el('th', undefined, c.label || c.name);
-      th.append(el('span', 'type', typeLabel(c)));
-      hr.append(th);
-    }
-    head.append(hr);
-    const body = el('tbody');
-    const numeric = r.columns.map((c) => NUMERIC_TYPES.has(c.type.toUpperCase()));
-    for (const row of r.rows ?? []) {
-      const tr = el('tr');
-      row.forEach((v, i) => {
-        const td = el('td', v === null ? 'null' : numeric[i] ? 'num' : undefined, v === null ? 'NULL' : v);
-        tr.append(td);
-      });
-      body.append(tr);
-    }
-    table.append(head, body);
-    this.grid.append(table);
-    const tools = el('div', 'sql-more');
-    if (r.more) {
-      const more = el('button', undefined, `Fetch ${FETCH_ROWS} more rows`);
-      more.type = 'button';
-      more.addEventListener('click', () => void this.fetchMore());
-      tools.append(more, ' ');
-    }
-    const copy = el('button', undefined, 'Copy as text');
-    copy.type = 'button';
-    copy.title = 'Copy the result (tab separated) to the clipboard';
-    copy.addEventListener('click', () => void goApp().ClipboardSet(this.resultAsText('\t')).then(() => this.host.notify('Result copied')));
-    const csv = el('button', undefined, 'Save as CSV…');
-    csv.type = 'button';
-    csv.addEventListener('click', () => void goApp().SaveTextFile('Save result', 'result.csv', this.resultAsText(','), [{ name: 'CSV', patterns: '*.csv' }]));
-    tools.append(copy, ' ', csv);
-    this.grid.append(tools);
-    this.resultStatus.textContent = outcomeText(r, this.fetchMs);
-  }
-
-  private resultAsText(sep: string): string {
-    const r = this.result;
-    if (!r?.columns) return '';
-    const cell = (v: string | null): string => {
-      const s = v ?? '';
-      return sep === ',' && /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  /** Writes the outcome under the statement; rows become a Result tab, printed lines stay inline. */
+  private report(entry: OutputEntry, s: Statement, r: SqlResult): ResultView | undefined {
+    const extra = r.messages.filter((m) => m.text);
+    const addMessages = (list: typeof extra): void => {
+      for (const m of list) entry.box.append(el('div', 'sql-out-msg', `${m.id ? `${m.id}: ` : ''}${m.text}`));
     };
-    const lines = [r.columns.map((c) => cell(c.label || c.name)).join(sep)];
-    for (const row of r.rows ?? []) lines.push(row.map(cell).join(sep));
-    return lines.join('\r\n') + '\r\n';
+    if (r.kind === 'error') {
+      this.setOutcome(entry, 'error', outcomeText(r, 0));
+      addMessages(extra.slice(1));
+      return undefined;
+    }
+    this.setOutcome(entry, 'ok', outcomeText(r, 0));
+    if (r.kind === 'rows' && isOutputLines(r)) {
+      addMessages(extra);
+      entry.box.append(el('pre', 'sql-out-lines', (r.rows ?? []).map((row) => row[0] ?? '').join('\n')));
+      return undefined;
+    }
+    if (r.kind === 'rows') {
+      const view = this.addResult(statementLabel(s), r);
+      const link = el('button', 'sql-out-link', `Result ${view.n}`);
+      link.type = 'button';
+      link.title = 'Show the rows';
+      link.addEventListener('click', () => this.showResult(view));
+      entry.line.append(' ', link);
+      addMessages(extra);
+      return view;
+    }
+    addMessages(extra);
+    return undefined;
   }
 
-  private addMessage(kind: 'ok' | 'error', text: string): void {
-    const li = el('li', kind);
-    const stamp = new Date().toLocaleTimeString();
-    li.append(el('span', 'where', `${stamp}  `), document.createTextNode(text));
-    this.messages.append(li);
-    li.scrollIntoView({ block: 'nearest' });
+  // ---- Output pane -----------------------------------------------------------------
+
+  private freshOutput(): void {
+    if (this.output.childElementCount === 1 && this.output.firstElementChild?.textContent === NOTHING_YET) this.output.replaceChildren();
   }
 
-  private showPane(key: 'results' | 'messages'): void {
-    for (const [k, p] of Object.entries(this.panes)) {
-      p.pane.hidden = k !== key;
-      p.button.setAttribute('aria-selected', String(k === key));
+  /** A run header carries the time and what was asked, as ACS's message pane does. */
+  private outputHead(text: string): void {
+    this.freshOutput();
+    const head = el('div', 'sql-out-head', `[ ${new Date().toLocaleString()} ]  ${text}`);
+    this.output.append(head);
+    head.scrollIntoView({ block: 'nearest' });
+  }
+
+  private outputLine(kind: 'ok' | 'error' | 'info', text: string): void {
+    this.freshOutput();
+    const line = el('div', `sql-out-line ${kind}`, `${kind === 'error' ? '✗ ' : kind === 'ok' ? '✓ ' : ''}${text}`);
+    this.output.append(line);
+    line.scrollIntoView({ block: 'nearest' });
+  }
+
+  private outputEntry(s: Statement): OutputEntry {
+    const box = el('div', 'sql-out-entry');
+    const stmt = el('pre', 'sql-out-stmt');
+    if (s.kind === 'sql') stmt.append(highlightedSql(s.text));
+    else stmt.append(el('span', 'sq-cmd', s.kind === 'cl' ? 'CL: ' : 'QSH: '), s.text);
+    const line = el('div', 'sql-out-line running', 'Running…');
+    box.append(stmt, line);
+    this.output.append(box);
+    box.scrollIntoView({ block: 'nearest' });
+    return { box, line };
+  }
+
+  private setOutcome(entry: OutputEntry, kind: 'ok' | 'error', text: string): void {
+    entry.line.className = `sql-out-line ${kind}`;
+    entry.line.textContent = `${kind === 'ok' ? '✓' : '✗'} ${text}`;
+    entry.box.scrollIntoView({ block: 'nearest' });
+  }
+
+  // ---- Result tabs -----------------------------------------------------------------
+
+  private readonly resultHost: ResultHost = {
+    fetchMore: async (cursor, max) => {
+      if (this.busy) return undefined;
+      this.setBusy(true, 'Fetching more rows…');
+      try {
+        return await goApp().SqlFetch(this.connection, cursor, max);
+      } catch (err) {
+        this.outputLine('error', `Fetch failed: ${errorText(err)}`);
+        return undefined;
+      } finally {
+        this.setBusy(false);
+        this.statusEl.textContent = 'Ready';
+      }
+    },
+    notify: (text) => this.host.notify(text),
+    activate: (view) => this.showResult(view),
+    close: (view) => this.closeResult(view),
+  };
+
+  private addResult(label: string, r: SqlResult): ResultView {
+    const view = new ResultView(++this.resultSeq, label, r, this.resultHost, FETCH_ROWS);
+    this.results.push(view);
+    this.tabs.insertBefore(view.button, this.tabs.lastElementChild);
+    this.bottom.append(view.pane);
+    return view;
+  }
+
+  private closeResult(view: ResultView): void {
+    const shown = !view.pane.hidden;
+    this.results = this.results.filter((v) => v !== view);
+    view.button.remove();
+    view.pane.remove();
+    if (shown) this.showOutput();
+  }
+
+  private clearAll(): void {
+    for (const v of [...this.results]) this.closeResult(v);
+    this.resultSeq = 0;
+    this.output.replaceChildren(el('div', 'sql-out-head', NOTHING_YET));
+    this.showOutput();
+  }
+
+  private showOutput(): void {
+    this.outputPane.hidden = false;
+    this.outputButton.setAttribute('aria-selected', 'true');
+    for (const v of this.results) {
+      v.pane.hidden = true;
+      v.button.setAttribute('aria-selected', 'false');
+    }
+  }
+
+  private showResult(view: ResultView): void {
+    this.outputPane.hidden = true;
+    this.outputButton.setAttribute('aria-selected', 'false');
+    for (const v of this.results) {
+      v.pane.hidden = v !== view;
+      v.button.setAttribute('aria-selected', String(v === view));
     }
   }
 
@@ -523,38 +548,4 @@ export class SqlTab {
       this.host.changed(this);
     }
   }
-}
-
-const fmt = (n: number): string => n.toLocaleString('en-US');
-
-function plural(n: number, word: string): string {
-  return `${fmt(n)} ${word}${n === 1 ? '' : 's'}`;
-}
-
-/** The one-line outcome of a result, the way Db2 for i words it. */
-export function outcomeText(r: SqlResult, fetchMs: number): string {
-  const ms = `${fmt(r.elapsedMs)} ms`;
-  switch (r.kind) {
-    case 'rows': {
-      const n = r.rows?.length ?? 0;
-      if (r.columns?.length === 1 && r.columns[0]!.name.toUpperCase() === 'OUTPUT') return `Output: ${plural(n, 'line')} in ${ms}.`;
-      const fetched = fetchMs ? ` + ${fmt(fetchMs)} ms` : '';
-      return `Loaded ${plural(n, 'row')} in ${ms}${fetched}. ${r.more ? 'More rows available.' : 'End of data.'}`;
-    }
-    case 'count':
-      return `${plural(r.updateCount, 'row')} affected in ${ms}.`;
-    case 'error': {
-      const m = r.messages[0];
-      return m ? `${m.id}${m.code ? ` (SQLCODE ${m.code})` : ''}: ${m.text} · ${ms}` : `Failed after ${ms}.`;
-    }
-    default:
-      return `Statement ran in ${ms}.`;
-  }
-}
-
-function typeLabel(c: SqlColumn): string {
-  const t = c.type.toUpperCase();
-  if (NUMERIC_TYPES.has(t) && (t === 'DECIMAL' || t === 'NUMERIC')) return `${t}(${c.length},${c.scale})`;
-  if (['CHAR', 'VARCHAR', 'GRAPHIC', 'VARGRAPHIC', 'BINARY', 'VARBINARY'].includes(t)) return `${t}(${c.length})`;
-  return t;
 }
