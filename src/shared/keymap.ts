@@ -167,6 +167,12 @@ export const ACS_KEYMAP: Keymap = {
   'Ctrl+Insert': 'copy',
   'Ctrl+V': 'paste',
   'Shift+Insert': 'paste',
+  // macOS: the Command chords Mac users press (Windows and Linux never deliver Win/Super
+  // chords to the page, so these do no harm there). Apple keyboards have no Insert key, so
+  // Insert mode gets Cmd+Enter; any other key can be assigned on the Keyboard settings page.
+  'Meta+C': 'copy',
+  'Meta+V': 'paste',
+  'Meta+Enter': 'insert',
   Home: 'home',
   NumpadHome: 'home',
   End: 'endOfField',

@@ -1175,6 +1175,15 @@ export class Renderer {
     this.anchor = undefined;
   }
 
+  /** Selects the whole screen (the right-click menu's Select All). */
+  selectAll(): void {
+    const s = this.screen;
+    if (!s) return;
+    this.anchor = undefined;
+    this.selection = { row1: 0, col1: 0, row2: s.rows - 1, col2: s.cols - 1 };
+    this.draw();
+  }
+
   clearSelection(): void {
     this.anchor = undefined;
     if (this.selection) {

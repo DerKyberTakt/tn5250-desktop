@@ -149,6 +149,47 @@ body.pointer-crosshair #screen {
   cursor: crosshair !important;
 }
 
+/* Right-click menu on the screen: Copy / Paste / Select All. */
+#ctx-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--vscode-menu-background, #252526);
+  color: var(--vscode-menu-foreground, #cccccc);
+  border: 1px solid var(--vscode-menu-border, #454545);
+  border-radius: 5px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 35%);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: 13px;
+}
+
+#ctx-menu[hidden] {
+  display: none;
+}
+
+#ctx-menu button {
+  display: block;
+  width: 100%;
+  padding: 4px 10px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+
+#ctx-menu button:hover:not(:disabled) {
+  background: var(--vscode-menu-selectionBackground, #094771);
+  color: var(--vscode-menu-selectionForeground, #ffffff);
+}
+
+#ctx-menu button:disabled {
+  opacity: 0.45;
+}
+
 /* Connection overlay: connecting / connection lost, over the dimmed last screen. */
 #connection-overlay {
   position: absolute;

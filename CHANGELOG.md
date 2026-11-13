@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 - unreleased
+- macOS: Cmd+C copies, Cmd+V pastes and Cmd+Enter toggles Insert mode by default (Apple keyboards have no Insert key); any other key can still be given to Insert on the Keyboard settings page. Ctrl+C, Ctrl+Insert, Ctrl+V and Shift+Insert work as before. Asked for in tn5250-terminal #12 and #13.
+- Right-click on the screen opens a menu with Copy (the selection, or Copy Screen when nothing is selected), Paste and Select All, as ACS offers; Escape or a click elsewhere closes it. A host that asked for the right mouse button keeps it.
+
 ## 0.3.0 - 2026-11-12
 - Settings > Connection has an Import Connections… button, the same import as File > Import Connections.
 - IFS browser: double-click a folder to open it and a file to view it (a click used to rebuild the rows, so the second click never counted); the tool bars are icon buttons with the Macros dialog's hover ring (back, up, refresh, folders, upload, download, new folder, rename, delete, view); a tool that is switched on (the folder tree, Edit, Wrap, Find) sits on a tinted disc.

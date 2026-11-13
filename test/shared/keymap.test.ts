@@ -66,6 +66,10 @@ describe('ACS keymap', () => {
     expect(resolveAction(k('Insert', 'Insert', { ctrl: true }), ACS_KEYMAP)).toBe('copy');
     expect(resolveAction(k('v', 'KeyV', { ctrl: true }), ACS_KEYMAP)).toBe('paste');
     expect(resolveAction(k('Insert', 'Insert', { shift: true }), ACS_KEYMAP)).toBe('paste');
+    // macOS: Cmd+C / Cmd+V, and Cmd+Enter for Insert (no Insert key on Apple keyboards).
+    expect(resolveAction(k('c', 'KeyC', { meta: true }), ACS_KEYMAP)).toBe('copy');
+    expect(resolveAction(k('v', 'KeyV', { meta: true }), ACS_KEYMAP)).toBe('paste');
+    expect(resolveAction(k('Enter', 'Enter', { meta: true }), ACS_KEYMAP)).toBe('insert');
     // Dup is assignable but unbound by default (ACS pastes on Shift+Insert).
     expect(Object.values(ACS_KEYMAP)).not.toContain('dup');
   });
