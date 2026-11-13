@@ -1,5 +1,5 @@
 import { errorText, goApp } from './bridge';
-import { choiceDialog, confirmDialog } from './dialogs';
+import { choiceDialog, confirmDialog, promptDialog } from './dialogs';
 import { actionButton } from './icons';
 import { ENCODINGS, HEX, decodeIfs, ebcdicLineEnd, encodeIfs, encodingLabel, fromBase64, guessCcsid, hexDump, isBinary, keepBom, toBase64 } from './ifsText';
 import { formatSize } from './ifsTab';
@@ -9,6 +9,8 @@ export interface IfsViewHost {
   /** A line for the Session Log (what was read and how it is decoded). */
   log?(line: string): void;
   changed(tab: IfsViewTab): void;
+  /** Opens another file of the same session in a viewer tab (after Save as… on the host). */
+  openPath?(sessionId: string, path: string, info: IfsFileInfo): void;
 }
 
 /** What the browser knew about the file when it opened it: a save checks the host still agrees. */
@@ -92,7 +94,8 @@ export class IfsViewTab {
       btn('reload', 'refresh', 'blue', 'Read the file again (F5)', () => void this.load()),
       btn('edit', 'pencil', 'yellow', 'Edit (then Save writes it back to the host)', () => this.toggleEdit()),
       btn('save', 'save', 'green', 'Save to the host (Ctrl+S)', () => void this.save()),
-      btn('saveAs', 'exportFile', 'blue', 'Save as… on this computer (as it is, or converted to UTF-8)', () => void this.saveAs()),
+      btn('saveAsHost', 'saveAs', 'green', 'Save as… under another name or folder on the host', () => void this.saveAsHost()),
+      btn('saveAs', 'importFile', 'blue', 'Download a copy to this computer (as it is, or converted to UTF-8)', () => void this.saveAs()),
       btn('copy', 'copy', 'blue', 'Copy all', () => void this.copyAll()),
       btn('find', 'find', 'blue', 'Find (Ctrl+F)', () => this.toggleFind()),
       btn('wrap', 'wrap', 'blue', 'Wrap long lines', () => this.toggleWrap()),
@@ -355,6 +358,44 @@ export class IfsViewTab {
       this.host.notify(`Saved ${name} (${formatSize(bytes.length)}, ${encodingLabel(ccsid)})`);
     } catch (err) {
       this.host.notify(`Save failed: ${errorText(err)}`);
+    }
+  }
+
+  /** Writes the text (as shown, edited or not) to another path on the host, in the same code page, and opens it. */
+  async saveAsHost(): Promise<void> {
+    if (this.binary) {
+      this.host.notify('A binary file cannot be saved as text; download it and upload it under the new name.');
+      return;
+    }
+    if (this.truncated) {
+      this.host.notify('Only part of the file is loaded; Save as… needs the whole file.');
+      return;
+    }
+    const target = await promptDialog('Save as… on the host', 'Full path of the new file', { value: this.path, note: `Written as ${encodingLabel(this.ccsid)}, the code page shown; the folder must already exist.` });
+    const p = target?.trim();
+    if (!p || p === this.path) return;
+    if (!p.startsWith('/')) {
+      this.host.notify('Give the full path, starting with /.');
+      return;
+    }
+    const dir = p.slice(0, p.lastIndexOf('/')) || '/';
+    const name = p.split('/').pop() ?? '';
+    try {
+      const siblings = await goApp().IfsList(this.sessionId, dir);
+      const there = siblings.find((e) => e.name === name);
+      if (there?.dir) {
+        this.host.notify(`${p} is a folder.`);
+        return;
+      }
+      if (there && !(await confirmDialog('File exists', `${name} is already in ${dir} (${formatSize(there.size)}, ${new Date(there.modified).toLocaleString()}). Overwrite it?`, 'Overwrite'))) return;
+      const ccsid = this.ccsid;
+      const bytes = keepBom(encodeIfs(this.text, ccsid, ebcdicLineEnd(this.bytes)), this.bytes, ccsid);
+      await goApp().IfsWriteBytes(this.sessionId, p, toBase64(bytes), ccsid, true);
+      const after = (await goApp().IfsList(this.sessionId, dir)).find((e) => e.name === name);
+      this.host.notify(`Saved ${p} (${formatSize(bytes.length)}, ${encodingLabel(ccsid)})`);
+      this.host.openPath?.(this.sessionId, p, { size: after?.size ?? bytes.length, modified: after?.modified ?? new Date().toISOString() });
+    } catch (err) {
+      this.host.notify(`Save as failed: ${errorText(err)}`);
     }
   }
 

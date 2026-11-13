@@ -245,8 +245,45 @@
   font-weight: 600;
   background: var(--chrome-bg);
   border-bottom: 1px solid var(--chrome-border);
-  cursor: default;
+  cursor: pointer;
   white-space: nowrap;
+  user-select: none;
+}
+
+.ifs-list th:hover {
+  background: var(--chrome-hover);
+}
+
+/* The sort arrow: hollow on hover (what a click would do), solid on the sorted column. */
+.ifs-list th .sort-arrow {
+  display: inline-block;
+  width: 1em;
+  margin-left: 2px;
+  font-size: 10px;
+  color: var(--chrome-muted, #888);
+  opacity: 0;
+}
+
+.ifs-list th:hover .sort-arrow {
+  opacity: 0.6;
+}
+
+.ifs-list th:hover .sort-arrow::before {
+  content: '\25B2';
+}
+
+.ifs-list th.sorted-asc .sort-arrow,
+.ifs-list th.sorted-desc .sort-arrow {
+  opacity: 1;
+  color: var(--accent, #1f5fa8);
+}
+
+.ifs-list th.sorted-asc .sort-arrow::before {
+  content: '\25B2';
+}
+
+.ifs-list th.sorted-desc .sort-arrow::before {
+  content: '\25BC';
 }
 
 .ifs-list td {

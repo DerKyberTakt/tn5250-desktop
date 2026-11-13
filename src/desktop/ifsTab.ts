@@ -61,6 +61,7 @@ export class IfsTab {
   private selected = new Set<string>();
   private anchor: string | undefined;
   private sort: { key: SortKey; asc: boolean } = { key: 'name', asc: true };
+  private readonly headers = new Map<SortKey, HTMLTableCellElement>();
   private busy = false;
 
   private readonly pathInput: HTMLInputElement;
@@ -150,12 +151,17 @@ export class IfsTab {
     const hr = el('tr');
     for (const [key, label] of [['name', 'Name'], ['size', 'Size'], ['modified', 'Modified'], ['type', 'Type']] as const) {
       const th = el('th', `col-${key}`, label);
+      th.title = `Sort by ${label.toLowerCase()} (again: the other way round)`;
+      th.append(el('span', 'sort-arrow'));
       th.addEventListener('click', () => {
         this.sort = { key, asc: this.sort.key === key ? !this.sort.asc : true };
+        this.markSort();
         this.render();
       });
+      this.headers.set(key, th);
       hr.append(th);
     }
+    this.markSort();
     head.append(hr);
     this.body = el('tbody');
     table.append(head, this.body);
@@ -460,6 +466,17 @@ export class IfsTab {
   private async back(): Promise<void> {
     const prev = this.history.pop();
     if (prev) await this.go(prev, false);
+  }
+
+  /** Shows the sort column and direction on the headers (the arrow the list is sorted by). */
+  private markSort(): void {
+    for (const [key, th] of this.headers) {
+      const on = key === this.sort.key;
+      th.classList.toggle('sorted-asc', on && this.sort.asc);
+      th.classList.toggle('sorted-desc', on && !this.sort.asc);
+      if (on) th.setAttribute('aria-sort', this.sort.asc ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    }
   }
 
   private sorted(): IfsEntry[] {
