@@ -481,7 +481,10 @@ function hostMouseEvent(e: MouseEvent, kind: 'down' | 'up' | 'dbl'): boolean {
   return true;
 }
 canvas.addEventListener('contextmenu', (e) => {
-  if (hostMouseEvents.some((c) => c === 4 || c === 5 || c === 6 || c === 13 || c === 14 || c === 15)) e.preventDefault();
+  e.preventDefault();
+  // A host that asked for the right button gets it; otherwise the screen's own menu.
+  if (hostMouseEvents.some((c) => c === 4 || c === 5 || c === 6 || c === 13 || c === 14 || c === 15)) return;
+  showContextMenu(e.clientX, e.clientY);
 });
 canvas.addEventListener('mouseup', (e) => {
   hostMouseEvent(e, 'up');
@@ -631,6 +634,64 @@ document.addEventListener('paste', (e) => {
   e.preventDefault();
   pasteText(text);
 });
+
+// Copy from the host's Edit > Copy (VS Code routes Cmd+C / Ctrl+C in a webview this way too):
+// the selection, or the whole screen, as the Copy key does.
+document.addEventListener('copy', (e) => {
+  if (!lastScreen || !e.clipboardData) return;
+  e.clipboardData.setData('text/plain', renderer.selectedText(config.settings.copyTrimTrailing));
+  e.preventDefault();
+  if (!config.settings.copyKeepSelection) renderer.clearSelection();
+});
+
+// Right-click menu on the screen: Copy (the selection, or the screen), Paste, Select All,
+// the three things ACS offers there. Escape, a click elsewhere or losing focus closes it.
+const contextMenu = document.createElement('div');
+contextMenu.id = 'ctx-menu';
+contextMenu.hidden = true;
+document.body.append(contextMenu);
+
+function hideContextMenu(): void {
+  contextMenu.hidden = true;
+}
+
+function showContextMenu(x: number, y: number): void {
+  contextMenu.replaceChildren();
+  const item = (label: string, enabled: boolean, run: () => void): void => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.disabled = !enabled;
+    b.addEventListener('click', () => {
+      hideContextMenu();
+      run();
+      terminal.focus();
+    });
+    contextMenu.append(b);
+  };
+  const live = lastScreen !== undefined;
+  item(renderer.hasSelection ? 'Copy' : 'Copy Screen', live, () => copySelection());
+  item('Paste', live, () => post({ type: 'paste' }));
+  item('Select All', live, () => renderer.selectAll());
+  contextMenu.hidden = false;
+  contextMenu.style.left = `${Math.max(0, Math.min(x, window.innerWidth - contextMenu.offsetWidth - 4))}px`;
+  contextMenu.style.top = `${Math.max(0, Math.min(y, window.innerHeight - contextMenu.offsetHeight - 4))}px`;
+}
+
+document.addEventListener('mousedown', (e) => {
+  if (!contextMenu.hidden && !contextMenu.contains(e.target as Node)) hideContextMenu();
+});
+document.addEventListener(
+  'keydown',
+  (e) => {
+    if (e.key === 'Escape' && !contextMenu.hidden) {
+      e.stopPropagation();
+      hideContextMenu();
+    }
+  },
+  true,
+);
+window.addEventListener('blur', hideContextMenu);
 
 terminal.focus();
 renderOia();
