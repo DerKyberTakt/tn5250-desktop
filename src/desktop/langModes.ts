@@ -265,6 +265,9 @@ const batchParser: StreamParser<{ afterEcho: boolean }> = {
 
 export const batchLanguage = StreamLanguage.define(batchParser);
 
+/** The POSIX shell mode (QSH: lines and .sh files). */
+export const shellLanguage = StreamLanguage.define(shell);
+
 // ---- by extension --------------------------------------------------------------------------
 
 export interface FileLanguage {
@@ -294,11 +297,11 @@ const BY_EXTENSION: Record<string, () => FileLanguage> = {
   markdown: () => ({ kind: 'code', name: 'Markdown', extension: markdown() }),
   css: () => ({ kind: 'code', name: 'CSS', extension: css() }),
   sql: () => ({ kind: 'code', name: 'SQL', extension: db2iLanguage() }),
-  sh: () => ({ kind: 'code', name: 'Shell', extension: StreamLanguage.define(shell) }),
-  bash: () => ({ kind: 'code', name: 'Shell', extension: StreamLanguage.define(shell) }),
-  ksh: () => ({ kind: 'code', name: 'Shell', extension: StreamLanguage.define(shell) }),
-  zsh: () => ({ kind: 'code', name: 'Shell', extension: StreamLanguage.define(shell) }),
-  qsh: () => ({ kind: 'code', name: 'Shell', extension: StreamLanguage.define(shell) }),
+  sh: () => ({ kind: 'code', name: 'Shell', extension: shellLanguage }),
+  bash: () => ({ kind: 'code', name: 'Shell', extension: shellLanguage }),
+  ksh: () => ({ kind: 'code', name: 'Shell', extension: shellLanguage }),
+  zsh: () => ({ kind: 'code', name: 'Shell', extension: shellLanguage }),
+  qsh: () => ({ kind: 'code', name: 'Shell', extension: shellLanguage }),
   ps1: () => ({ kind: 'code', name: 'PowerShell', extension: StreamLanguage.define(powerShell) }),
   psm1: () => ({ kind: 'code', name: 'PowerShell', extension: StreamLanguage.define(powerShell) }),
   properties: () => ({ kind: 'code', name: 'Properties', extension: StreamLanguage.define(properties) }),

@@ -1,6 +1,6 @@
 import { errorText, goApp, type SqlConnInfo, type SqlConnectRequest, type SqlResult } from './bridge';
 import { confirmDialog } from './dialogs';
-import { SqlEditor, highlightedSql } from './sqlEditor';
+import { SqlEditor, highlightedCommand, highlightedSql } from './sqlEditor';
 import { ResultView, type ResultHost } from './sqlResult';
 import { splitStatements, statementLabel, statementsFrom, statementsIn, type Statement } from './sqlScript';
 import { isOutputLines, outcomeText } from './sqlText';
@@ -411,7 +411,7 @@ export class SqlTab {
     const box = el('div', 'sql-out-entry');
     const stmt = el('pre', 'sql-out-stmt');
     if (s.kind === 'sql') stmt.append(highlightedSql(s.text));
-    else stmt.append(el('span', 'sq-cmd', s.kind === 'cl' ? 'CL: ' : 'QSH: '), s.text);
+    else stmt.append(el('span', 'sq-cmd', s.kind === 'cl' ? 'CL: ' : 'QSH: '), highlightedCommand(s.text, s.kind));
     const line = el('div', 'sql-out-line running', 'Running…');
     box.append(stmt, line);
     this.output.append(box);

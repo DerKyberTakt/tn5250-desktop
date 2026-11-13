@@ -26,7 +26,9 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view';
+import type { Tree } from '@lezer/common';
 import { highlightTree, tagHighlighter, tags as t } from '@lezer/highlight';
+import { clLanguage, shellLanguage } from './langModes';
 import { SERVICE_REFERENCE, db2iLanguage } from './sqlDialect';
 
 /** The nonce the page's Content-Security-Policy grants to the editor's style sheets. */
@@ -100,8 +102,22 @@ export const editorTheme = EditorView.theme({
 
 const clLine = Decoration.line({ class: 'cm-cl-line' });
 const clPrefix = Decoration.mark({ class: 'cm-cl-prefix' });
+const tokenMarks = new Map<string, Decoration>();
 
-/** The `CL:` / `QSH:` lines of a script, tinted as a whole with the prefix in bold. */
+function tokenMark(classes: string): Decoration {
+  let d = tokenMarks.get(classes);
+  if (!d) {
+    d = Decoration.mark({ class: classes });
+    tokenMarks.set(classes, d);
+  }
+  return d;
+}
+
+/**
+ * The `CL:` / `QSH:` lines of a script: tinted as a whole with the prefix in bold, and the
+ * command after the prefix coloured by the CL mode (a QSH line by the shell mode), the SQL
+ * grammar knowing nothing about either.
+ */
 function commandLineDecorations(view: EditorView): DecorationSet {
   const b = new RangeSetBuilder<Decoration>();
   for (const { from, to } of view.visibleRanges) {
@@ -111,6 +127,10 @@ function commandLineDecorations(view: EditorView): DecorationSet {
       if (m) {
         b.add(line.from, line.from, clLine);
         b.add(line.from + m[1]!.length, line.from + m[0].length, clPrefix);
+        const body = line.text.slice(m[0].length).replace(/;\s*$/, '');
+        const base = line.from + m[0].length;
+        const lang = m[2]!.toUpperCase() === 'CL' ? clLanguage : shellLanguage;
+        highlightTree(lang.parser.parse(body), tokenClasses, (s, e, classes) => b.add(base + s, base + e, tokenMark(classes)));
       }
       pos = line.to + 1;
     }
@@ -160,13 +180,22 @@ const tokenClasses = tagHighlighter([
 
 /** SQL text with its syntax colours as spans, the same colours as the editor, for the Output pane. */
 export function highlightedSql(text: string): DocumentFragment {
+  return highlighted(text, db2iLanguage().language);
+}
+
+/** A CL or QSH command line coloured by its mode, for the Output pane. */
+export function highlightedCommand(text: string, kind: 'cl' | 'qsh'): DocumentFragment {
+  return highlighted(text, kind === 'cl' ? clLanguage : shellLanguage);
+}
+
+function highlighted(text: string, lang: { parser: { parse(text: string): Tree } }): DocumentFragment {
   const frag = document.createDocumentFragment();
   let pos = 0;
   const plain = (to: number): void => {
     if (to > pos) frag.append(document.createTextNode(text.slice(pos, to)));
     pos = to;
   };
-  highlightTree(db2iLanguage().language.parser.parse(text), tokenClasses, (from, to, classes) => {
+  highlightTree(lang.parser.parse(text), tokenClasses, (from, to, classes) => {
     plain(from);
     const span = document.createElement('span');
     span.className = classes;
