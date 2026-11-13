@@ -126,6 +126,14 @@ export interface IfsEntry {
   hidden: boolean;
 }
 
+/** One match of IfsSearch: `name` is the path relative to the folder searched. */
+export interface IfsHit {
+  name: string;
+  dir: boolean;
+  size: number;
+  modified: string;
+}
+
 export interface IfsConnectRequest {
   host: string;
   tls: boolean;
@@ -226,6 +234,8 @@ interface GoApp {
   IfsConnect(request: IfsConnectRequest): Promise<string>;
   IfsClose(id: string): Promise<void>;
   IfsList(id: string, dir: string): Promise<IfsEntry[]>;
+  /** Entries of `dir` whose names contain `text` (* ? wildcards); `subtree` searches the whole tree below through the database server. */
+  IfsSearch(id: string, dir: string, text: string, subtree: boolean): Promise<IfsHit[]>;
   IfsMkdir(id: string, path: string): Promise<void>;
   IfsRename(id: string, from: string, to: string): Promise<void>;
   IfsDelete(id: string, path: string, dir: boolean, recursive: boolean): Promise<void>;

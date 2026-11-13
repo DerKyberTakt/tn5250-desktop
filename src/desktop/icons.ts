@@ -86,6 +86,8 @@ export const ACTION_ICONS = {
   eye: action('<g class="shape"><path d="M3.5 12s3.2-5.5 8.5-5.5 8.5 5.5 8.5 5.5-3.2 5.5-8.5 5.5S3.5 12 3.5 12z"/><circle cx="12" cy="12" r="2.6"/></g>'),
   /** Save: a floppy disk. */
   save: action('<g class="shape"><path d="M5.5 5.5h10l3 3v10a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z"/><path d="M8.5 5.5v4.5h6V5.5"/><path d="M8 19.5v-5h8v5"/></g>'),
+  /** Save as: the disk with a pencil over its corner. */
+  saveAs: action('<g class="shape"><path d="M5.5 5.5h10l3 3v4.5"/><path d="M4.5 6.5v12a1 1 0 0 0 1 1h7"/><path d="M8.5 5.5v4.5h6V5.5"/><path d="m15.2 13.3 2.5 2.5-4.2 4.2-3 .5.5-3z"/></g>'),
   /** Copy: two pages. */
   copy: action('<g class="shape"><rect x="9" y="8.5" width="9.5" height="10.5" rx="1"/><path d="M15 8.5V6.5a1 1 0 0 0-1-1H6.5a1 1 0 0 0-1 1V15a1 1 0 0 0 1 1H9"/></g>'),
   /** Find: a magnifier. */

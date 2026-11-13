@@ -419,12 +419,17 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
 
   /** A file of an IFS browser, in its own tab (the same file twice just activates the tab). */
   openViewer(from: IfsTab, path: string, info: { size: number; modified: string }): void {
-    const open = this.entries.find((e) => e.kind === 'ifsview' && e.tab.path === path && e.tab.sessionId === from.sessionId);
+    this.openPath(from.sessionId, path, info);
+  }
+
+  /** A viewer tab for a file of an IFS session (one tab per path; an open one is brought to the front). */
+  openPath(sessionId: string, path: string, info: { size: number; modified: string }): void {
+    const open = this.entries.find((e) => e.kind === 'ifsview' && e.tab.path === path && e.tab.sessionId === sessionId);
     if (open) {
       this.activate(open);
       return;
     }
-    const tab = new IfsViewTab(this, from.sessionId, path, info);
+    const tab = new IfsViewTab(this, sessionId, path, info);
     this.addEntry({ kind: 'ifsview', tab, button: el('div') }, true);
     void tab.load();
   }

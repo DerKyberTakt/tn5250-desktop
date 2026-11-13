@@ -3,6 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IfsViewTab } from '../../src/desktop/ifsViewTab';
 import { toBase64 } from '../../src/desktop/ifsText';
 
+vi.mock('../../src/desktop/dialogs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../src/desktop/dialogs')>();
+  return { ...real, promptDialog: vi.fn(async () => '/home/JSMITH/copy.txt'), confirmDialog: vi.fn(async () => true) };
+});
+
 const EBCDIC_HELLO = Uint8Array.from([0xc8, 0x85, 0x93, 0x93, 0x96, 0x15, 0xe6, 0x96, 0x99, 0x93, 0x84]); // "Hello\nWorld"
 
 function fakeHost(file: { bytes: Uint8Array; ccsid: number; truncated?: boolean }) {
@@ -19,42 +24,49 @@ function fakeHost(file: { bytes: Uint8Array; ccsid: number; truncated?: boolean 
     ClipboardSet: vi.fn(async () => undefined),
   };
   window.go = { main: { App: app as never } };
+  // jsdom has no layout: CodeMirror measures text ranges.
+  const rect = { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) };
+  Range.prototype.getClientRects = () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as never;
+  Range.prototype.getBoundingClientRect = () => rect as never;
+  Element.prototype.scrollIntoView = () => undefined;
   return { app, writes, setListing: (l: typeof listing) => (listing = l) };
 }
 
-const host = { notify: vi.fn(), changed: vi.fn() };
+const host = { notify: vi.fn(), changed: vi.fn(), openPath: vi.fn() };
 const info = { size: EBCDIC_HELLO.length, modified: '2026-11-08T10:00:00Z' };
 
 beforeEach(() => {
   document.body.replaceChildren();
   host.notify.mockClear();
   host.changed.mockClear();
-  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-    this.returnValue = 'ok';
-    this.dispatchEvent(new Event('close'));
-  };
+  host.openPath.mockClear();
 });
 
 const button = (tab: IfsViewTab, icon: string): HTMLButtonElement => tab.frame.querySelector(`button.${icon}`) as HTMLButtonElement;
-const area = (tab: IfsViewTab): HTMLTextAreaElement => tab.frame.querySelector('.ifsv-text') as HTMLTextAreaElement;
+const text = (tab: IfsViewTab): string => tab['editor'].value;
+const editable = (tab: IfsViewTab): boolean => tab.frame.querySelector('.cm-content')?.getAttribute('contenteditable') === 'true';
+const status = (tab: IfsViewTab): string => tab.frame.querySelector('.ifs-status')?.textContent ?? '';
 
 describe('IFS viewer tab', () => {
-  it('decodes an EBCDIC file by its CCSID, numbers the lines and shows the encoding', async () => {
+  it('decodes an EBCDIC file by its CCSID into a read-only editor with line numbers', async () => {
     fakeHost({ bytes: EBCDIC_HELLO, ccsid: 37 });
     const tab = new IfsViewTab(host, 'S1', '/home/JSMITH/a.txt', info);
     document.body.append(tab.frame);
     await tab.load();
     expect(tab.title).toBe('a.txt');
-    expect(area(tab).value).toBe('Hello\nWorld');
-    expect(area(tab).readOnly).toBe(true);
-    expect(tab.frame.querySelector('.ifsv-gutter')?.textContent).toBe('1\n2');
+    expect(text(tab)).toBe('Hello\nWorld');
+    expect(editable(tab)).toBe(false);
+    expect([...tab.frame.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].map((e) => e.textContent).slice(1)).toEqual(['1', '2']); // the first gutter element is CodeMirror's width spacer
     expect((tab.frame.querySelector('.ifsv-encoding') as HTMLSelectElement).value).toBe('37');
-    expect(tab.frame.querySelector('.ifs-status')?.textContent).toContain('EBCDIC 37 (US, Canada)');
+    expect(status(tab)).toContain('EBCDIC 37 (US, Canada)');
     expect(button(tab, 'save').disabled).toBe(true);
     expect(button(tab, 'pencil').disabled).toBe(false);
+    expect(button(tab, 'saveAs').disabled).toBe(false);
+    // Buttons: download wears the download icon; Save as… on the host sits next to Save.
+    expect([...tab.frame.querySelectorAll<HTMLButtonElement>('.ifsv-bar button.act')].map((b) => b.className.split(' ')[1])).toEqual(['refresh', 'pencil', 'save', 'saveAs', 'importFile', 'copy', 'find', 'wrap']);
   });
 
-  it('switching the encoding re-decodes; Find counts and selects matches', async () => {
+  it('switching the encoding re-decodes; Find opens the search panel', async () => {
     fakeHost({ bytes: new TextEncoder().encode('one two\nthree two'), ccsid: 1208 });
     const tab = new IfsViewTab(host, 'S1', '/x/b.txt', { size: 17, modified: '' });
     document.body.append(tab.frame);
@@ -62,17 +74,18 @@ describe('IFS viewer tab', () => {
     const sel = tab.frame.querySelector('.ifsv-encoding') as HTMLSelectElement;
     sel.value = '819';
     sel.dispatchEvent(new Event('change'));
-    expect(area(tab).value).toBe('one two\nthree two'); // ASCII reads the same in Latin-1
-    expect(tab.frame.querySelector('.ifs-status')?.textContent).toContain('ISO-8859-1 (819) (file says 1208)');
+    expect(text(tab)).toBe('one two\nthree two'); // ASCII reads the same in Latin-1
+    expect(status(tab)).toContain('ISO-8859-1 (819) (file says 1208)');
+    sel.value = '1251';
+    sel.dispatchEvent(new Event('change'));
+    expect(status(tab)).toContain('Windows-1251 (Cyrillic)');
+    expect(button(tab, 'pencil').disabled).toBe(false);
+    sel.value = '943';
+    sel.dispatchEvent(new Event('change'));
+    expect(status(tab)).toContain('Shift_JIS (943, Japanese)');
+    expect(button(tab, 'pencil').disabled).toBe(true); // read only: no encoder
     button(tab, 'find').click();
-    const input = tab.frame.querySelector('.ifsv-find-input') as HTMLInputElement;
-    input.value = 'TWO';
-    input.dispatchEvent(new Event('input'));
-    expect(tab.frame.querySelector('.ifsv-find-count')?.textContent).toBe('1 of 2');
-    expect([area(tab).selectionStart, area(tab).selectionEnd]).toEqual([4, 7]);
-    tab.find(1);
-    expect(tab.frame.querySelector('.ifsv-find-count')?.textContent).toBe('2 of 2');
-    expect(area(tab).selectionStart).toBe(14);
+    expect(tab.frame.querySelector('.cm-panel.cm-search')).not.toBeNull();
   });
 
   it('edits and saves back in the file CCSID, keeping the NL line end; the title shows the dirty mark', async () => {
@@ -81,9 +94,8 @@ describe('IFS viewer tab', () => {
     document.body.append(tab.frame);
     await tab.load();
     button(tab, 'pencil').click();
-    expect(area(tab).readOnly).toBe(false);
-    area(tab).value = 'Hello\nIBM i';
-    area(tab).dispatchEvent(new Event('input'));
+    expect(editable(tab)).toBe(true);
+    tab['editor'].replaceAll('Hello\nIBM i');
     expect(tab.isDirty).toBe(true);
     expect(tab.title).toBe('● a.txt');
     expect(host.changed).toHaveBeenCalledWith(tab);
@@ -98,14 +110,27 @@ describe('IFS viewer tab', () => {
     expect(host.notify).toHaveBeenCalledWith(expect.stringContaining('Saved a.txt'));
   });
 
+  it('Save as… on the host writes the text under the new path in the same code page and opens it', async () => {
+    const { writes } = fakeHost({ bytes: EBCDIC_HELLO, ccsid: 37 });
+    const tab = new IfsViewTab(host, 'S1', '/home/JSMITH/a.txt', info);
+    document.body.append(tab.frame);
+    await tab.load();
+    await tab.saveAsHost();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ path: '/home/JSMITH/copy.txt', ccsid: 37 });
+    expect(writes[0]?.bytes).toEqual([...EBCDIC_HELLO]);
+    expect(host.openPath).toHaveBeenCalledWith('S1', '/home/JSMITH/copy.txt', expect.anything());
+    expect(tab.isDirty).toBe(false);
+  });
+
   it('shows a hex dump for binary files and turns editing off', async () => {
     fakeHost({ bytes: Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]), ccsid: 0 });
     const tab = new IfsViewTab(host, 'S1', '/x/a.zip', { size: 6, modified: '' });
     document.body.append(tab.frame);
     await tab.load();
-    expect(area(tab).value).toBe('00000000  50 4b 03 04 00 00                                PK....');
+    expect(text(tab)).toBe('00000000  50 4b 03 04 00 00                                PK....');
     expect(button(tab, 'pencil').disabled).toBe(true);
-    expect(tab.frame.querySelector('.ifs-status')?.textContent).toContain('binary (hex)');
+    expect(status(tab)).toContain('binary (hex)');
   });
 
   it('a truncated read shows the banner and disables editing', async () => {
@@ -115,5 +140,39 @@ describe('IFS viewer tab', () => {
     await tab.load();
     expect((tab.frame.querySelector('.ifsv-banner') as HTMLElement).hidden).toBe(false);
     expect(button(tab, 'pencil').disabled).toBe(true);
+  });
+
+  it('names the language by the extension', async () => {
+    fakeHost({ bytes: new TextEncoder().encode('{"a": 1}'), ccsid: 1208 });
+    const tab = new IfsViewTab(host, 'S1', '/x/config.json', { size: 8, modified: '' });
+    document.body.append(tab.frame);
+    await tab.load();
+    expect(status(tab)).toContain('· JSON');
+  });
+
+  it('a CSV opens as a grid with a filter per column; Text shows the file; Edit switches to Text', async () => {
+    fakeHost({ bytes: new TextEncoder().encode('id,name\r\n1,"Acme, Inc."\r\n2,Zed\r\n'), ccsid: 1208 });
+    const tab = new IfsViewTab(host, 'S1', '/x/list.csv', { size: 30, modified: '' });
+    document.body.append(tab.frame);
+    await tab.load();
+    const rows = (): string[][] => [...tab.frame.querySelectorAll<HTMLTableRowElement>('.csv-table tbody tr')].map((r) => [...r.cells].map((c) => c.textContent ?? ''));
+    expect(tab.frame.querySelector<HTMLElement>('.csv-grid')!.hidden).toBe(false);
+    expect(tab.frame.querySelector<HTMLElement>('.code-editor')!.hidden).toBe(true);
+    expect([...tab.frame.querySelectorAll('.csv-table thead tr:first-child th')].map((h) => h.textContent)).toEqual(['id', 'name']);
+    expect(rows()).toEqual([
+      ['1', 'Acme, Inc.'],
+      ['2', 'Zed'],
+    ]);
+    expect(tab.frame.querySelector('.csv-count')?.textContent).toBe('2 rows');
+    const filter = tab.frame.querySelectorAll<HTMLInputElement>('.csv-filter')[1]!;
+    filter.value = 'acme';
+    filter.dispatchEvent(new Event('input'));
+    expect(rows()).toEqual([['1', 'Acme, Inc.']]);
+    expect(tab.frame.querySelector('.csv-count')?.textContent).toBe('1 of 2 rows');
+    expect(status(tab)).toContain('· CSV');
+    button(tab, 'pencil').click();
+    expect(tab.frame.querySelector<HTMLElement>('.csv-grid')!.hidden).toBe(true);
+    expect(editable(tab)).toBe(true);
+    expect(text(tab)).toBe('id,name\n1,"Acme, Inc."\n2,Zed\n'); // the editor keeps lines, not line ends
   });
 });

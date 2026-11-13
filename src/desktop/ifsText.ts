@@ -11,14 +11,55 @@ import { CodePage } from '../engine/codepage';
 export interface Encoding {
   ccsid: number;
   label: string;
+  /** The page can be read but not written back (multi-byte pages without an encoder here). */
+  readOnly?: boolean;
 }
 
 const UNICODE: Encoding[] = [
   { ccsid: 1208, label: 'UTF-8 (1208)' },
-  { ccsid: 1200, label: 'UTF-16 (1200)' },
+  { ccsid: 1200, label: 'UTF-16 BE (1200)' },
   { ccsid: 1202, label: 'UTF-16 LE (1202)' },
+  { ccsid: 13488, label: 'UCS-2 (13488)' },
+  { ccsid: 1232, label: 'UTF-32 BE (1232)' },
+  { ccsid: 1234, label: 'UTF-32 LE (1234)' },
   { ccsid: 819, label: 'ISO-8859-1 (819)' },
   { ccsid: 1252, label: 'Windows-1252 (1252)' },
+];
+
+/** Single-byte pages the browser decodes; their encoders are built from the decoder (every byte once). */
+const SINGLE_BYTE: Record<number, [label: string, decoder: string]> = {
+  923: ['ISO-8859-15 (923, euro)', 'iso-8859-15'],
+  912: ['ISO-8859-2 (912, Central Europe)', 'iso-8859-2'],
+  915: ['ISO-8859-5 (915, Cyrillic)', 'iso-8859-5'],
+  813: ['ISO-8859-7 (813, Greek)', 'iso-8859-7'],
+  920: ['ISO-8859-9 (920, Turkish)', 'iso-8859-9'],
+  1250: ['Windows-1250 (Central Europe)', 'windows-1250'],
+  1251: ['Windows-1251 (Cyrillic)', 'windows-1251'],
+  1253: ['Windows-1253 (Greek)', 'windows-1253'],
+  1254: ['Windows-1254 (Turkish)', 'windows-1254'],
+  1255: ['Windows-1255 (Hebrew)', 'windows-1255'],
+  1256: ['Windows-1256 (Arabic)', 'windows-1256'],
+  1257: ['Windows-1257 (Baltic)', 'windows-1257'],
+  1258: ['Windows-1258 (Vietnamese)', 'windows-1258'],
+  878: ['KOI8-R (878, Russian)', 'koi8-r'],
+  866: ['DOS 866 (Cyrillic)', 'ibm866'],
+};
+
+/** Multi-byte pages the browser decodes; read only. */
+const MULTI_BYTE: Record<number, [label: string, decoder: string]> = {
+  943: ['Shift_JIS (943, Japanese)', 'shift_jis'],
+  932: ['Shift_JIS (932, Japanese)', 'shift_jis'],
+  1386: ['GBK (1386, Chinese)', 'gbk'],
+  1381: ['GBK (1381, Chinese)', 'gbk'],
+  950: ['Big5 (950, Traditional Chinese)', 'big5'],
+  970: ['EUC-KR (970, Korean)', 'euc-kr'],
+  1363: ['EUC-KR (1363, Korean)', 'euc-kr'],
+  33722: ['EUC-JP (33722, Japanese)', 'euc-jp'],
+};
+
+const BROWSER_PAGES: Encoding[] = [
+  ...Object.entries(SINGLE_BYTE).map(([c, [label]]) => ({ ccsid: Number(c), label })),
+  ...Object.entries(MULTI_BYTE).map(([c, [label]]) => ({ ccsid: Number(c), label, readOnly: true })),
 ];
 
 const EBCDIC_LABELS: Record<number, string> = {
@@ -37,8 +78,13 @@ const EBCDIC_LABELS: Record<number, string> = {
   1149: 'EBCDIC 1149 (Iceland, euro)',
 };
 
-/** Every encoding the viewer offers: Unicode and Latin first, then the EBCDIC pages the engine knows. */
-export const ENCODINGS: Encoding[] = [...UNICODE, ...CodePage.supported().map((ccsid) => ({ ccsid, label: EBCDIC_LABELS[ccsid] ?? `EBCDIC ${ccsid}` }))];
+/** Every encoding the viewer offers: Unicode and Latin first, then the EBCDIC pages the engine knows, then the other browser pages. */
+export const ENCODINGS: Encoding[] = [...UNICODE, ...CodePage.supported().map((ccsid) => ({ ccsid, label: EBCDIC_LABELS[ccsid] ?? `EBCDIC ${ccsid}` })), ...BROWSER_PAGES];
+
+/** Whether text can be written back in this page (the multi-byte browser pages are read only). */
+export function canEncode(ccsid: number): boolean {
+  return !(ccsid in MULTI_BYTE);
+}
 
 /** Not a CCSID: the viewer's "show me the bytes" choice. */
 export const HEX = -1;
@@ -49,6 +95,7 @@ export function isEbcdic(ccsid: number): boolean {
 
 export function encodingLabel(ccsid: number): string {
   if (ccsid === HEX) return 'Bytes (hex)';
+  if (ccsid === 65535) return 'untagged (65535)';
   return ENCODINGS.find((e) => e.ccsid === ccsid)?.label ?? `CCSID ${ccsid}`;
 }
 
@@ -56,6 +103,45 @@ export function encodingLabel(ccsid: number): string {
 const UTF16 = new Set([1200, 13488, 17584, 61952]);
 /** UTF-16 little endian: what Windows Notepad and PowerShell write. */
 const UTF16LE = 1202;
+const UTF32BE = 1232;
+const UTF32LE = 1234;
+
+function decodeUtf32(bytes: Uint8Array, le: boolean): string {
+  let out = '';
+  for (let i = 0; i + 3 < bytes.length; i += 4) {
+    const cp = le ? (bytes[i]! | (bytes[i + 1]! << 8) | (bytes[i + 2]! << 16) | (bytes[i + 3]! << 24)) >>> 0 : ((bytes[i]! << 24) | (bytes[i + 1]! << 16) | (bytes[i + 2]! << 8) | bytes[i + 3]!) >>> 0;
+    out += cp <= 0x10ffff ? String.fromCodePoint(cp) : '\ufffd';
+  }
+  return out;
+}
+
+function encodeUtf32(text: string, le: boolean): Uint8Array {
+  const cps = [...text].map((ch) => ch.codePointAt(0) ?? 0);
+  const out = new Uint8Array(cps.length * 4);
+  cps.forEach((cp, i) => {
+    const b = [(cp >>> 24) & 0xff, (cp >>> 16) & 0xff, (cp >>> 8) & 0xff, cp & 0xff];
+    if (le) b.reverse();
+    out.set(b, i * 4);
+  });
+  return out;
+}
+
+/** The byte for each character of a single-byte browser page, from decoding every byte once. */
+const reverseTables = new Map<number, Map<string, number>>();
+
+function reverseTable(ccsid: number): Map<string, number> {
+  let t = reverseTables.get(ccsid);
+  if (!t) {
+    t = new Map();
+    const dec = new TextDecoder(SINGLE_BYTE[ccsid]![1]);
+    for (let b = 0; b < 256; b++) {
+      const ch = dec.decode(Uint8Array.of(b));
+      if (!t.has(ch)) t.set(ch, b);
+    }
+    reverseTables.set(ccsid, t);
+  }
+  return t;
+}
 
 function validUtf8(bytes: Uint8Array): boolean {
   try {
@@ -87,7 +173,7 @@ function looksEbcdic(bytes: Uint8Array): boolean {
 export function guessCcsid(bytes: Uint8Array, reported: number): number {
   const bom = bomCcsid(bytes);
   if (bom) return bom;
-  if (reported && (UTF16.has(reported) || reported === UTF16LE || reported === 1208 || reported === 819 || reported === 1252 || isEbcdic(reported))) {
+  if (reported && (UTF16.has(reported) || reported === UTF16LE || reported === UTF32BE || reported === UTF32LE || reported === 1208 || reported === 819 || reported === 1252 || isEbcdic(reported) || reported in SINGLE_BYTE || reported in MULTI_BYTE)) {
     // Tagged UTF-16 but not a NUL in sight: a PC file an earlier upload tagged 1200. Read the bytes for what they are.
     if ((UTF16.has(reported) || reported === UTF16LE) && bytes.length && !bytes.subarray(0, 8192).includes(0)) return validUtf8(bytes) ? 1208 : 819;
     return reported;
@@ -101,7 +187,7 @@ export function guessCcsid(bytes: Uint8Array, reported: number): number {
 
 /** A file is binary when it has NULs where text would not (UTF-16 has them between every byte pair). */
 export function isBinary(bytes: Uint8Array, ccsid: number): boolean {
-  if (UTF16.has(ccsid) || ccsid === UTF16LE) return false;
+  if (UTF16.has(ccsid) || ccsid === UTF16LE || ccsid === UTF32BE || ccsid === UTF32LE) return false;
   const n = Math.min(bytes.length, 8192);
   for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
   return false;
@@ -118,7 +204,10 @@ export function decodeIfs(bytes: Uint8Array, ccsid: number): string {
   if (ccsid === 1208) return new TextDecoder('utf-8').decode(bytes);
   if (UTF16.has(ccsid)) return new TextDecoder('utf-16be').decode(bytes);
   if (ccsid === UTF16LE) return new TextDecoder('utf-16le').decode(bytes);
+  if (ccsid === UTF32BE || ccsid === UTF32LE) return decodeUtf32(bytes, ccsid === UTF32LE);
   if (ccsid === 1252) return new TextDecoder('windows-1252').decode(bytes);
+  if (ccsid in SINGLE_BYTE) return new TextDecoder(SINGLE_BYTE[ccsid]![1]).decode(bytes);
+  if (ccsid in MULTI_BYTE) return new TextDecoder(MULTI_BYTE[ccsid]![1]).decode(bytes);
   if (isEbcdic(ccsid)) {
     const cp = CodePage.get(ccsid);
     let out = '';
@@ -159,6 +248,13 @@ export function encodeIfs(text: string, ccsid: number, lineEnd = EBCDIC_NL): Uin
       out[2 * i] = le ? c & 0xff : c >> 8;
       out[2 * i + 1] = le ? c >> 8 : c & 0xff;
     }
+    return out;
+  }
+  if (ccsid === UTF32BE || ccsid === UTF32LE) return encodeUtf32(text, ccsid === UTF32LE);
+  if (ccsid in SINGLE_BYTE) {
+    const table = reverseTable(ccsid);
+    const out = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) out[i] = table.get(text.charAt(i)) ?? 0x3f;
     return out;
   }
   if (isEbcdic(ccsid)) {

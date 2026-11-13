@@ -95,8 +95,9 @@
   min-height: 0;
 }
 
-/* Syntax colours (VS Code Light+ / Dark+), read by the editor's highlight style. */
-.terminal-frame.sql {
+/* Syntax colours (VS Code Light+ / Dark+), read by the editor's highlight style (the SQL tab and the IFS viewer). */
+.terminal-frame.sql,
+.terminal-frame.ifs-view {
   --sql-kw: #0000ff;
   --sql-fn: #795e26;
   --sql-type: #267f99;
@@ -111,10 +112,25 @@
   --sql-match: rgba(0, 120, 215, 0.18);
   --sql-active-line: rgba(0, 0, 0, 0.04);
   --sql-gutter: #6e7681;
+  --sql-running: rgba(255, 196, 0, 0.28);
+  --sql-ok: #1e7f3c;
+  --sql-err: #d0453b;
 }
 
+/* The same colours outside the editor: the statement echo in the Output pane. */
+.sq-kw { color: var(--sql-kw); }
+.sq-fn { color: var(--sql-fn); }
+.sq-type { color: var(--sql-type); }
+.sq-str { color: var(--sql-str); }
+.sq-num { color: var(--sql-num); }
+.sq-comment { color: var(--sql-comment); font-style: italic; }
+.sq-op { color: var(--sql-op); }
+.sq-var { color: var(--sql-var); }
+.sq-cmd { color: var(--sql-cmd); font-weight: 600; }
+
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .terminal-frame.sql {
+  :root:not([data-theme="light"]) .terminal-frame.sql,
+  :root:not([data-theme="light"]) .terminal-frame.ifs-view {
     --sql-kw: #569cd6;
     --sql-fn: #dcdcaa;
     --sql-type: #4ec9b0;
@@ -129,10 +145,14 @@
     --sql-match: rgba(173, 214, 255, 0.18);
     --sql-active-line: rgba(255, 255, 255, 0.04);
     --sql-gutter: #858585;
+    --sql-running: rgba(255, 196, 0, 0.2);
+    --sql-ok: #4ec97a;
+    --sql-err: #f47067;
   }
 }
 
-:root[data-theme="dark"] .terminal-frame.sql {
+:root[data-theme="dark"] .terminal-frame.sql,
+:root[data-theme="dark"] .terminal-frame.ifs-view {
   --sql-kw: #569cd6;
   --sql-fn: #dcdcaa;
   --sql-type: #4ec9b0;
@@ -147,6 +167,9 @@
   --sql-match: rgba(173, 214, 255, 0.18);
   --sql-active-line: rgba(255, 255, 255, 0.04);
   --sql-gutter: #858585;
+  --sql-running: rgba(255, 196, 0, 0.2);
+  --sql-ok: #4ec97a;
+  --sql-err: #f47067;
 }
 
 .sql-split {
@@ -181,6 +204,26 @@
   background: var(--vscode-editor-background);
   border-bottom: 1px solid var(--vscode-editor-background);
   margin-bottom: -1px;
+}
+
+/* A result tab carries its ✕; Clear sits at the right end of the row. */
+.sql-tabs button .close {
+  margin-left: 8px;
+  padding: 0 3px;
+  border-radius: 3px;
+  opacity: 0.6;
+}
+
+.sql-tabs button .close:hover {
+  opacity: 1;
+  background: var(--chrome-hover);
+}
+
+.sql-tabs .sql-tabs-clear {
+  margin-left: auto;
+  border-bottom: none;
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 .sql-pane {
@@ -266,33 +309,94 @@
   background: var(--chrome-hover);
 }
 
+.sql-grid tr.selected td {
+  background: var(--sql-selection);
+}
+
 .sql-more {
   padding: 6px 8px;
 }
 
-.sql-messages {
-  margin: 0;
-  padding: 6px 8px;
-  list-style: none;
+/* Output: the run story in order, the way ACS's message pane reads. */
+.sql-output {
+  padding: 6px 10px;
   font-family: var(--vscode-editor-font-family, Consolas, monospace);
   font-size: 12.5px;
+  line-height: 1.45;
 }
 
-.sql-messages li {
-  padding: 2px 0;
+.sql-out-head {
+  margin: 8px 0 4px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.sql-out-head:first-child {
+  margin-top: 0;
+}
+
+.sql-out-entry {
+  margin: 2px 0 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--chrome-border);
+}
+
+.sql-out-stmt {
+  margin: 0 0 2px;
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sql-out-line {
   white-space: pre-wrap;
 }
 
-.sql-messages li.error {
-  color: #d0453b;
+.sql-out-line.ok {
+  color: var(--sql-ok);
 }
 
-.sql-messages li.ok {
-  opacity: 0.9;
+.sql-out-line.error {
+  color: var(--sql-err);
 }
 
-.sql-messages li .where {
-  opacity: 0.6;
+.sql-out-line.running {
+  opacity: 0.7;
+}
+
+.sql-out-line.info {
+  opacity: 0.75;
+}
+
+.sql-out-msg {
+  padding-left: 14px;
+  opacity: 0.85;
+  white-space: pre-wrap;
+}
+
+.sql-out-lines {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  max-height: 60vh;
+  overflow: auto;
+  font: inherit;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.sql .sql-out-link {
+  padding: 0 6px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--vscode-textLink-foreground, #1f5fa8);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.sql .sql-out-link:hover {
+  text-decoration: underline;
 }
 
 .sql-foot {

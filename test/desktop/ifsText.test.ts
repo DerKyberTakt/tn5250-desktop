@@ -51,7 +51,19 @@ describe('IFS text codec', () => {
   it('round-trips base64 and lists the encodings with labels', () => {
     const raw = bytes(0, 1, 2, 250, 255);
     expect([...fromBase64(toBase64(raw))]).toEqual([...raw]);
-    expect(ENCODINGS.map((e) => e.ccsid)).toEqual([1208, 1200, 1202, 819, 1252, 37, 273, 500, 1140, 1141, 1142, 1143, 1144, 1145, 1146, 1147, 1148, 1149]);
+    const ccsids = ENCODINGS.map((e) => e.ccsid);
+    // Unicode and Latin first, then the EBCDIC pages the engine has, then the other browser pages.
+    expect(ccsids.slice(0, 8)).toEqual([1208, 1200, 1202, 13488, 1232, 1234, 819, 1252]);
+    expect(ccsids.slice(8, 21)).toEqual([37, 273, 500, 1140, 1141, 1142, 1143, 1144, 1145, 1146, 1147, 1148, 1149]);
+    expect(ccsids).toEqual(expect.arrayContaining([923, 1250, 1251, 943, 1386, 970]));
+    expect(ENCODINGS.find((e) => e.ccsid === 943)?.readOnly).toBe(true);
+    expect(ENCODINGS.find((e) => e.ccsid === 1251)?.readOnly).toBeUndefined();
+    // Windows-1251 round-trips through the encoder built from the browser's decoder; UTF-32 by hand.
+    expect(decodeIfs(encodeIfs('Привет', 1251), 1251)).toBe('Привет');
+    expect([...encodeIfs('A', 1232)]).toEqual([0, 0, 0, 0x41]);
+    expect([...encodeIfs('A', 1234)]).toEqual([0x41, 0, 0, 0]);
+    expect(decodeIfs(encodeIfs('a\u20ac', 1234), 1234)).toBe('a\u20ac');
+    expect(encodingLabel(65535)).toBe('untagged (65535)');
     expect(encodingLabel(37)).toBe('EBCDIC 37 (US, Canada)');
     expect(encodingLabel(9999)).toBe('CCSID 9999');
   });

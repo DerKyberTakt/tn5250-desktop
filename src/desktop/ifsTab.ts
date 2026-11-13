@@ -61,6 +61,13 @@ export class IfsTab {
   private selected = new Set<string>();
   private anchor: string | undefined;
   private sort: { key: SortKey; asc: boolean } = { key: 'name', asc: true };
+  private readonly headers = new Map<SortKey, HTMLTableCellElement>();
+  private readonly searchInput: HTMLInputElement;
+  private readonly subtreeButton: HTMLButtonElement;
+  /** Lower-case text typed in the search box: the loaded rows are filtered by it at once. */
+  private filter = '';
+  /** Set while the rows are a host search's hits instead of the folder's entries. */
+  private searching: { text: string; subtree: boolean } | undefined;
   private busy = false;
 
   private readonly pathInput: HTMLInputElement;
@@ -132,7 +139,48 @@ export class IfsTab {
       if (fav.value) void this.go(fav.value);
       fav.value = '';
     });
-    bar.append(pathBox, fav);
+    // Search: typing filters the rows on show; Enter asks the host (the folder, or the whole
+    // tree below it), so a folder of tens of thousands of files never comes over in full.
+    const searchBox = el('div', 'ifs-searchbox');
+    this.searchInput = el('input', 'ifs-search');
+    this.searchInput.type = 'search';
+    this.searchInput.spellcheck = false;
+    this.searchInput.placeholder = 'Search names (Enter: ask the host)';
+    this.searchInput.title = 'Typing filters the rows on show. Enter searches this folder on the host (* and ? wildcards); Escape clears.';
+    this.searchInput.addEventListener('input', () => {
+      this.filter = this.searchInput.value.trim().toLowerCase();
+      if (!this.filter && this.searching) {
+        void this.go(this.cwd, false);
+        return;
+      }
+      this.render();
+    });
+    this.searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void this.search();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        this.searchInput.value = '';
+        this.filter = '';
+        if (this.searching) void this.go(this.cwd, false);
+        else this.render();
+        this.frame.focus();
+      }
+    });
+    this.subtreeButton = el('button', 'ifs-search-sub', 'Subfolders');
+    this.subtreeButton.type = 'button';
+    this.subtreeButton.title = 'Search the whole tree below this folder (through the database host server) instead of this folder only';
+    this.subtreeButton.setAttribute('aria-pressed', 'false');
+    this.subtreeButton.addEventListener('click', () => {
+      const on = this.subtreeButton.getAttribute('aria-pressed') !== 'true';
+      this.subtreeButton.setAttribute('aria-pressed', String(on));
+      this.subtreeButton.classList.toggle('pressed', on);
+      if (this.searchInput.value.trim()) void this.search();
+      else this.searchInput.focus();
+    });
+    searchBox.append(this.searchInput, this.subtreeButton);
+    bar.append(pathBox, fav, searchBox);
     const actions = el('div', 'ifs-actions');
     actions.append(
       btn('tree', 'folderTree', 'blue', 'Show or hide the folder tree', () => this.toggleTree()),
@@ -150,12 +198,17 @@ export class IfsTab {
     const hr = el('tr');
     for (const [key, label] of [['name', 'Name'], ['size', 'Size'], ['modified', 'Modified'], ['type', 'Type']] as const) {
       const th = el('th', `col-${key}`, label);
+      th.title = `Sort by ${label.toLowerCase()} (again: the other way round)`;
+      th.append(el('span', 'sort-arrow'));
       th.addEventListener('click', () => {
         this.sort = { key, asc: this.sort.key === key ? !this.sort.asc : true };
+        this.markSort();
         this.render();
       });
+      this.headers.set(key, th);
       hr.append(th);
     }
+    this.markSort();
     head.append(hr);
     this.body = el('tbody');
     table.append(head, this.body);
@@ -436,6 +489,12 @@ export class IfsTab {
     try {
       const list = await goApp().IfsList(this.session, target);
       if (pushHistory && target !== this.cwd) this.history.push(this.cwd);
+      if (this.searching || this.cwd !== normalise(target)) {
+        // A new folder (or a search that ends) starts with an empty search box.
+        this.searching = undefined;
+        this.searchInput.value = '';
+        this.filter = '';
+      }
       this.cwd = normalise(target);
       this.entries = list;
       this.selected.clear();
@@ -457,9 +516,47 @@ export class IfsTab {
     }
   }
 
+  /** Asks the host for the names that match the box: this folder, or the whole tree below it. */
+  async search(): Promise<void> {
+    const text = this.searchInput.value.trim();
+    if (!this.session) return;
+    if (!text) {
+      if (this.searching) await this.go(this.cwd, false);
+      return;
+    }
+    const subtree = this.subtreeButton.getAttribute('aria-pressed') === 'true';
+    this.setBusy(true);
+    try {
+      const hits = await goApp().IfsSearch(this.session, this.cwd, text, subtree);
+      this.searching = { text, subtree };
+      this.filter = '';
+      this.entries = hits.map((h) => ({ name: h.name, dir: h.dir, symlink: false, size: h.size, modified: h.modified, created: '', type: h.dir ? 2 : 1, readOnly: false, hidden: false }));
+      this.selected.clear();
+      this.anchor = undefined;
+      this.render();
+      const where = subtree ? `in ${this.cwd} and below` : `in ${this.cwd}`;
+      this.host.notify(hits.length ? `${hits.length === 2000 ? 'The first 2,000 of the' : hits.length} name${hits.length === 1 ? '' : 's'} containing "${text}" ${where}` : `No name contains "${text}" ${where}`);
+    } catch (err) {
+      this.host.notify(errorText(err));
+    } finally {
+      this.setBusy(false);
+    }
+  }
+
   private async back(): Promise<void> {
     const prev = this.history.pop();
     if (prev) await this.go(prev, false);
+  }
+
+  /** Shows the sort column and direction on the headers (the arrow the list is sorted by). */
+  private markSort(): void {
+    for (const [key, th] of this.headers) {
+      const on = key === this.sort.key;
+      th.classList.toggle('sorted-asc', on && this.sort.asc);
+      th.classList.toggle('sorted-desc', on && !this.sort.asc);
+      if (on) th.setAttribute('aria-sort', this.sort.asc ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    }
   }
 
   private sorted(): IfsEntry[] {
@@ -485,7 +582,8 @@ export class IfsTab {
     this.renderCrumbs();
     this.renderTree();
     this.body.replaceChildren();
-    const rows = this.sorted();
+    const rows = this.filter ? this.sorted().filter((e) => e.name.toLowerCase().includes(this.filter)) : this.sorted();
+    this.frame.classList.toggle('searching', !!this.searching);
     for (const e of rows) {
       const tr = el('tr', this.selected.has(e.name) ? 'selected' : undefined);
       tr.dataset.name = e.name;
@@ -577,6 +675,10 @@ export class IfsTab {
     if (e.ctrlKey && e.key.toLowerCase() === 'l') {
       e.preventDefault();
       this.editPath(true);
+    } else if (e.ctrlKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      this.searchInput.focus();
+      this.searchInput.select();
     } else if (e.key === 'F5') {
       e.preventDefault();
       void this.go(this.cwd, false);
