@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 - unreleased
+## 0.3.1 - 2026-11-13
 - macOS: Cmd+C copies, Cmd+V pastes and Cmd+Enter toggles Insert mode by default (Apple keyboards have no Insert key); any other key can still be given to Insert on the Keyboard settings page. Ctrl+C, Ctrl+Insert, Ctrl+V and Shift+Insert work as before. Asked for in tn5250-terminal #12 and #13.
 - Right-click on the screen opens a menu with Copy (the selection, or Copy Screen when nothing is selected), Paste and Select All, as ACS offers; Escape or a click elsewhere closes it. A host that asked for the right mouse button keeps it.
 
