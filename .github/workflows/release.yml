@@ -315,7 +315,14 @@ jobs:
           mkdir -p stage/dmg
           cp -R "$app" stage/dmg/
           ln -s /Applications stage/dmg/Applications
-          hdiutil create -volname "TN5250 Terminal" -srcfolder stage/dmg -ov -format UDZO out/tn5250-terminal-macos-universal.dmg
+          # The hosted macOS runners sometimes answer "create failed - Resource busy" on the
+          # first attempt (a stale mount from the image); a second or third attempt goes through.
+          for attempt in 1 2 3 4 5; do
+            if hdiutil create -volname "TN5250 Terminal" -srcfolder stage/dmg -ov -format UDZO out/tn5250-terminal-macos-universal.dmg; then break; fi
+            echo "hdiutil create failed (attempt $attempt); retrying in 10 s"
+            [ "$attempt" = 5 ] && exit 1
+            sleep 10
+          done
           ls -la out
 
       - name: Smoke test (the app starts and stays up for 8 s)
