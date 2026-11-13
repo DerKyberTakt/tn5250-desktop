@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1.1 - unreleased
+## 0.3.1.1 - 2026-11-13
 - macOS updates itself like the other platforms: Help > Check for Updates downloads the universal zip from the release, checks it against SHA256SUMS, swaps the app bundle in place and reopens it. It works wherever the app sits in a folder you can write to (Applications owned by you, or ~/Applications); from the mounted disk image, or an Applications folder owned by an administrator, it still points you to the release page. The saved passwords stay: they live in the Keychain under Apple's `security` tool, not under the app's signature.
 
 ## 0.3.1 - 2026-11-13
