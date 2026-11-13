@@ -20,6 +20,7 @@ const (
 	assetSetup    = "tn5250-terminal-setup-x64.exe"
 	assetPortable = "tn5250-terminal-portable-x64.zip"
 	assetAppImage = "tn5250-terminal-x86_64.AppImage"
+	assetMacZip   = "tn5250-terminal-macos-universal.zip"
 	exeName       = "tn5250-terminal.exe"
 	// updatedFromFlag is passed to the new exe after a portable swap so it waits for
 	// the old process to exit (the single-instance lock would otherwise hand off to it).
@@ -33,7 +34,8 @@ type UpdateInfo struct {
 	Available bool   `json:"available"` // Latest is newer than Current
 	Page      string `json:"page"`      // release notes page
 	// Mode is how this copy updates: "installer" (per-user setup, silent), "portable"
-	// (exe swapped in place), "appimage", or "manual" (download from the page).
+	// (exe swapped in place), "appimage", "bundle" (the macOS .app swapped in place), or
+	// "manual" (download from the page).
 	Mode   string `json:"mode"`
 	Reason string `json:"reason,omitempty"` // why Mode is "manual"
 }
@@ -120,6 +122,40 @@ func (a *App) UpdateInstall(tag string) error {
 		if err := cmd.Start(); err != nil {
 			return fmt.Errorf("updated, but could not restart: %w", err)
 		}
+	case "bundle":
+		// macOS: the universal zip holds the .app; ditto (on every Mac) unpacks it with the
+		// executable bits, symlinks and resource forks Go's zip reader would drop. A zip our
+		// own code downloaded carries no quarantine attribute, so the new bundle opens without
+		// the right-click > Open step. The bundle is swapped while this copy runs (its files
+		// stay mapped), then the new one is opened and this one quits.
+		bundle, ok := appBundle(exe)
+		if !ok {
+			return errors.New("this copy does not run from an .app bundle")
+		}
+		work := filepath.Join(os.TempDir(), "tn5250-terminal-update")
+		zipPath, err := c.Download(ctx, tag, assetMacZip, work, progress)
+		if err != nil {
+			return friendlyUpdateError(err)
+		}
+		unpacked := filepath.Join(work, "unpacked")
+		_ = os.RemoveAll(unpacked)
+		if err := os.MkdirAll(unpacked, 0o755); err != nil {
+			return err
+		}
+		if out, err := exec.Command("ditto", "-x", "-k", zipPath, unpacked).CombinedOutput(); err != nil {
+			return fmt.Errorf("could not unpack the update: %s", strings.TrimSpace(string(out)))
+		}
+		_ = os.Remove(zipPath)
+		newApp, err := findBundle(unpacked)
+		if err != nil {
+			return err
+		}
+		if err := update.ReplaceDir(bundle, newApp); err != nil {
+			return fmt.Errorf("could not replace %s: %w", filepath.Base(bundle), err)
+		}
+		if err := exec.Command("open", "-n", bundle, "--args", updatedFromFlag+strconv.Itoa(os.Getpid())).Start(); err != nil {
+			return fmt.Errorf("updated, but could not restart: %w", err)
+		}
 	default:
 		return errors.New(reason)
 	}
@@ -179,7 +215,17 @@ func updateMode() (mode, reason string) {
 		}
 		return "manual", "Install updates with your package manager or from the release page."
 	case "darwin":
-		return "manual", "Download the new .dmg from the release page and replace the app in Applications."
+		bundle, ok := appBundle(exe)
+		if !ok {
+			return "manual", "This copy does not run from an .app bundle; download the new .dmg from the release page."
+		}
+		if strings.HasPrefix(bundle, "/Volumes/") {
+			return "manual", "The app is running from the disk image; drag it to Applications first, then update from there."
+		}
+		if !update.Writable(filepath.Dir(bundle)) {
+			return "manual", "The folder " + filepath.Dir(bundle) + " is not writable by you; download the new .dmg from the release page, or move the app to your own Applications folder."
+		}
+		return "bundle", ""
 	default:
 		return "manual", "Download the update from the release page."
 	}
@@ -203,7 +249,37 @@ func afterUpdate(args []string) {
 		for i := 0; i < 6 && !update.RemoveOld(exe); i++ {
 			time.Sleep(5 * time.Second)
 		}
+		if bundle, ok := appBundle(exe); ok {
+			for i := 0; i < 6 && !update.RemoveOldDir(bundle); i++ {
+				time.Sleep(5 * time.Second)
+			}
+		}
 	}()
+}
+
+// appBundle returns the .app folder an executable runs from (…/Name.app/Contents/MacOS/exe).
+func appBundle(exe string) (string, bool) {
+	macos := filepath.Dir(exe)
+	contents := filepath.Dir(macos)
+	app := filepath.Dir(contents)
+	if filepath.Base(macos) != "MacOS" || filepath.Base(contents) != "Contents" || !strings.HasSuffix(strings.ToLower(app), ".app") {
+		return "", false
+	}
+	return app, true
+}
+
+// findBundle returns the one .app folder an unpacked update holds.
+func findBundle(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".app") {
+			return filepath.Join(dir, e.Name()), nil
+		}
+	}
+	return "", errors.New("the update holds no .app bundle")
 }
 
 func friendlyUpdateError(err error) error {
