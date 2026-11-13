@@ -16,6 +16,11 @@ function fakeHost(tree: Record<string, string[]>) {
       if (!names) throw new Error(`${dir}: not found`);
       return names.map((n) => entry(n.replace(/\/$/, ''), n.endsWith('/')));
     }),
+    IfsSearch: vi.fn(async (_id: string, dir: string, text: string, subtree: boolean) => {
+      calls.push(`search ${dir} ${text}${subtree ? ' subtree' : ''}`);
+      const hits = subtree ? ['src/notes.txt', 'src/deep/notes.bak'] : ['notes.txt'];
+      return hits.map((name) => ({ name, dir: false, size: 3, modified: '2026-11-03T09:00:00Z' }));
+    }),
     IfsRename: vi.fn(async (_id: string, from: string, to: string) => {
       calls.push(`rename ${from} ${to}`);
     }),
@@ -86,6 +91,40 @@ describe('IFS tab: mouse navigation', () => {
     await tick();
     await tick();
     expect(calls.at(-1)).toBe('list /home/JSMITH/src');
+  });
+
+  it('typing in the search box filters the rows; Enter asks the host, Escape puts the folder back', async () => {
+    const { calls } = fakeHost({ '/': ['home/'], '/home': ['JSMITH/'], '/home/JSMITH': ['src/', 'notes.txt', 'readme.md'] });
+    const tab = new IfsTab(host, request);
+    document.body.append(tab.frame);
+    await tab.start();
+    const names = (): (string | null | undefined)[] => [...tab.frame.querySelectorAll<HTMLTableRowElement>('.ifs-list tbody tr')].map((r) => r.querySelector('.col-name')?.textContent);
+    const box = tab.frame.querySelector<HTMLInputElement>('.ifs-search')!;
+    box.value = 'note';
+    box.dispatchEvent(new Event('input'));
+    expect(names()).toEqual(['notes.txt']);
+    expect(calls.filter((c) => c.startsWith('search'))).toEqual([]);
+    // Enter: the host filters the folder; the Subfolders switch searches the tree below.
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await tick();
+    await tick();
+    expect(calls.at(-1)).toBe('search /home/JSMITH note');
+    expect(names()).toEqual(['notes.txt']);
+    expect(host.notify).toHaveBeenLastCalledWith('1 name containing "note" in /home/JSMITH');
+    tab.frame.querySelector<HTMLButtonElement>('.ifs-search-sub')!.click();
+    await tick();
+    await tick();
+    expect(calls.at(-1)).toBe('search /home/JSMITH note subtree');
+    expect(names()).toEqual(['src/deep/notes.bak', 'src/notes.txt']);
+    expect(tab.frame.classList.contains('searching')).toBe(true);
+    // Escape: the folder is listed again and the box is empty.
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await tick();
+    await tick();
+    expect(calls.at(-1)).toBe('list /home/JSMITH');
+    expect(names()).toEqual(['src', 'notes.txt', 'readme.md']);
+    expect(box.value).toBe('');
+    expect(tab.frame.classList.contains('searching')).toBe(false);
   });
 
   it('draws the tool bars as icon buttons that share the Macros dialog look', async () => {

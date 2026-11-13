@@ -218,6 +218,54 @@
   border-radius: 3px;
 }
 
+/* Search box: the text box and the Subfolders switch as one control. */
+.ifs-searchbox {
+  display: flex;
+  align-items: center;
+  flex: 0 1 300px;
+  min-width: 160px;
+  margin-left: 4px;
+}
+
+.ifs-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 8px;
+  font: inherit;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-right: none;
+  border-radius: 3px 0 0 3px;
+}
+
+.ifs-search:focus {
+  outline: 1px solid var(--tab-accent);
+  outline-offset: -1px;
+}
+
+.ifs .ifs-search-sub {
+  padding: 3px 8px;
+  font-size: 12px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 0 3px 3px 0;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.ifs .ifs-search-sub.pressed {
+  background: var(--tab-accent);
+  color: #fff;
+  border-color: var(--tab-accent);
+}
+
+/* Search hits show their path below the folder, so the Name column may be long. */
+.ifs.searching .ifs-list td.col-name {
+  white-space: nowrap;
+}
+
 .ifs-scroll {
   flex: 1;
   min-height: 0;

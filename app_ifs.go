@@ -13,6 +13,7 @@ import (
 	"time"
 
 	hs "github.com/DerKyberTakt/tn5250-desktop/internal/hostserver"
+	"github.com/DerKyberTakt/tn5250-desktop/internal/hostserver/db"
 	"github.com/DerKyberTakt/tn5250-desktop/internal/hostserver/ifs"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -30,6 +31,8 @@ type IfsConnectRequest struct {
 type ifsSession struct {
 	client  *ifs.Client
 	options hs.DialOptions // kept in memory for transfer connections; never written anywhere
+	// db is the database-server connection a subtree search opens on first use.
+	db *db.Client
 }
 
 // ifsState holds the open IFS sessions and running transfers.
@@ -84,7 +87,101 @@ func (a *App) IfsClose(id string) {
 	st.mu.Unlock()
 	if s != nil {
 		_ = s.client.Close()
+		if s.db != nil {
+			_ = s.db.Close()
+		}
 	}
+}
+
+// IfsHit is one match of IfsSearch: the name is the path relative to the folder searched.
+type IfsHit struct {
+	Name     string    `json:"name"`
+	Dir      bool      `json:"dir"`
+	Size     uint64    `json:"size"`
+	Modified time.Time `json:"modified"`
+}
+
+// IfsSearch finds the entries of dir whose names contain text (* and ? are wildcards).
+// In the folder itself the pattern goes to the file server, so a folder of tens of
+// thousands of files is filtered on the host. With subtree the whole tree below dir is
+// searched through QSYS2.IFS_OBJECT_STATISTICS on the database server (opened on first
+// use; it needs the *DATABASE host server and IBM i 7.3 or later); at most 2000 hits.
+func (a *App) IfsSearch(id, dir, text string, subtree bool) ([]IfsHit, error) {
+	s, err := a.ifsSession(id)
+	if err != nil {
+		return nil, err
+	}
+	dir = ifs.Clean(dir)
+	if !subtree {
+		es, err := s.client.ListPattern(dir, text)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]IfsHit, 0, len(es))
+		for _, e := range es {
+			out = append(out, IfsHit{Name: e.Name, Dir: e.Dir, Size: e.Size, Modified: e.Modified})
+		}
+		return out, nil
+	}
+	if s.db == nil {
+		c, err := db.Open(db.Options{DialOptions: s.options, Naming: "sql"})
+		if err != nil {
+			return nil, fmt.Errorf("the subtree search needs the database host server: %w", err)
+		}
+		s.db = c
+	}
+	// The name part of the path (after the last slash) must contain the text; * and ?
+	// become the SQL wildcards, LIKE's own wildcards in the text are escaped.
+	like := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`, `*`, `%`, `?`, `_`).Replace(strings.ToUpper(strings.TrimSpace(text)))
+	if !strings.ContainsAny(text, "*?") {
+		like = "%" + like + "%"
+	}
+	q := func(v string) string { return strings.ReplaceAll(v, "'", "''") }
+	sql := "SELECT PATH_NAME, OBJECT_TYPE, DATA_SIZE, LAST_WRITE_TIMESTAMP FROM TABLE(QSYS2.IFS_OBJECT_STATISTICS(START_PATH_NAME => '" + q(dir) + "', SUBTREE_DIRECTORIES => 'YES', OBJECT_TYPE_LIST => '*ALLSTMF *DIR')) " +
+		"WHERE PATH_NAME <> '" + q(dir) + "' AND UPPER(SUBSTR(PATH_NAME, LENGTH(PATH_NAME) - LOCATE('/', REVERSE(PATH_NAME)) + 2)) LIKE '" + q(like) + "' ESCAPE '\\' " +
+		"ORDER BY PATH_NAME FETCH FIRST 2000 ROWS ONLY"
+	rows, data, err := s.db.Query(sql, 1000)
+	if err != nil {
+		var e *db.Error
+		if !errors.As(err, &e) {
+			_ = s.db.Close()
+			s.db = nil
+		}
+		return nil, err
+	}
+	all := data
+	for !rows.Done {
+		d, err := rows.Next()
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, d...)
+	}
+	_ = rows.Close()
+	prefix := dir + "/"
+	if dir == "/" {
+		prefix = "/"
+	}
+	out := make([]IfsHit, 0, len(all))
+	for _, r := range all {
+		if len(r) < 4 || r[0] == nil {
+			continue
+		}
+		h := IfsHit{Name: strings.TrimPrefix(*r[0], prefix)}
+		if r[1] != nil {
+			h.Dir = strings.TrimSpace(*r[1]) == "*DIR"
+		}
+		if r[2] != nil {
+			fmt.Sscan(strings.TrimSpace(*r[2]), &h.Size)
+		}
+		if r[3] != nil {
+			if t, err := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(*r[3])[:19], time.Local); err == nil {
+				h.Modified = t
+			}
+		}
+		out = append(out, h)
+	}
+	return out, nil
 }
 
 func (a *App) IfsList(id, dir string) ([]ifs.Entry, error) {

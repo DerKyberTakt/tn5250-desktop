@@ -269,6 +269,26 @@ func (cl *Client) List(dir string) ([]Entry, error) {
 	return cl.list(pattern, "list", dir)
 }
 
+// ListPattern returns the entries of dir whose names match pattern (* and ? wildcards,
+// matched by the host), so a folder of tens of thousands of files is filtered before
+// it comes over. A pattern without wildcards matches names containing it.
+func (cl *Client) ListPattern(dir, pattern string) ([]Entry, error) {
+	cl.mu.Lock()
+	defer cl.mu.Unlock()
+	dir = Clean(dir)
+	pattern = strings.TrimSpace(strings.ReplaceAll(pattern, "/", ""))
+	if pattern == "" {
+		pattern = "*"
+	} else if !strings.ContainsAny(pattern, "*?") {
+		pattern = "*" + pattern + "*"
+	}
+	p := dir + "/" + pattern
+	if dir == "/" {
+		p = "/" + pattern
+	}
+	return cl.list(p, "search", dir)
+}
+
 // Stat returns the entry for one path.
 func (cl *Client) Stat(p string) (Entry, error) {
 	cl.mu.Lock()
