@@ -40,20 +40,26 @@ export interface SqlEditorOptions {
   keys?: Partial<Record<'run' | 'runAll' | 'runFrom' | 'save', () => void>>;
 }
 
-/** Syntax colours by token kind; the variables are defined in sql.css. */
-const db2iHighlight = HighlightStyle.define([
-  { tag: t.keyword, color: 'var(--sql-kw)' },
-  { tag: t.typeName, color: 'var(--sql-type)' },
-  { tag: t.standard(t.name), color: 'var(--sql-fn)' },
-  { tag: [t.string, t.special(t.string)], color: 'var(--sql-str)' },
-  { tag: [t.number, t.bool, t.null], color: 'var(--sql-num)' },
-  { tag: t.comment, color: 'var(--sql-comment)', fontStyle: 'italic' },
-  { tag: t.operator, color: 'var(--sql-op)' },
-  { tag: t.special(t.name), color: 'var(--sql-var)' },
+/** Syntax colours by token kind, for every language the app edits; the variables are defined in sql.css. */
+export const codeHighlight = HighlightStyle.define([
+  { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword, t.operatorKeyword], color: 'var(--sql-kw)' },
+  { tag: [t.typeName, t.className, t.namespace, t.tagName], color: 'var(--sql-type)' },
+  { tag: [t.standard(t.name), t.function(t.variableName), t.function(t.propertyName), t.macroName], color: 'var(--sql-fn)' },
+  { tag: [t.string, t.special(t.string), t.regexp, t.attributeValue], color: 'var(--sql-str)' },
+  { tag: [t.number, t.bool, t.null, t.atom, t.literal], color: 'var(--sql-num)' },
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: 'var(--sql-comment)', fontStyle: 'italic' },
+  { tag: [t.operator, t.punctuation, t.separator], color: 'var(--sql-op)' },
+  { tag: [t.special(t.name), t.variableName, t.propertyName, t.attributeName, t.labelName], color: 'var(--sql-var)' },
+  { tag: [t.meta, t.processingInstruction, t.annotation], color: 'var(--sql-cmd)' },
+  { tag: t.heading, fontWeight: 'bold', color: 'var(--sql-kw)' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.strong, fontWeight: 'bold' },
+  { tag: t.link, textDecoration: 'underline', color: 'var(--sql-fn)' },
+  { tag: t.invalid, color: 'var(--sql-err)' },
 ]);
 
 /** The editor chrome, in the app's own variables. */
-const theme = EditorView.theme({
+export const editorTheme = EditorView.theme({
   '&': {
     height: '100%',
     backgroundColor: 'var(--vscode-editor-background)',
@@ -197,8 +203,8 @@ const serviceReferencesPlugin = ViewPlugin.fromClass(
 export function sqlEditorExtensions(): Extension[] {
   return [
     db2iLanguage(),
-    syntaxHighlighting(db2iHighlight),
-    theme,
+    syntaxHighlighting(codeHighlight),
+    editorTheme,
     commandLines,
     serviceReferencesPlugin,
     runningField,

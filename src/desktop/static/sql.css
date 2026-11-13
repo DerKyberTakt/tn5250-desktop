@@ -95,8 +95,9 @@
   min-height: 0;
 }
 
-/* Syntax colours (VS Code Light+ / Dark+), read by the editor's highlight style. */
-.terminal-frame.sql {
+/* Syntax colours (VS Code Light+ / Dark+), read by the editor's highlight style (the SQL tab and the IFS viewer). */
+.terminal-frame.sql,
+.terminal-frame.ifs-view {
   --sql-kw: #0000ff;
   --sql-fn: #795e26;
   --sql-type: #267f99;
@@ -128,7 +129,8 @@
 .sq-cmd { color: var(--sql-cmd); font-weight: 600; }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .terminal-frame.sql {
+  :root:not([data-theme="light"]) .terminal-frame.sql,
+  :root:not([data-theme="light"]) .terminal-frame.ifs-view {
     --sql-kw: #569cd6;
     --sql-fn: #dcdcaa;
     --sql-type: #4ec9b0;
@@ -149,7 +151,8 @@
   }
 }
 
-:root[data-theme="dark"] .terminal-frame.sql {
+:root[data-theme="dark"] .terminal-frame.sql,
+:root[data-theme="dark"] .terminal-frame.ifs-view {
   --sql-kw: #569cd6;
   --sql-fn: #dcdcaa;
   --sql-type: #4ec9b0;

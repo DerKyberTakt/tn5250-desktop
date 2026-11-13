@@ -1,8 +1,11 @@
 import { errorText, goApp } from './bridge';
+import { CodeEditor } from './codeEditor';
+import { CsvGrid } from './csvGrid';
 import { choiceDialog, confirmDialog, promptDialog } from './dialogs';
 import { actionButton } from './icons';
-import { ENCODINGS, HEX, decodeIfs, ebcdicLineEnd, encodeIfs, encodingLabel, fromBase64, guessCcsid, hexDump, isBinary, keepBom, toBase64 } from './ifsText';
 import { formatSize } from './ifsTab';
+import { ENCODINGS, HEX, canEncode, decodeIfs, ebcdicLineEnd, encodeIfs, encodingLabel, fromBase64, guessCcsid, hexDump, isBinary, keepBom, toBase64 } from './ifsText';
+import { languageFor, type FileLanguage } from './langModes';
 
 export interface IfsViewHost {
   notify(text: string): void;
@@ -30,9 +33,10 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
 export const VIEW_LIMIT = 8 * 1024 * 1024;
 
 /**
- * A stream file in its own tab: text decoded by the file's CCSID (or one you pick), line
- * numbers, Find, wrap, Copy, an Edit mode that saves back in the file's CCSID, Save as… with
- * a UTF-8 option, and a hex dump for binary files.
+ * A stream file in its own tab: text decoded by the file's CCSID (or one you pick) in a
+ * code editor coloured for its language (JSON, Python, SQL, CL, RPG, batch, ...), a grid
+ * for CSV files, line numbers, Find, wrap, Copy, an Edit mode that saves back in the file's
+ * CCSID, Save as… on the host, Download a copy, and a hex dump for binary files.
  */
 export class IfsViewTab {
   readonly frame: HTMLDivElement;
@@ -49,17 +53,17 @@ export class IfsViewTab {
   private editing = false;
   private dirty = false;
   private wrap = false;
+  private readonly language: FileLanguage;
+  /** CSV files: the grid, or the text to edit. */
+  private mode: 'grid' | 'text';
 
-  private readonly area: HTMLTextAreaElement;
-  private readonly gutter: HTMLDivElement;
+  private readonly editor: CodeEditor;
+  private readonly csv: CsvGrid | undefined;
   private readonly encodingSel: HTMLSelectElement;
-  private readonly findBar: HTMLDivElement;
-  private readonly findInput: HTMLInputElement;
-  private readonly findCount: HTMLSpanElement;
+  private readonly modeSel: HTMLSelectElement | undefined;
   private readonly statusEl: HTMLSpanElement;
   private readonly bannerEl: HTMLDivElement;
   private readonly buttons: Record<string, HTMLButtonElement> = {};
-  private findAt = -1;
 
   constructor(
     private readonly host: IfsViewHost,
@@ -68,6 +72,8 @@ export class IfsViewTab {
     private info: IfsFileInfo,
   ) {
     this.title = path.split('/').pop() || path;
+    this.language = languageFor(this.title);
+    this.mode = this.language.kind === 'csv' ? 'grid' : 'text';
     this.frame = el('div', 'terminal-frame ifs ifs-view');
     this.frame.tabIndex = -1;
 
@@ -80,13 +86,13 @@ export class IfsViewTab {
       return b;
     };
     this.encodingSel = el('select', 'ifsv-encoding');
-    this.encodingSel.title = 'How the bytes are read (the file says, unless you pick)';
+    this.encodingSel.title = 'Read the bytes as';
     for (const e of ENCODINGS) {
-      const o = el('option', undefined, e.label);
+      const o = el('option', undefined, e.readOnly ? `${e.label} (read only)` : e.label);
       o.value = String(e.ccsid);
       this.encodingSel.append(o);
     }
-    const hex = el('option', undefined, encodingLabel(HEX));
+    const hex = el('option', undefined, 'Bytes (hex)');
     hex.value = String(HEX);
     this.encodingSel.append(hex);
     this.encodingSel.addEventListener('change', () => this.setEncoding(Number(this.encodingSel.value)));
@@ -97,61 +103,54 @@ export class IfsViewTab {
       btn('saveAsHost', 'saveAs', 'green', 'Save as… under another name or folder on the host', () => void this.saveAsHost()),
       btn('saveAs', 'importFile', 'blue', 'Download a copy to this computer (as it is, or converted to UTF-8)', () => void this.saveAs()),
       btn('copy', 'copy', 'blue', 'Copy all', () => void this.copyAll()),
-      btn('find', 'find', 'blue', 'Find (Ctrl+F)', () => this.toggleFind()),
+      btn('find', 'find', 'blue', 'Find (Ctrl+F; F3 next, Shift+F3 previous)', () => this.openFind()),
       btn('wrap', 'wrap', 'blue', 'Wrap long lines', () => this.toggleWrap()),
       this.encodingSel,
     );
-    top.append(bar);
-
-    this.findBar = el('div', 'ifsv-find');
-    this.findBar.hidden = true;
-    this.findInput = el('input', 'ifsv-find-input');
-    this.findInput.placeholder = 'Find…';
-    this.findInput.spellcheck = false;
-    this.findInput.addEventListener('input', () => this.find(0));
-    this.findInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        this.find(e.shiftKey ? -1 : 1);
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        this.toggleFind(false);
+    if (this.language.kind === 'csv') {
+      this.modeSel = el('select', 'ifsv-mode');
+      this.modeSel.title = 'Grid: the rows with a filter per column. Text: the file as it is, to edit.';
+      for (const [v, t] of [['grid', 'Grid'], ['text', 'Text']] as const) {
+        const o = el('option', undefined, t);
+        o.value = v;
+        this.modeSel.append(o);
       }
-    });
-    this.findCount = el('span', 'ifsv-find-count');
-    const prev = el('button', 'ifsv-find-nav', '↑');
-    prev.type = 'button';
-    prev.title = 'Previous (Shift+Enter)';
-    prev.addEventListener('click', () => this.find(-1));
-    const next = el('button', 'ifsv-find-nav', '↓');
-    next.type = 'button';
-    next.title = 'Next (Enter, F3)';
-    next.addEventListener('click', () => this.find(1));
-    this.findBar.append(this.findInput, prev, next, this.findCount);
+      this.modeSel.addEventListener('change', () => this.setMode(this.modeSel!.value as 'grid' | 'text'));
+      bar.append(this.modeSel);
+    }
+    top.append(bar);
 
     this.bannerEl = el('div', 'ifsv-banner');
     this.bannerEl.hidden = true;
 
     const body = el('div', 'ifsv-body');
-    this.gutter = el('div', 'ifsv-gutter');
-    this.area = el('textarea', 'ifsv-text');
-    this.area.readOnly = true;
-    this.area.spellcheck = false;
-    this.area.wrap = 'off';
-    this.area.addEventListener('scroll', () => (this.gutter.style.transform = `translateY(${-this.area.scrollTop}px)`));
-    this.area.addEventListener('input', () => {
-      this.text = this.area.value;
-      this.setDirty(true);
-      this.renderGutter();
+    this.editor = new CodeEditor({
+      readOnly: true,
+      language: this.language.extension,
+      onChange: () => {
+        this.text = this.editor.value;
+        this.setDirty(true);
+      },
+      keys: {
+        'Mod-s': () => void this.save(),
+        F5: () => void this.load(),
+        F3: () => this.editor.findNext(),
+        'Shift-F3': () => this.editor.findPrevious(),
+      },
     });
-    body.append(this.gutter, this.area);
+    body.append(this.editor.element);
+    if (this.language.kind === 'csv') {
+      this.csv = new CsvGrid((text) => void goApp().ClipboardSet(text).then(() => this.host.notify('Copied')));
+      body.append(this.csv.element);
+    }
 
     const foot = el('div', 'ifs-foot');
     this.statusEl = el('span', 'ifs-status', 'Loading…');
     foot.append(this.statusEl);
 
-    this.frame.append(top, this.findBar, this.bannerEl, body, foot);
+    this.frame.append(top, this.bannerEl, body, foot);
     this.frame.addEventListener('keydown', (e) => this.onKey(e));
+    this.showMode();
     this.updateButtons();
   }
 
@@ -160,10 +159,11 @@ export class IfsViewTab {
   }
 
   focus(): void {
-    this.area.focus();
+    this.editor.focus();
   }
 
   dispose(): void {
+    this.editor.destroy();
     this.frame.remove();
   }
 
@@ -183,7 +183,7 @@ export class IfsViewTab {
       this.editing = false;
       this.setDirty(false);
       this.decode();
-      this.host.log?.(`Viewer: ${this.path}: ${this.bytes.length} bytes, file says CCSID ${this.reported || 'unknown'}, reading as ${encodingLabel(this.ccsid)}${this.binary ? ', shown as hex' : ''}`);
+      this.host.log?.(`Viewer: ${this.path}: ${this.bytes.length} bytes, file says CCSID ${this.reported || 'unknown'}, reading as ${encodingLabel(this.ccsid)}${this.binary ? ', shown as hex' : ''}${this.language.kind !== 'plain' ? `, ${this.language.name}` : ''}`);
     } catch (err) {
       this.statusEl.textContent = 'Could not read the file';
       this.host.notify(errorText(err));
@@ -196,31 +196,24 @@ export class IfsViewTab {
   private decode(): void {
     this.encodingSel.value = String(this.binary ? HEX : this.ccsid);
     this.text = this.binary ? hexDump(this.bytes) : decodeIfs(this.bytes, this.ccsid);
-    this.area.value = this.text;
-    this.area.readOnly = !this.editing;
-    this.area.classList.toggle('editing', this.editing);
-    this.area.classList.toggle('hex', this.binary);
-    this.renderGutter();
+    this.editor.setLanguage(this.binary ? undefined : this.language.extension);
+    this.editor.value = this.text;
+    this.editor.setReadOnly(!this.editing);
+    this.editor.element.classList.toggle('editing', this.editing);
+    this.editor.element.classList.toggle('hex', this.binary);
+    if (this.csv && !this.binary) this.csv.setText(this.text);
+    this.showMode();
     this.renderStatus();
     this.updateButtons();
-    this.findAt = -1;
-    if (!this.findBar.hidden) this.find(0);
-  }
-
-  private renderGutter(): void {
-    const lines = this.text.length ? this.text.split('\n').length : 1;
-    const nums: string[] = [];
-    for (let i = 1; i <= lines; i++) nums.push(String(i));
-    this.gutter.textContent = nums.join('\n');
-    this.gutter.hidden = this.binary || this.wrap;
   }
 
   private renderStatus(): void {
     const enc = this.binary ? `binary (hex)${this.reported ? ` (file says ${this.reported})` : ''}` : encodingLabel(this.ccsid) + (this.reported === this.ccsid ? '' : this.reported ? ` (file says ${this.reported})` : ' (guessed)');
     const lines = this.binary ? '' : ` · ${this.text.split('\n').length} lines`;
-    this.statusEl.textContent = `${this.path} · ${formatSize(this.size)}${lines} · ${enc}${this.dirty ? ' · modified' : ''}`;
+    const lang = this.binary || this.language.kind === 'plain' ? '' : ` · ${this.language.name}`;
+    this.statusEl.textContent = `${this.path} · ${formatSize(this.size)}${lines} · ${enc}${lang}${this.dirty ? ' · modified' : ''}`;
     this.bannerEl.hidden = !this.truncated;
-    if (this.truncated) this.bannerEl.textContent = `Showing the first ${formatSize(this.bytes.length)} of ${formatSize(this.size)}. Editing is off; use Save as… or Download for the whole file.`;
+    if (this.truncated) this.bannerEl.textContent = `Showing the first ${formatSize(this.bytes.length)} of ${formatSize(this.size)}. Editing is off; use Download for the whole file.`;
   }
 
   private updateButtons(): void {
@@ -231,12 +224,14 @@ export class IfsViewTab {
       if (pressed !== undefined) b.classList.toggle('pressed', pressed);
     };
     const text = !this.binary;
-    set('edit', text && !this.truncated, this.editing);
+    const writable = text && canEncode(this.ccsid);
+    set('edit', writable && !this.truncated, this.editing);
     set('save', this.editing && this.dirty);
+    set('saveAsHost', writable && !this.truncated && this.bytes.length > 0);
     set('saveAs', this.bytes.length > 0);
     set('copy', this.bytes.length > 0);
-    set('find', text, !this.findBar.hidden);
-    set('wrap', text, this.wrap);
+    set('find', text && this.mode === 'text');
+    set('wrap', text && this.mode === 'text', this.wrap);
     this.encodingSel.disabled = this.dirty;
   }
 
@@ -259,6 +254,20 @@ export class IfsViewTab {
     this.decode();
   }
 
+  /** CSV files: the grid or the text; editing always happens in the text. */
+  private setMode(mode: 'grid' | 'text'): void {
+    this.mode = mode;
+    if (this.modeSel) this.modeSel.value = mode;
+    this.showMode();
+    this.updateButtons();
+  }
+
+  private showMode(): void {
+    const grid = !!this.csv && this.mode === 'grid' && !this.binary;
+    if (this.csv) this.csv.element.hidden = !grid;
+    this.editor.element.hidden = grid;
+  }
+
   private toggleEdit(): void {
     if (this.editing && this.dirty) {
       void confirmDialog('Stop editing?', 'Your changes are not saved to the host. Drop them?', 'Drop changes').then((ok) => {
@@ -270,63 +279,22 @@ export class IfsViewTab {
       return;
     }
     this.editing = !this.editing;
-    this.area.readOnly = !this.editing;
-    this.area.classList.toggle('editing', this.editing);
+    if (this.editing && this.mode === 'grid') this.setMode('text');
+    this.editor.setReadOnly(!this.editing);
+    this.editor.element.classList.toggle('editing', this.editing);
     this.updateButtons();
-    if (this.editing) this.area.focus();
+    if (this.editing) this.editor.focus();
   }
 
   private toggleWrap(): void {
     this.wrap = !this.wrap;
-    this.area.wrap = this.wrap ? 'soft' : 'off';
-    this.renderGutter();
+    this.editor.setWrap(this.wrap);
     this.updateButtons();
   }
 
-  private toggleFind(on = this.findBar.hidden): void {
-    this.findBar.hidden = !on;
-    this.updateButtons();
-    if (on) {
-      this.findInput.focus();
-      this.findInput.select();
-      this.find(0);
-    } else this.area.focus();
-  }
-
-  /** Counts the matches and selects the next (+1), previous (-1) or current (0) one. */
-  find(step: number): void {
-    const needle = this.findInput.value;
-    if (!needle) {
-      this.findCount.textContent = '';
-      this.findAt = -1;
-      return;
-    }
-    const hay = this.text.toLowerCase();
-    const n = needle.toLowerCase();
-    const positions: number[] = [];
-    for (let i = hay.indexOf(n); i >= 0; i = hay.indexOf(n, i + 1)) positions.push(i);
-    if (!positions.length) {
-      this.findCount.textContent = 'No matches';
-      this.findAt = -1;
-      return;
-    }
-    let idx = positions.findIndex((p) => p >= (this.findAt < 0 ? 0 : this.findAt));
-    if (idx < 0) idx = 0;
-    if (step > 0 && positions[idx] === this.findAt) idx = (idx + 1) % positions.length;
-    if (step < 0) idx = (idx - 1 + positions.length) % positions.length;
-    const at = positions[idx] as number;
-    this.findAt = at;
-    this.findCount.textContent = `${idx + 1} of ${positions.length}`;
-    this.area.setSelectionRange(at, at + needle.length);
-    this.scrollToSelection(at);
-  }
-
-  private scrollToSelection(at: number): void {
-    // One line per 18 px is close enough to bring the match into view; exact layout is not available.
-    const line = this.text.slice(0, at).split('\n').length - 1;
-    const lineHeight = parseFloat(getComputedStyle(this.area).lineHeight) || 18;
-    this.area.scrollTop = Math.max(0, line * lineHeight - this.area.clientHeight / 2);
-    this.gutter.style.transform = `translateY(${-this.area.scrollTop}px)`;
+  private openFind(): void {
+    if (this.mode === 'grid') this.setMode('text');
+    this.editor.openFind();
   }
 
   private async copyAll(): Promise<void> {
@@ -338,6 +306,10 @@ export class IfsViewTab {
   async save(): Promise<void> {
     if (!this.editing || !this.dirty) return;
     const ccsid = this.ccsid;
+    if (!canEncode(ccsid)) {
+      this.host.notify(`${encodingLabel(ccsid)} can be read here but not written; pick UTF-8 or another page before editing.`);
+      return;
+    }
     if (!this.reported && !(await confirmDialog('Save in which code page?', `The host did not say what code page this file is in; it will be written as ${encodingLabel(ccsid)} (the one shown). Save?`, 'Save'))) return;
     try {
       const dir = this.path.slice(0, this.path.lastIndexOf('/')) || '/';
@@ -353,6 +325,7 @@ export class IfsViewTab {
       this.size = bytes.length;
       const after = (await goApp().IfsList(this.sessionId, dir)).find((e) => e.name === name);
       if (after) this.info = { size: after.size, modified: after.modified };
+      if (this.csv) this.csv.setText(this.text);
       this.setDirty(false);
       this.renderStatus();
       this.host.notify(`Saved ${name} (${formatSize(bytes.length)}, ${encodingLabel(ccsid)})`);
@@ -369,6 +342,10 @@ export class IfsViewTab {
     }
     if (this.truncated) {
       this.host.notify('Only part of the file is loaded; Save as… needs the whole file.');
+      return;
+    }
+    if (!canEncode(this.ccsid)) {
+      this.host.notify(`${encodingLabel(this.ccsid)} can be read here but not written; pick UTF-8 or another page first.`);
       return;
     }
     const target = await promptDialog('Save as… on the host', 'Full path of the new file', { value: this.path, note: `Written as ${encodingLabel(this.ccsid)}, the code page shown; the folder must already exist.` });
@@ -407,7 +384,7 @@ export class IfsViewTab {
       await this.downloadRaw();
       return;
     }
-    const choice = await choiceDialog('Save as', [`${name} is read as ${encodingLabel(this.ccsid)}.`, 'Save the bytes as they are on the host, or convert the text to UTF-8 so PC programs read it.'], ['As on the host', 'Convert to UTF-8']);
+    const choice = await choiceDialog('Download a copy', [`${name} is read as ${encodingLabel(this.ccsid)}.`, 'Save the bytes as they are on the host, or convert the text to UTF-8 so PC programs read it.'], ['As on the host', 'Convert to UTF-8']);
     if (!choice) return;
     if (choice === 'As on the host') {
       await this.downloadRaw();
@@ -430,23 +407,22 @@ export class IfsViewTab {
     }
   }
 
+  /** Keys outside the editor (the editor binds its own: Ctrl+F, F3, Ctrl+S, F5). */
   private onKey(e: KeyboardEvent): void {
+    if ((e.target as HTMLElement | null)?.closest('.cm-editor')) return;
     if (e.ctrlKey && e.key.toLowerCase() === 'f') {
       e.preventDefault();
-      this.toggleFind(true);
+      this.openFind();
     } else if (e.ctrlKey && e.key.toLowerCase() === 's') {
       e.preventDefault();
       void this.save();
     } else if (e.key === 'F3') {
       e.preventDefault();
-      if (this.findBar.hidden) this.toggleFind(true);
-      else this.find(e.shiftKey ? -1 : 1);
+      if (e.shiftKey) this.editor.findPrevious();
+      else this.editor.findNext();
     } else if (e.key === 'F5') {
       e.preventDefault();
       void this.load();
-    } else if (e.key === 'Escape' && !this.findBar.hidden) {
-      e.preventDefault();
-      this.toggleFind(false);
     }
   }
 }
