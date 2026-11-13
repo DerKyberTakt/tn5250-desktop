@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 - unreleased
+## 0.3.0 - 2026-11-12
 - Settings > Connection has an Import Connections… button, the same import as File > Import Connections.
 - IFS browser: double-click a folder to open it and a file to view it (a click used to rebuild the rows, so the second click never counted); the tool bars are icon buttons with the Macros dialog's hover ring (back, up, refresh, folders, upload, download, new folder, rename, delete, view); a tool that is switched on (the folder tree, Edit, Wrap, Find) sits on a tinted disc.
 - IFS viewer is a tab: text decoded by the file's CCSID (the host reports it; EBCDIC pages use the terminal's tables) with an encoding list, line numbers, Find (Ctrl+F, F3), wrap, Copy, a hex dump for binary files, and Edit + Save (Ctrl+S) that writes back in the file's code page after checking the file did not change on the host. Save as… keeps the bytes or converts the text to UTF-8. A byte-order mark decides the encoding, UTF-16 LE (what Notepad and PowerShell write) is in the list, a file tagged UTF-16 whose bytes have no NULs (one an earlier upload tagged 1200) is read as UTF-8 or Latin-1, and "Bytes (hex)" shows any file raw. Every load writes a Session Log line: bytes read, the CCSID the file says, the encoding used.

@@ -12,7 +12,7 @@ info:
   description: "5250 terminal emulator for IBM i"
   copyright: "Copyright (c) 2026 Kyle Ward. MIT License."
   comments: "5250 terminal emulator for IBM i"
-  version: "0.2.2"
+  version: "0.3.0"
 
 dev_mode:
   root_path: .
