@@ -150,6 +150,9 @@ describe('Run SQL Scripts: one Output pane and numbered Result tabs', () => {
     expect(tab.frame.querySelector('.sql-out-lines')?.textContent).toBe('QSYS\nQGPL');
     expect(tab.frame.querySelector('.sql-out-msg')?.textContent).toBe('Output: spooled file QPDSPLIB, 2 lines.');
     expect(tab.frame.querySelector('.sql-out-stmt .sq-cmd')?.textContent).toBe('CL: ');
+    expect(tab.frame.querySelector('.sql-out-stmt .sq-kw')?.textContent).toBe('DSPLIBL'); // the CL mode colours the echo
+    // The editor colours the CL line the same way.
+    expect([...tab.frame.querySelectorAll('.cm-cl-line .sq-kw')].map((e) => e.textContent)).toEqual(['DSPLIBL']);
   });
 
   it('several statements run in order, each SELECT gets its own tab, the newest comes to the front', async () => {
