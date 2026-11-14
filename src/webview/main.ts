@@ -148,6 +148,7 @@ function applyConfig(): void {
     uiMode: st.uiMode,
     autoFit: st.autoFit,
     fillWindow: st.fillWindow,
+    screenOverflow: st.screenOverflow,
     fontFamily: st.fontFamily,
     fontSize: st.fontSize,
     fontStyle: st.fontStyle,
@@ -370,6 +371,7 @@ window.addEventListener(
       const current = renderer.zoom;
       const next = zoom === 'reset' ? 1 : zoom === 'in' ? Math.min(4, current * 1.1) : Math.max(0.3, current / 1.1);
       renderer.setOptions({ zoom: next });
+      showZoom(next);
       logKey(`${keyName(info)}  -> zoom ${next.toFixed(2)}`);
       return;
     }
@@ -408,6 +410,22 @@ window.addEventListener(
   { capture: true },
 );
 
+/** The zoom level, bottom right of the screen for a moment after every change (Ctrl+wheel, Ctrl and +, -, 0). */
+let zoomToast: HTMLDivElement | undefined;
+let zoomToastTimer: ReturnType<typeof setTimeout> | undefined;
+function showZoom(zoom: number): void {
+  if (!zoomToast) {
+    zoomToast = document.createElement('div');
+    zoomToast.id = 'zoom-toast';
+    zoomToast.setAttribute('role', 'status');
+    viewport.append(zoomToast);
+  }
+  zoomToast.textContent = `${Math.round(zoom * 100)} %`;
+  zoomToast.classList.add('show');
+  if (zoomToastTimer) clearTimeout(zoomToastTimer);
+  zoomToastTimer = setTimeout(() => zoomToast?.classList.remove('show'), 1200);
+}
+
 let wheelAccum = 0;
 viewport.addEventListener(
   'wheel',
@@ -415,7 +433,9 @@ viewport.addEventListener(
     if (e.ctrlKey) {
       e.preventDefault();
       const current = renderer.zoom;
-      renderer.setOptions({ zoom: e.deltaY < 0 ? Math.min(4, current * 1.1) : Math.max(0.3, current / 1.1) });
+      const next = e.deltaY < 0 ? Math.min(4, current * 1.1) : Math.max(0.3, current / 1.1);
+      renderer.setOptions({ zoom: next });
+      showZoom(next);
       return;
     }
     if (!config.settings.mouseWheelPaging) return;

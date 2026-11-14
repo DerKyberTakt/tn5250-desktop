@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitFont, type FitInput } from '../../src/webview/fit';
+import { fitFont, type FitInput, shrinkScale } from '../../src/webview/fit';
 
 /** A monospace font 0.6 em wide, like Consolas. */
 const measure = (px: number): number => px * 0.6;
@@ -72,5 +72,15 @@ describe('auto-fit font size', () => {
     expect(zoomed.cssW).toBeGreaterThan(base.boxW);
     const small = fitFont({ ...base, zoom: 0.5 });
     expect(small.cssW).toBeLessThan(base.boxW / 1.5);
+  });
+});
+
+describe('shrinkScale', () => {
+  it('is 1 while the drawing fits, else the factor that brings the larger side into the box', () => {
+    expect(shrinkScale(800, 480, 1000, 600)).toBe(1);
+    expect(shrinkScale(800, 480, 400, 600)).toBe(0.5);
+    expect(shrinkScale(800, 480, 1000, 120)).toBe(0.25);
+    expect(shrinkScale(800, 480, 400, 120)).toBe(0.25);
+    expect(shrinkScale(0, 480, 400, 120)).toBe(1);
   });
 });

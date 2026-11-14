@@ -62,6 +62,8 @@ export interface TerminalSettings {
   autoFit: boolean;
   /** With autoFit: stretch the screen to fill the window (text scaled sideways), as ACS does. */
   fillWindow: boolean;
+  /** A screen bigger than its box (a fixed font, a tiny window): shrink the drawing to fit, or show scroll bars. */
+  screenOverflow: 'shrink' | 'scroll';
   fontFamily: string;
   /** A font file imported through Settings > Font (loaded with @font-face). */
   fontFile: string;
@@ -208,6 +210,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
 
   autoFit: true,
   fillWindow: true,
+  screenOverflow: 'shrink',
   fontFamily: '',
   fontFile: '',
   fontSize: 14,

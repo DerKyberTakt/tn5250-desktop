@@ -3,7 +3,7 @@ import type { ScreenSnapshot, SnapshotScrollBar, SnapshotWindow } from '../share
 import { decoratedFieldCells, detectSubfiles, fieldRanges, keyLabelsIn, markedFieldRanges, rowText, urlsIn, type FieldRange, type SubfileArea } from '../shared/screenText';
 import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
 import { highlightScreen, Tok } from '../shared/sourceHighlight';
-import { fitFont } from './fit';
+import { fitFont, shrinkScale } from './fit';
 import { scrollBarGeometry, scrollBarHit, type Rect, type ScrollBarGeometry, type ScrollHit } from './gui';
 
 /** Width of the gutter right of the text where the synthetic subfile scroll bar lives. */
@@ -149,6 +149,8 @@ export interface RendererOptions {
   autoFit: boolean;
   /** Auto-fit stretches the screen to fill the viewport (text scaled sideways), as ACS does; off keeps the font's proportions and leaves space. */
   fillWindow: boolean;
+  /** A screen bigger than its box at zoom 1 or less: shrink the drawing to fit, or scroll. */
+  screenOverflow: 'shrink' | 'scroll';
   /** Font size in CSS pixels when autoFit is off. */
   fontSize: number;
   fontStyle: 'plain' | 'bold';
@@ -202,6 +204,7 @@ export class Renderer {
     fontFamily: '',
     autoFit: true,
     fillWindow: true,
+    screenOverflow: 'shrink',
     fontSize: 14,
     fontStyle: 'plain',
     textRendering: 'smooth',
@@ -238,6 +241,8 @@ export class Renderer {
   private cellH = 19;
   /** Sideways scale of the drawing (fill the window); pointer x in CSS px divides by it. */
   private scaleXValue = 1;
+  /** Vertical scale of the whole drawing: 1, or less when the screen is shrunk to fit its box. */
+  private scaleYValue = 1;
   private pad = 0;
   private blinkOn = true;
   private watermarkImage: HTMLImageElement | undefined;
@@ -345,8 +350,8 @@ export class Renderer {
 
   /** The scroll bar part at a point in canvas CSS pixels, if any. */
   scrollBarAt(x: number, y: number): ScrollBarTarget | undefined {
-    const px = (x - this.pad) / this.scaleXValue;
-    const py = y - this.pad;
+    const px = (x - this.pad * this.scaleYValue) / this.scaleXValue;
+    const py = (y - this.pad * this.scaleYValue) / this.scaleYValue;
     for (const ref of this.scrollBars()) {
       const geometry = this.geometryFor(ref);
       const hit = scrollBarHit(geometry, px, py);
@@ -422,8 +427,8 @@ export class Renderer {
   /** Converts a point in canvas CSS pixels to a cell, clamped to the screen. */
   cellAt(x: number, y: number): { row: number; col: number } | undefined {
     if (!this.screen) return undefined;
-    const col = Math.min(this.screen.cols - 1, Math.max(0, Math.floor((x - this.pad) / this.scaleXValue / this.cellW)));
-    const row = Math.min(this.screen.rows - 1, Math.max(0, Math.floor((y - this.pad) / this.cellH)));
+    const col = Math.min(this.screen.cols - 1, Math.max(0, Math.floor((x - this.pad * this.scaleYValue) / this.scaleXValue / this.cellW)));
+    const row = Math.min(this.screen.rows - 1, Math.max(0, Math.floor((y - this.pad * this.scaleYValue) / this.scaleYValue / this.cellH)));
     return { row, col };
   }
 
@@ -477,17 +482,23 @@ export class Renderer {
     this.fontPx = m.px;
     this.cellW = m.cellW;
     this.cellH = m.cellH;
-    this.scaleXValue = m.scaleX;
-    const cssW = m.cssW + this.gutter;
-    const cssH = m.cssH;
+    const fullW = m.cssW + this.gutter;
+    const fullH = m.cssH;
+    // A screen that does not fit at zoom 1 or less (fixed font, small window) is shrunk so it
+    // all stays in view; zoomed in, it scrolls, as the user asked for a bigger screen.
+    const shrink = this.options.screenOverflow !== 'scroll' && this.options.zoom <= 1 ? shrinkScale(fullW, fullH, this.viewportW, this.viewportH) : 1;
+    this.scaleXValue = m.scaleX * shrink;
+    this.scaleYValue = shrink;
+    const cssW = Math.floor(fullW * shrink);
+    const cssH = Math.floor(fullH * shrink);
     const dpr = window.devicePixelRatio || 1;
     this.canvas.style.width = `${cssW}px`;
     this.canvas.style.height = `${cssH}px`;
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
-    // The whole drawing is stretched sideways by scaleX: cells, text, boxes and scroll bars
-    // keep their drawing coordinates and land on the stretched canvas.
-    this.ctx.setTransform(dpr * this.scaleXValue, 0, 0, dpr, this.pad, this.pad);
+    // The whole drawing is stretched sideways by scaleX (and shrunk by scaleY when it has to
+    // fit): cells, text, boxes and scroll bars keep their drawing coordinates.
+    this.ctx.setTransform(dpr * this.scaleXValue, 0, 0, dpr * this.scaleYValue, this.pad * shrink, this.pad * shrink);
     // Only a zoomed-in screen may scroll. A fitted one never shows scrollbars, so they can
     // never narrow the box and start the resize loop again.
     this.canvas.parentElement?.classList.toggle('overflow', cssW > this.viewportW || cssH > this.viewportH);
