@@ -115,6 +115,18 @@ describe('DataStreamProcessor commands', () => {
     expect(state.messageWaiting).toBe(false);
   });
 
+  it('CC1 0xC0 nulls the modified fields and then resets every tag (the order matters)', () => {
+    const { screen, proc } = setup();
+    // Two fields; the host types into the first (MDT on), the second stays as written.
+    proc.process(hexToBytes('04110008' + '110101' + '1d48002000' + '03' + e('abc') + '110201' + '1d40002000' + '03' + e('xyz')));
+    expect(screen.fields[0]?.mdt).toBe(true);
+    expect(screen.fields[1]?.mdt).toBe(false);
+    proc.process(hexToBytes('0411c000'));
+    expect(Array.from(screen.fieldBytes(screen.fields[0]!))).toEqual([0, 0, 0]);
+    expect(Array.from(screen.fieldBytes(screen.fields[1]!))).toEqual(Array.from(cp.encodeString('xyz')));
+    expect(screen.fields.every((f) => !f.mdt)).toBe(true);
+  });
+
   it('a read command homes the cursor unless an Insert Cursor was given', () => {
     const { screen, proc } = setup();
     proc.process(hexToBytes('04110008' + '110201' + '1d4000200005' + '110301' + '1d4000200005' + '04520000'));

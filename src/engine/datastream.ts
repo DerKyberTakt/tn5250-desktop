@@ -899,8 +899,9 @@ export class DataStreamProcessor {
         nullFields(false);
         break;
       case 0xc0:
-        resetMdt(false);
+        // Null the modified fields first: resetting the tags before would leave nothing to null.
         nullFields(true);
+        resetMdt(false);
         break;
       case 0xe0:
         resetMdt(true);
