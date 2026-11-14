@@ -140,7 +140,15 @@ export class IfsViewTab {
     });
     body.append(this.editor.element);
     if (this.language.kind === 'csv') {
-      this.csv = new CsvGrid((text) => void goApp().ClipboardSet(text).then(() => this.host.notify('Copied')));
+      this.csv = new CsvGrid(
+        (text) => void goApp().ClipboardSet(text).then(() => this.host.notify('Copied')),
+        (text) => {
+          // A cell changed: the text is the file now; the editor follows without an edit of its own.
+          this.text = text;
+          this.editor.value = text;
+          this.setDirty(true);
+        },
+      );
       body.append(this.csv.element);
     }
 
@@ -201,6 +209,7 @@ export class IfsViewTab {
     this.editor.setReadOnly(!this.editing);
     this.editor.element.classList.toggle('editing', this.editing);
     this.editor.element.classList.toggle('hex', this.binary);
+    this.csv?.setEditable(this.editing);
     if (this.csv && !this.binary) this.csv.setText(this.text);
     this.showMode();
     this.renderStatus();
@@ -254,8 +263,9 @@ export class IfsViewTab {
     this.decode();
   }
 
-  /** CSV files: the grid or the text; editing always happens in the text. */
+  /** CSV files: the grid or the text; both edit the same text. */
   private setMode(mode: 'grid' | 'text'): void {
+    if (mode === 'grid' && this.mode !== 'grid' && this.csv && this.dirty) this.csv.setText(this.text);
     this.mode = mode;
     if (this.modeSel) this.modeSel.value = mode;
     this.showMode();
@@ -279,11 +289,11 @@ export class IfsViewTab {
       return;
     }
     this.editing = !this.editing;
-    if (this.editing && this.mode === 'grid') this.setMode('text');
     this.editor.setReadOnly(!this.editing);
     this.editor.element.classList.toggle('editing', this.editing);
+    this.csv?.setEditable(this.editing);
     this.updateButtons();
-    if (this.editing) this.editor.focus();
+    if (this.editing && this.mode !== 'grid') this.editor.focus();
   }
 
   private toggleWrap(): void {

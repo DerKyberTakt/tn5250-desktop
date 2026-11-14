@@ -2,7 +2,7 @@ import { errorText, goApp, wailsRuntime, type IfsConnectRequest, type IfsEntry, 
 import { choiceDialog, confirmDialog, keyButton, messageDialog, promptDialog } from './dialogs';
 import { actionButton, type ActionIconName, type ActionTone } from './icons';
 import { decodeIfs, encodingLabel, fromBase64, guessCcsid } from './ifsText';
-import { IfsTreeModel, canMoveInto, crumbs, joinPath, parentPath, type TreeNode } from './ifsTree';
+import { IfsTreeModel, canMoveInto, crumbs, filterTreeRows, joinPath, parentPath, pathCandidates, splitTyped, type TreeNode } from './ifsTree';
 import { explainToolError } from './toolErrors';
 
 export interface IfsHost {
@@ -71,7 +71,14 @@ export class IfsTab {
   private busy = false;
 
   private readonly pathInput: HTMLInputElement;
+  /** Names under the path being typed, as a list to pick from (Tab completes). */
+  private readonly completeEl: HTMLUListElement;
+  private completeIndex = -1;
+  /** Folder listings seen so far, for the path completion (dropped on refresh), and the ones on their way. */
+  private readonly listed = new Map<string, IfsEntry[]>();
+  private readonly listing = new Map<string, Promise<IfsEntry[]>>();
   private readonly crumbsEl: HTMLDivElement;
+  private readonly treeFilter: HTMLInputElement;
   private readonly treeEl: HTMLDivElement;
   private readonly treePane: HTMLDivElement;
   private readonly tree = new IfsTreeModel();
@@ -112,22 +119,41 @@ export class IfsTab {
     this.pathInput = el('input', 'ifs-path');
     this.pathInput.spellcheck = false;
     this.pathInput.hidden = true;
+    this.pathInput.title = 'Type a path: the names under it are offered as you type; Tab completes, Enter goes there';
     this.pathInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
+        const picked = this.completeIndex >= 0 ? this.completeEl.children[this.completeIndex] : undefined;
+        if (picked instanceof HTMLElement && picked.dataset.path) {
+          this.pathInput.value = picked.dataset.path;
+          this.completeIndex = -1;
+          void this.offerCompletions();
+          return;
+        }
         this.editPath(false);
         void this.go(this.pathInput.value);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         this.editPath(false);
+      } else if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        this.completeTyped();
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const n = this.completeEl.childElementCount;
+        if (n) this.moveCompletion(e.key === 'ArrowDown' ? 1 : -1, n);
       }
     });
-    this.pathInput.addEventListener('blur', () => this.editPath(false));
-    const edit = el('button', 'ifs-path-edit', '\u270e');
-    edit.type = 'button';
-    edit.title = 'Type a path (Ctrl+L)';
-    edit.addEventListener('click', () => this.editPath(true));
-    pathBox.append(this.crumbsEl, this.pathInput, edit);
+    this.pathInput.addEventListener('input', () => void this.offerCompletions());
+    this.pathInput.addEventListener('blur', () => {
+      // A click in the list must land before the box closes.
+      setTimeout(() => {
+        if (document.activeElement !== this.pathInput) this.editPath(false);
+      }, 120);
+    });
+    this.completeEl = el('ul', 'ifs-path-complete');
+    this.completeEl.hidden = true;
+    pathBox.append(this.crumbsEl, this.pathInput, this.completeEl);
     const fav = el('select', 'ifs-fav');
     fav.title = 'Go to';
     for (const [label, p] of [['Go to…', ''], ['Home', `/home/${request.user.toUpperCase()}`], ['/tmp', '/tmp'], ['QSYS.LIB (libraries)', '/QSYS.LIB'], ['QIBM/UserData', '/QIBM/UserData'], ['Root /', '/']] as const) {
@@ -179,7 +205,7 @@ export class IfsTab {
       else this.searchInput.focus();
     });
     searchBox.append(this.searchInput, this.subtreeButton);
-    bar.append(pathBox, fav, searchBox);
+    bar.append(pathBox, fav);
     const actions = el('div', 'ifs-actions');
     actions.append(
       btn('tree', 'folderTree', 'blue', 'Show or hide the folder tree', () => this.toggleTree()),
@@ -215,6 +241,11 @@ export class IfsTab {
     this.messageEl = el('div', 'ifs-message');
     this.messageEl.hidden = true;
     scroller.append(table, this.messageEl);
+    // The name filter sits on its own row above the headers, so it plainly belongs to the list.
+    const filterRow = el('div', 'ifs-filter-row icon-actions');
+    filterRow.append(searchBox);
+    const listPane = el('div', 'ifs-listpane');
+    listPane.append(filterRow, scroller);
     // Dropping rows on the blank part of the list moves nothing; dropping on a folder row does.
     scroller.addEventListener('dragover', (e) => {
       if (e.dataTransfer?.types.includes(DRAG_TYPE)) e.preventDefault();
@@ -222,16 +253,32 @@ export class IfsTab {
 
     // Folder tree on the left, a splitter, the list on the right.
     this.treePane = el('div', 'ifs-treepane');
+    this.treeFilter = el('input', 'ifs-tree-filter');
+    this.treeFilter.type = 'search';
+    this.treeFilter.spellcheck = false;
+    this.treeFilter.placeholder = 'Filter folders (Enter: ask the host)';
+    this.treeFilter.title = 'Typing narrows the tree to the folders whose names contain the text. Enter asks the host for folders below the current one and adds them.';
+    this.treeFilter.addEventListener('input', () => this.renderTree());
+    this.treeFilter.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void this.searchFolders();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        this.treeFilter.value = '';
+        this.renderTree();
+      }
+    });
     this.treeEl = el('div', 'ifs-tree');
     this.treeEl.setAttribute('role', 'tree');
-    this.treePane.append(this.treeEl);
+    this.treePane.append(this.treeFilter, this.treeEl);
     this.treePane.hidden = !treeShown;
     const vsplit = el('div', 'ifs-vsplit');
     vsplit.title = 'Drag to resize';
     vsplit.hidden = !treeShown;
     vsplit.addEventListener('mousedown', (e) => this.startTreeResize(e));
     const main = el('div', 'ifs-main');
-    main.append(this.treePane, vsplit, scroller);
+    main.append(this.treePane, vsplit, listPane);
 
     const foot = el('div', 'ifs-foot');
     this.statusEl = el('span', 'ifs-status', 'Connecting…');
@@ -254,11 +301,86 @@ export class IfsTab {
   private editPath(on: boolean): void {
     this.pathInput.hidden = !on;
     this.crumbsEl.hidden = on;
+    this.completeEl.hidden = true;
+    this.completeIndex = -1;
     if (on) {
       this.pathInput.value = this.cwd;
       this.pathInput.focus();
       this.pathInput.select();
     }
+  }
+
+  /** The listing of a folder, from what this tab has seen or from the host. */
+  private listDir(dir: string): Promise<IfsEntry[]> {
+    const known = this.listed.get(dir);
+    if (known) return Promise.resolve(known);
+    const pending = this.listing.get(dir);
+    if (pending) return pending;
+    const p = goApp()
+      .IfsList(this.session, dir)
+      .then((list) => {
+        this.listed.set(dir, list);
+        return list;
+      })
+      .finally(() => this.listing.delete(dir));
+    this.listing.set(dir, p);
+    return p;
+  }
+
+  /** Fills the list under the path box with the names that continue what was typed. */
+  private async offerCompletions(): Promise<void> {
+    const typed = this.pathInput.value;
+    const { dir, partial } = splitTyped(typed);
+    let entries: IfsEntry[];
+    try {
+      entries = this.session ? await this.listDir(normalise(dir)) : [];
+    } catch {
+      entries = [];
+    }
+    if (this.pathInput.value !== typed || this.pathInput.hidden) return;
+    const { names } = pathCandidates(entries, partial);
+    this.completeEl.replaceChildren();
+    this.completeIndex = -1;
+    for (const n of names) {
+      const li = el('li', n.dir ? 'folder' : 'file');
+      li.append(el('span', `icon ${n.dir ? 'folder' : 'file'}`), el('span', undefined, n.name));
+      li.dataset.path = join(normalise(dir), n.name) + (n.dir ? '/' : '');
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        this.pathInput.value = li.dataset.path ?? '';
+        this.pathInput.focus();
+        if (n.dir) void this.offerCompletions();
+        else {
+          this.editPath(false);
+          void this.go(parent(li.dataset.path ?? ''));
+        }
+      });
+      this.completeEl.append(li);
+    }
+    this.completeEl.hidden = !names.length;
+  }
+
+  /** Tab: the one name that fits, or as far as the fitting names agree. */
+  private completeTyped(): void {
+    const typed = this.pathInput.value;
+    const { dir, partial } = splitTyped(typed);
+    const picked = this.completeIndex >= 0 ? this.completeEl.children[this.completeIndex] : this.completeEl.childElementCount === 1 ? this.completeEl.firstElementChild : undefined;
+    if (picked instanceof HTMLElement && picked.dataset.path) {
+      this.pathInput.value = picked.dataset.path;
+      void this.offerCompletions();
+      return;
+    }
+    const entries = this.listed.get(normalise(dir)) ?? [];
+    const { common } = pathCandidates(entries, partial);
+    if (common.length > partial.length) {
+      this.pathInput.value = join(normalise(dir), common);
+      void this.offerCompletions();
+    }
+  }
+
+  private moveCompletion(step: number, n: number): void {
+    this.completeIndex = (this.completeIndex + step + n) % n;
+    [...this.completeEl.children].forEach((li, i) => li.classList.toggle('active', i === this.completeIndex));
   }
 
   private renderCrumbs(): void {
@@ -319,7 +441,22 @@ export class IfsTab {
     node.loading = true;
     this.renderTree();
     try {
-      const list = await goApp().IfsList(this.session, node.path);
+      // One listing per folder: the path completion may have asked for it already.
+      let list = this.listed.get(node.path);
+      if (!list) {
+        const pending = this.listing.get(node.path);
+        if (pending) list = await pending;
+        else {
+          const p = goApp().IfsList(this.session, node.path);
+          this.listing.set(node.path, p);
+          try {
+            list = await p;
+          } finally {
+            this.listing.delete(node.path);
+          }
+          this.listed.set(node.path, list);
+        }
+      }
       this.tree.setChildren(node.path, list.filter((e) => e.dir).map((e) => e.name));
     } catch (err) {
       node.loading = false;
@@ -328,10 +465,27 @@ export class IfsTab {
     this.renderTree();
   }
 
+  /** Enter in the tree filter: the host names the folders below the current one; they join the tree. */
+  private async searchFolders(): Promise<void> {
+    const text = this.treeFilter.value.trim();
+    if (!text || !this.session) return;
+    this.setBusy(true);
+    try {
+      const hits = (await goApp().IfsSearch(this.session, this.cwd, text, true)).filter((h) => h.dir);
+      for (const h of hits) this.tree.ensurePath(join(this.cwd, h.name));
+      this.renderTree();
+      this.host.notify(hits.length ? `${hits.length} folder${hits.length === 1 ? '' : 's'} named like "${text}" below ${this.cwd}` : `No folder below ${this.cwd} is named like "${text}"`);
+    } catch (err) {
+      this.host.notify(errorText(err));
+    } finally {
+      this.setBusy(false);
+    }
+  }
+
   private renderTree(): void {
     if (this.treePane.hidden) return;
     this.treeEl.replaceChildren();
-    for (const { node, depth } of this.tree.rows()) {
+    for (const { node, depth } of filterTreeRows(this.tree.rows(), this.treeFilter.value)) {
       const row = el('div', `ifs-node${node.path === this.cwd ? ' current' : ''}`);
       row.setAttribute('role', 'treeitem');
       row.dataset.path = node.path;
@@ -483,7 +637,13 @@ export class IfsTab {
     const target = path.trim() || '/';
     this.setBusy(true);
     try {
+      if (!pushHistory && normalise(target) === this.cwd) {
+        // Refresh: forget what was seen under this folder, so collapsed sub-folders list again.
+        this.listed.clear();
+        for (const c of this.tree.find(this.cwd)?.children ?? []) this.tree.forget(c.path);
+      }
       const list = await goApp().IfsList(this.session, target);
+      this.listed.set(normalise(target), list);
       if (pushHistory && target !== this.cwd) this.history.push(this.cwd);
       if (this.searching || this.cwd !== normalise(target)) {
         // A new folder (or a search that ends) starts with an empty search box.
@@ -605,7 +765,8 @@ export class IfsTab {
       if (e.dir) this.acceptDrops(tr, join(this.cwd, e.name));
       this.body.append(tr);
     }
-    if (!rows.length) this.showMessage('This folder is empty.');
+    if (!rows.length) this.showMessage(this.searching ? `No name contains "${this.searching.text}".` : this.filter ? `No name here contains "${this.searchInput.value.trim()}".` : 'This folder is empty.');
+    else this.messageEl.hidden = true;
     const files = rows.filter((e) => !e.dir);
     const bytes = files.reduce((n, e) => n + e.size, 0);
     this.statusEl.textContent = `${rows.length} item(s), ${formatSize(bytes)} · ${this.request.user.toUpperCase()}@${this.request.host}${this.request.tls ? ' (TLS)' : ''}`;

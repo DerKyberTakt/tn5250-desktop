@@ -134,8 +134,15 @@ describe('IFS tab: mouse navigation', () => {
     await tab.start();
     expect(tab.frame.querySelector('.ifs-top')?.classList.contains('icon-actions')).toBe(true);
     const icons = [...tab.frame.querySelectorAll<HTMLButtonElement>('.ifs-top button.act')].map((b) => b.className.split(' ')[1]);
-    expect(icons).toEqual(['back', 'up', 'refresh', 'subtree', 'folderTree', 'exportFile', 'importFile', 'newFolder', 'pencil', 'trash', 'eye']);
-    expect(tab.frame.querySelectorAll('.ifs-top button.act svg .ring')).toHaveLength(11);
+    expect(icons).toEqual(['back', 'up', 'refresh', 'folderTree', 'exportFile', 'importFile', 'newFolder', 'pencil', 'trash', 'eye']);
+    expect(tab.frame.querySelectorAll('.ifs-top button.act svg .ring')).toHaveLength(10);
+    // No pencil for the path (Ctrl+L and a click on the crumbs do it); the name filter has its own row above the headers.
+    expect(tab.frame.querySelector('.ifs-path-edit')).toBeNull();
+    const listPane = tab.frame.querySelector('.ifs-listpane')!;
+    expect(listPane.firstElementChild?.className).toBe('ifs-filter-row icon-actions');
+    expect(listPane.querySelector('.ifs-filter-row .ifs-search')).not.toBeNull();
+    expect(listPane.querySelector('.ifs-filter-row button.act.subtree')).not.toBeNull();
+    expect(listPane.children[1]?.className).toBe('ifs-scroll');
     // Nothing selected: view, rename, delete and download are off; upload and new folder are on.
     const state = Object.fromEntries([...tab.frame.querySelectorAll<HTMLButtonElement>('.ifs-top button.act')].map((b) => [b.className.split(' ')[1], b.disabled]));
     expect(state).toMatchObject({ eye: true, pencil: true, trash: true, importFile: true, exportFile: false, newFolder: false });
@@ -166,19 +173,80 @@ describe('IFS tab: mouse navigation', () => {
     expect(calls.at(-1)).toBe('list /tmp/a');
   });
 
-  it('switches the crumbs to a text box on the pencil and back on Escape', async () => {
-    fakeHost({ '/': ['home/'], '/home': ['JSMITH/'], '/home/JSMITH': [] });
+  it('Ctrl+L switches the crumbs to a text box that completes names; Escape puts the crumbs back', async () => {
+    const { calls } = fakeHost({ '/': ['home/', 'tmp/'], '/home': ['JSMITH/', 'JDOE/', 'readme.txt'], '/home/JSMITH': [] });
     const tab = new IfsTab(host, request);
     document.body.append(tab.frame);
     await tab.start();
-    const input = tab.frame.querySelector<HTMLInputElement>('.ifs-path');
-    expect(input?.hidden).toBe(true);
-    tab.frame.querySelector<HTMLButtonElement>('.ifs-path-edit')?.click();
-    expect(input?.hidden).toBe(false);
-    expect(input?.value).toBe('/home/JSMITH');
-    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(input?.hidden).toBe(true);
+    const input = tab.frame.querySelector<HTMLInputElement>('.ifs-path')!;
+    expect(input.hidden).toBe(true);
+    tab.frame.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', ctrlKey: true, bubbles: true }));
+    expect(input.hidden).toBe(false);
+    expect(input.value).toBe('/home/JSMITH');
+    // Typing offers the names under the folder typed so far, folders first.
+    input.value = '/home/J';
+    input.dispatchEvent(new Event('input'));
+    await tick();
+    await tick();
+    const list = tab.frame.querySelector<HTMLElement>('.ifs-path-complete')!;
+    expect(list.hidden).toBe(false);
+    expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['JDOE', 'JSMITH']);
+    // Tab completes as far as the names agree; a second Tab with one left takes it.
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    expect(input.value).toBe('/home/J');
+    input.value = '/home/JS';
+    input.dispatchEvent(new Event('input'));
+    await tick();
+    await tick();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    expect(input.value).toBe('/home/JSMITH/');
+    // Listings came from what the tab had seen; /home was asked once.
+    expect(calls.filter((c) => c === 'list /home')).toHaveLength(1);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(input.hidden).toBe(true);
+    expect(list.hidden).toBe(true);
     expect(tab.frame.querySelector<HTMLElement>('.ifs-crumbs')?.hidden).toBe(false);
+  });
+
+  it('an empty folder shows "This folder is empty." and no stale rows; a filter with no hit says so and clears', async () => {
+    fakeHost({ '/': ['home/'], '/home': ['JSMITH/'], '/home/JSMITH': ['empty/', 'notes.txt'], '/home/JSMITH/empty': [] });
+    const tab = new IfsTab(host, request);
+    document.body.append(tab.frame);
+    await tab.start();
+    expect(tab.frame.querySelectorAll('.ifs-list tbody tr')).toHaveLength(2);
+    const search = tab.frame.querySelector<HTMLInputElement>('.ifs-search')!;
+    search.value = 'zzz';
+    search.dispatchEvent(new Event('input'));
+    expect(tab.frame.querySelectorAll('.ifs-list tbody tr')).toHaveLength(0);
+    const message = tab.frame.querySelector<HTMLElement>('.ifs-message')!;
+    expect(message.hidden).toBe(false);
+    expect(message.textContent).toBe('No name here contains "zzz".');
+    search.value = '';
+    search.dispatchEvent(new Event('input'));
+    expect(message.hidden).toBe(true);
+    expect(tab.frame.querySelectorAll('.ifs-list tbody tr')).toHaveLength(2);
+    await tab.go('/home/JSMITH/empty');
+    expect(tab.frame.querySelectorAll('.ifs-list tbody tr')).toHaveLength(0);
+    expect(message.hidden).toBe(false);
+    expect(message.textContent).toBe('This folder is empty.');
+    await tab.go('/home/JSMITH');
+    expect(message.hidden).toBe(true);
+  });
+
+  it('the tree filter narrows the folders shown and keeps the way down to each match', async () => {
+    fakeHost({ '/': ['home/', 'tmp/', 'QSYS.LIB/'], '/home': ['JSMITH/'], '/home/JSMITH': ['src/', 'docs/'] });
+    const tab = new IfsTab(host, request);
+    document.body.append(tab.frame);
+    await tab.start();
+    await tick();
+    await tick();
+    await tick();
+    const filter = tab.frame.querySelector<HTMLInputElement>('.ifs-tree-filter')!;
+    filter.value = 'doc';
+    filter.dispatchEvent(new Event('input'));
+    expect([...tab.frame.querySelectorAll<HTMLElement>('.ifs-node')].map((n) => n.dataset.path)).toEqual(['/', '/home', '/home/JSMITH', '/home/JSMITH/docs']);
+    filter.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(tab.frame.querySelectorAll('.ifs-node')).toHaveLength(7);
   });
 
   it('moves dragged rows into a folder after confirmation', async () => {

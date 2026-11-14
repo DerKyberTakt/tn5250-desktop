@@ -29,6 +29,9 @@ type Server struct {
 	CCSIDs map[string]uint16
 	next   uint32
 	Writes int
+	// EmptyDirNotFound makes a listing of an empty folder answer "not found" (0x02), as
+	// the IBM i file server does when a wildcard matches nothing.
+	EmptyDirNotFound bool
 }
 
 const (
@@ -200,6 +203,9 @@ func (f *Server) answer(req *hs.Frame, clientSeed *[]byte) []*hs.Frame {
 				}
 			}
 			sort.Strings(names)
+			if f.EmptyDirNotFound && len(names) == 0 {
+				return []*hs.Frame{rc(req, 0x02)}
+			}
 			out := []*hs.Frame{entry(req, ".", true, 0, true), entry(req, "..", true, 0, true)}
 			for _, p := range names {
 				out = append(out, entry(req, path.Base(p), f.Dirs[p], len(f.Files[p]), true))

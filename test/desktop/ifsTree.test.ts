@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IfsTreeModel, canMoveInto, crumbs, joinPath, parentPath } from '../../src/desktop/ifsTree';
+import { IfsTreeModel, filterTreeRows, pathCandidates, splitTyped, canMoveInto, crumbs, joinPath, parentPath } from '../../src/desktop/ifsTree';
 
 describe('IFS tree model', () => {
   it('splits a path into clickable crumbs', () => {
@@ -52,5 +52,41 @@ describe('IFS tree model', () => {
     expect(canMoveInto('/home/a', '/home/a/b')).toBe(false);
     expect(canMoveInto('/home/ab', '/home/a')).toBe(true);
     expect(canMoveInto('/', '/tmp')).toBe(false);
+  });
+});
+
+describe('path completion and tree filter', () => {
+  it('splits what was typed into the folder to list and the part after its last slash', () => {
+    expect(splitTyped('/home/JS')).toEqual({ dir: '/home', partial: 'JS' });
+    expect(splitTyped('/home/')).toEqual({ dir: '/home', partial: '' });
+    expect(splitTyped('/h')).toEqual({ dir: '/', partial: 'h' });
+    expect(splitTyped('x')).toEqual({ dir: '/', partial: 'x' });
+  });
+
+  it('offers the names that start with the part typed, folders first, and the prefix they share', () => {
+    const names = [
+      { name: 'readme.txt', dir: false },
+      { name: 'JSMITH', dir: true },
+      { name: 'jdoe', dir: true },
+      { name: 'Jsmith.bak', dir: false },
+    ];
+    expect(pathCandidates(names, 'j')).toEqual({ names: [{ name: 'jdoe', dir: true }, { name: 'JSMITH', dir: true }, { name: 'Jsmith.bak', dir: false }], common: 'j' });
+    expect(pathCandidates(names, 'js')).toEqual({ names: [{ name: 'JSMITH', dir: true }, { name: 'Jsmith.bak', dir: false }], common: 'JSMITH' });
+    expect(pathCandidates(names, 'JSMITH.')).toEqual({ names: [{ name: 'Jsmith.bak', dir: false }], common: 'Jsmith.bak' });
+    expect(pathCandidates(names, 'zz')).toEqual({ names: [], common: 'zz' });
+    expect(pathCandidates(names, '', 2).names).toHaveLength(2);
+  });
+
+  it('keeps a matching folder and every folder above it', () => {
+    const t = new IfsTreeModel();
+    t.setChildren('/', ['home', 'tmp']);
+    t.setChildren('/home', ['JSMITH']);
+    t.setChildren('/home/JSMITH', ['src', 'docs']);
+    t.find('/home/JSMITH')!.expanded = true;
+    const paths = (rows: ReturnType<typeof t.rows>): string[] => rows.map((r) => r.node.path);
+    expect(paths(filterTreeRows(t.rows(), 'doc'))).toEqual(['/', '/home', '/home/JSMITH', '/home/JSMITH/docs']);
+    expect(paths(filterTreeRows(t.rows(), 'TMP'))).toEqual(['/', '/tmp']);
+    expect(paths(filterTreeRows(t.rows(), ''))).toEqual(paths(t.rows()));
+    expect(paths(filterTreeRows(t.rows(), 'nothing'))).toEqual([]);
   });
 });

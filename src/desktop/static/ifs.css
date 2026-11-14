@@ -78,6 +78,7 @@
 
 /* Breadcrumb path: segments are buttons; the pencil (or Ctrl+L) swaps in the text box. */
 .ifs-pathbox {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -126,8 +127,44 @@
   font-weight: 600;
 }
 
-.ifs .ifs-path-edit {
-  padding: 2px 7px;
+/* Names offered under the path box while typing; Tab completes, arrows pick. */
+.ifs-path-complete {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5;
+  min-width: 240px;
+  max-width: 100%;
+  max-height: 260px;
+  overflow: auto;
+  margin: 2px 0 0;
+  padding: 3px 0;
+  list-style: none;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12.5px;
+  background: var(--menu-bg);
+  color: var(--chrome-fg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 25%);
+}
+
+.ifs-path-complete[hidden] {
+  display: none;
+}
+
+.ifs-path-complete li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.ifs-path-complete li:hover,
+.ifs-path-complete li.active {
+  background: var(--vscode-list-hoverBackground);
 }
 
 .ifs-path[hidden] {
@@ -142,11 +179,60 @@
 }
 
 .ifs-treepane {
+  display: flex;
+  flex-direction: column;
   width: 220px;
   flex: none;
-  overflow: auto;
+  min-height: 0;
   border-right: 1px solid var(--chrome-border);
   background: var(--chrome-bg);
+}
+
+.ifs-treepane .ifs-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ifs-tree-filter {
+  flex: none;
+  margin: 5px 6px 2px;
+  padding: 3px 7px;
+  font: inherit;
+  font-size: 12px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+}
+
+.ifs-tree-filter:focus {
+  outline: 1px solid var(--tab-accent);
+  outline-offset: -1px;
+}
+
+/* The list and its filter row. */
+.ifs-listpane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ifs-filter-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.ifs-filter-row .ifs-searchbox {
+  flex: 0 1 420px;
+  margin: 0;
 }
 
 .ifs-treepane[hidden],
@@ -359,6 +445,7 @@
   color: var(--vscode-list-activeSelectionForeground);
 }
 
+.ifs-path-complete .icon,
 .ifs-list .icon {
   display: inline-block;
   width: 14px;
@@ -648,6 +735,32 @@
 .csv-filters th {
   top: 26px;
   padding: 2px 4px;
+}
+
+/* Edit mode: cells take focus; the one being typed in shows its box. */
+.csv-grid.editable .csv-table td {
+  cursor: cell;
+}
+
+.csv-grid.editable .csv-table td:focus {
+  outline: 2px solid var(--tab-accent);
+  outline-offset: -2px;
+}
+
+.csv-table td.editing {
+  padding: 0;
+}
+
+.csv-cell {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 3px 6px;
+  font: inherit;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 2px solid var(--tab-accent);
+  outline: 0;
 }
 
 .csv-filter {

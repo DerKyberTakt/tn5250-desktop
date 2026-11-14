@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCsv, sniffDelimiter } from '../../src/desktop/csvGrid';
+import { csvField, parseCsv, serializeCsv, sniffDelimiter } from '../../src/desktop/csvGrid';
 
 describe('CSV parsing', () => {
   it('sniffs the delimiter from the first lines', () => {
@@ -23,5 +23,13 @@ describe('CSV parsing', () => {
 
   it('keeps empty fields and ragged rows', () => {
     expect(parseCsv('a,,c\n1\n', ',').rows).toEqual([['a', '', 'c'], ['1']]);
+  });
+
+  it('writes the rows back as it read them: quotes only where needed, the delimiter and line ends kept', () => {
+    const text = 'id;name\r\n1;"Acme; Inc."\r\n2;"say ""hi"" now"\r\n3;plain\r\n';
+    expect(serializeCsv(parseCsv(text), '\r\n')).toBe(text);
+    expect(csvField(' edge ', ',')).toBe('" edge "');
+    expect(csvField('two\nlines', ',')).toBe('"two\nlines"');
+    expect(csvField('x', '\t')).toBe('x');
   });
 });

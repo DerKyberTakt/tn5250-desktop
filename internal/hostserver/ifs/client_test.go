@@ -101,6 +101,23 @@ func TestListStatMkdirRenameRemove(t *testing.T) {
 	}
 }
 
+func TestListEmptyDirectory(t *testing.T) {
+	f := newFakeServer(t, 1)
+	f.EmptyDirNotFound = true
+	f.Dirs["/home/TESTUSER/empty"] = true
+	c := open(t, f)
+	es, err := c.List("/home/TESTUSER/empty")
+	if err != nil {
+		t.Fatalf("an empty folder must list as empty, got %v", err)
+	}
+	if len(es) != 0 {
+		t.Fatalf("expected no entries, got %+v", es)
+	}
+	if _, err := c.List("/home/TESTUSER/missing"); err == nil {
+		t.Fatal("a missing folder must still fail")
+	}
+}
+
 func TestUploadDownloadLargeFile(t *testing.T) {
 	f := newFakeServer(t, 2)
 	c := open(t, f)
