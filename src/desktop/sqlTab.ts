@@ -118,7 +118,7 @@ export class SqlTab {
     this.notice.hidden = true;
 
     this.editor = new SqlEditor({
-      placeholder: 'SELECT * FROM QSYS2.SYSTABLES FETCH FIRST 50 ROWS ONLY;\nCL: DSPLIBL OUTPUT(*PRINT);\nQSH: ls -l /home',
+      placeholder: 'SELECT * FROM QSYS2.SYSTABLES FETCH FIRST 50 ROWS ONLY;\n-- CL commands and Qshell lines run here too:\nCL: DSPLIBL OUTPUT(*PRINT);\nQSH: ls -l /home',
       onChange: () => {
         this.dirty = true;
         this.updateTitle();

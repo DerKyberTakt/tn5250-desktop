@@ -10,7 +10,6 @@ import { placeAround, play, reducedMotion, snapshot } from './flip';
 import { IfsTab, type IfsHost } from './ifsTab';
 import { IfsViewTab, type IfsViewHost } from './ifsViewTab';
 import { SettingsTab } from './settingsTab';
-import { ConsoleTab, type ConsoleHost, type ConsoleMode } from './consoleTab';
 import { SqlTab, type SqlHost } from './sqlTab';
 import { Store, type AppTheme } from './store';
 import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow } from './relay';
@@ -32,8 +31,7 @@ type Entry =
   | { kind: 'settings'; tab: SettingsTab; button: HTMLElement }
   | { kind: 'ifs'; tab: IfsTab; button: HTMLElement }
   | { kind: 'ifsview'; tab: IfsViewTab; button: HTMLElement }
-  | { kind: 'sql'; tab: SqlTab; button: HTMLElement }
-  | { kind: 'console'; tab: ConsoleTab; button: HTMLElement };
+  | { kind: 'sql'; tab: SqlTab; button: HTMLElement };
 
 function byId<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -60,7 +58,7 @@ export function parseHostInput(input: string, defaultPort: number): { host: stri
   return { host, port };
 }
 
-class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
+class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   readonly store = new Store();
   readonly credentials = new Credentials(this.store);
   system: SystemInfo = { computerName: '', userName: '', platform: '' };
@@ -286,7 +284,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     return this.logPane.classList.contains('open');
   }
 
-  changed(tab: TerminalTab | IfsTab | IfsViewTab | SqlTab | ConsoleTab): void {
+  changed(tab: TerminalTab | IfsTab | IfsViewTab | SqlTab): void {
     const entry = this.entries.find((e) => e.tab === tab);
     if (entry) this.renderTabButton(entry);
     if (this.active?.tab === tab) this.refresh();
@@ -473,14 +471,6 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
     if (!s) return;
     const tab = new SqlTab(this, s.request, s.onSignon);
     this.addEntry({ kind: 'sql', tab, button: el('div') }, true);
-    void tab.start();
-  }
-
-  private async openConsole(mode: ConsoleMode): Promise<void> {
-    const s = await this.signonFor(mode === 'qsh' ? 'QSH Console' : 'CL Console', 'Signs on to the IBM i remote command server, as ACS does.');
-    if (!s) return;
-    const tab = new ConsoleTab(this, s.request, mode, s.onSignon);
-    this.addEntry({ kind: 'console', tab, button: el('div') }, true);
     void tab.start();
   }
 
@@ -1439,7 +1429,6 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
       '|',
       { icon: 'ifs', title: 'Integrated File System', run: () => void this.openIfs() },
       { icon: 'sql', title: 'Run SQL Scripts', run: () => void this.openSql() },
-      { icon: 'console', title: 'Console: CL commands and Qshell', run: () => void this.openConsole('cl') },
       { icon: 'settings', title: 'Settings', run: () => this.openSettings(-1) },
       { icon: 'help', title: `About ${APP_NAME}`, run: () => void this.about() },
       { icon: 'update', title: 'Check for updates', run: () => void this.checkForUpdates() },
@@ -1558,8 +1547,6 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost, ConsoleHost {
         items: [
           { label: 'Integrated File System…', run: () => void this.openIfs() },
           { label: 'Run SQL Scripts…', run: () => void this.openSql() },
-          { label: 'CL Console…', run: () => void this.openConsole('cl') },
-          { label: 'QSH Console…', run: () => void this.openConsole('qsh') },
           '-',
           { label: 'Saved Passwords…', run: () => void this.managePasswords() },
         ],

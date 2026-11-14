@@ -1,5 +1,5 @@
 import { errorText, goApp, wailsRuntime, type IfsConnectRequest, type IfsEntry, type IfsProgress } from './bridge';
-import { choiceDialog, confirmDialog, messageDialog, promptDialog } from './dialogs';
+import { choiceDialog, confirmDialog, keyButton, messageDialog, promptDialog } from './dialogs';
 import { actionButton, type ActionIconName, type ActionTone } from './icons';
 import { decodeIfs, encodingLabel, fromBase64, guessCcsid } from './ifsText';
 import { IfsTreeModel, canMoveInto, crumbs, joinPath, parentPath, type TreeNode } from './ifsTree';
@@ -141,7 +141,7 @@ export class IfsTab {
     });
     // Search: typing filters the rows on show; Enter asks the host (the folder, or the whole
     // tree below it), so a folder of tens of thousands of files never comes over in full.
-    const searchBox = el('div', 'ifs-searchbox');
+    const searchBox = el('div', 'ifs-searchbox icon-actions');
     this.searchInput = el('input', 'ifs-search');
     this.searchInput.type = 'search';
     this.searchInput.spellcheck = false;
@@ -168,9 +168,8 @@ export class IfsTab {
         this.frame.focus();
       }
     });
-    this.subtreeButton = el('button', 'ifs-search-sub', 'Subfolders');
-    this.subtreeButton.type = 'button';
-    this.subtreeButton.title = 'Search the whole tree below this folder (through the database host server) instead of this folder only';
+    this.subtreeButton = actionButton('subtree', 'Search the whole tree below this folder (through the database host server) instead of this folder only', 'blue');
+    this.subtreeButton.classList.add('ifs-search-sub');
     this.subtreeButton.setAttribute('aria-pressed', 'false');
     this.subtreeButton.addEventListener('click', () => {
       const on = this.subtreeButton.getAttribute('aria-pressed') !== 'true';
@@ -473,10 +472,7 @@ export class IfsTab {
   private showMessage(text: string, retry = false): void {
     this.messageEl.replaceChildren(el('p', undefined, text));
     if (retry) {
-      const b = el('button', undefined, 'Retry');
-      b.type = 'button';
-      b.addEventListener('click', () => void this.start());
-      this.messageEl.append(b);
+      this.messageEl.append(keyButton('Retry', 'green', () => void this.start()));
     }
     this.messageEl.hidden = false;
   }
@@ -840,9 +836,7 @@ export class IfsTab {
     const bar = el('div', 'ifs-progress-bar');
     const fill = el('div', 'fill');
     bar.append(fill);
-    const cancel = el('button', undefined, 'Cancel');
-    cancel.type = 'button';
-    cancel.addEventListener('click', () => void goApp().IfsCancel(id));
+    const cancel = keyButton('Cancel', 'grey', () => void goApp().IfsCancel(id), 'small');
     this.progressEl.append(text, bar, cancel);
     this.progressEl.hidden = false;
     this.stopProgress?.();

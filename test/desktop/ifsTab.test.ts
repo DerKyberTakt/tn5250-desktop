@@ -134,8 +134,8 @@ describe('IFS tab: mouse navigation', () => {
     await tab.start();
     expect(tab.frame.querySelector('.ifs-top')?.classList.contains('icon-actions')).toBe(true);
     const icons = [...tab.frame.querySelectorAll<HTMLButtonElement>('.ifs-top button.act')].map((b) => b.className.split(' ')[1]);
-    expect(icons).toEqual(['back', 'up', 'refresh', 'folderTree', 'exportFile', 'importFile', 'newFolder', 'pencil', 'trash', 'eye']);
-    expect(tab.frame.querySelectorAll('.ifs-top button.act svg .ring')).toHaveLength(10);
+    expect(icons).toEqual(['back', 'up', 'refresh', 'subtree', 'folderTree', 'exportFile', 'importFile', 'newFolder', 'pencil', 'trash', 'eye']);
+    expect(tab.frame.querySelectorAll('.ifs-top button.act svg .ring')).toHaveLength(11);
     // Nothing selected: view, rename, delete and download are off; upload and new folder are on.
     const state = Object.fromEntries([...tab.frame.querySelectorAll<HTMLButtonElement>('.ifs-top button.act')].map((b) => [b.className.split(' ')[1], b.disabled]));
     expect(state).toMatchObject({ eye: true, pencil: true, trash: true, importFile: true, exportFile: false, newFolder: false });

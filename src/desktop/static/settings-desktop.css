@@ -1,0 +1,141 @@
+/*
+ * Desktop-only restyle of the shared settings page: its buttons become the keycaps the rest
+ * of the app uses (a raised key that drops onto its shadow on hover, the label lighting up).
+ * The page itself (src/settings) is shared with the VS Code extension and stays untouched.
+ */
+:root {
+  --key-ink: #111111;
+  --esc-bg: #fee6e3;
+  --esc-hot: #e8242b;
+  --grey-bg: #ececec;
+  --grey-hot: #e0861a;
+  --green-bg: #dff5e6;
+  --green-hot: #1f9d4a;
+  --blue-bg: #dfeefc;
+  --blue-hot: #1f6fe0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --key-ink: #f2f2f2;
+    --esc-bg: #3a1c1a;
+    --esc-hot: #ff4d3d;
+    --grey-bg: #262626;
+    --grey-hot: #ffa030;
+    --green-bg: #15301f;
+    --green-hot: #3ad26f;
+    --blue-bg: #14263a;
+    --blue-hot: #4da3ff;
+  }
+}
+
+:root[data-theme="dark"] {
+  --key-ink: #f2f2f2;
+  --esc-bg: #3a1c1a;
+  --esc-hot: #ff4d3d;
+  --grey-bg: #262626;
+  --grey-hot: #ffa030;
+  --green-bg: #15301f;
+  --green-hot: #3ad26f;
+  --blue-bg: #14263a;
+  --blue-hot: #4da3ff;
+}
+
+.buttons button.primary,
+.buttons button.secondary,
+.buttons button.danger,
+.keyboard td.assign button,
+.keyboard button.secondary,
+.keyboard .kb-toolbar button.secondary,
+.vk-bar button.primary,
+.vk-bar button.secondary,
+.filerow button,
+.row button.secondary {
+  --key-bg: var(--grey-bg);
+  --key-hot: var(--grey-hot);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 12px;
+  margin: 0 6px 4px 0;
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--key-ink);
+  background: var(--key-bg);
+  border: 2px solid var(--key-ink);
+  border-radius: 7px;
+  box-shadow: 4px 4px 0 0 var(--key-ink);
+  cursor: pointer;
+  user-select: none;
+  transform: translate(0, 0);
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out, color 0.16s ease, text-shadow 0.16s ease;
+}
+
+.buttons button.primary,
+.vk-bar button.primary {
+  --key-bg: var(--green-bg);
+  --key-hot: var(--green-hot);
+}
+
+.buttons button.danger {
+  --key-bg: var(--esc-bg);
+  --key-hot: var(--esc-hot);
+}
+
+.keyboard td.assign button,
+.filerow button,
+.row button.secondary {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  border-width: 1.5px;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0 0 var(--key-ink);
+}
+
+.buttons button:hover,
+.buttons button:focus-visible,
+.keyboard td.assign button:hover,
+.keyboard button.secondary:hover,
+.vk-bar button:hover,
+.filerow button:hover,
+.row button.secondary:hover {
+  outline: 0;
+  color: var(--key-hot);
+  text-shadow: 0 0 7px var(--key-hot);
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 0 var(--key-ink);
+}
+
+.buttons button:active,
+.keyboard td.assign button:active,
+.keyboard button.secondary:active,
+.vk-bar button:active,
+.filerow button:active,
+.row button.secondary:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 0 var(--key-ink);
+}
+
+.buttons button:disabled,
+.vk-bar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buttons button,
+  .keyboard button,
+  .vk-bar button,
+  .filerow button,
+  .row button.secondary {
+    transition: none;
+  }
+}

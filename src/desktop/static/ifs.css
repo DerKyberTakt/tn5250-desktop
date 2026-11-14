@@ -244,21 +244,16 @@
   outline-offset: -1px;
 }
 
-.ifs .ifs-search-sub {
-  padding: 3px 8px;
-  font-size: 12px;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 0 3px 3px 0;
-  cursor: default;
-  white-space: nowrap;
+/* Subfolders: an icon toggle the size of the search box; on = coloured shape. */
+.ifs .icon-actions button.act.ifs-search-sub {
+  width: 28px;
+  height: 26px;
+  margin-left: 2px;
 }
 
-.ifs .ifs-search-sub.pressed {
-  background: var(--tab-accent);
-  color: #fff;
-  border-color: var(--tab-accent);
+.ifs .icon-actions button.act.ifs-search-sub svg {
+  width: 22px;
+  height: 22px;
 }
 
 /* Search hits show their path below the folder, so the Name column may be long. */
@@ -634,9 +629,10 @@
   opacity: 0.8;
 }
 
-.ifs .csv-copy {
+.ifs .csv-bar.icon-actions button.act.csv-copy {
   margin-left: auto;
-  padding: 2px 10px;
+  width: 28px;
+  height: 28px;
 }
 
 .csv-scroll {

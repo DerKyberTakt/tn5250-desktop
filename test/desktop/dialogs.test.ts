@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { escButton, iconListDialog, keyButton, type IconAction } from '../../src/desktop/dialogs';
+import { choiceDialog, confirmDialog, escButton, iconListDialog, keyButton, messageDialog, promptDialog, type IconAction } from '../../src/desktop/dialogs';
 
 // jsdom has no showModal(): the dialogs only need open/close and the close event.
 beforeEach(() => {
@@ -86,6 +86,51 @@ describe('iconListDialog (Macros)', () => {
     p = iconListDialog('Macros', [], ROW, TOP, 'No macros yet.');
     expect(dialog().querySelector('.list-rows li.empty')?.textContent).toBe('No macros yet.');
     (dialog().querySelector('button.esc') as HTMLButtonElement).click();
+    expect(await p).toBeUndefined();
+  });
+});
+
+describe('the plain dialogs share the keycap frame', () => {
+  const modal = (): HTMLDialogElement => document.querySelector('dialog.modal') as HTMLDialogElement;
+  const keys = (): string[] => [...modal().querySelectorAll<HTMLButtonElement>('.buttons button')].map((b) => `${b.className}|${b.textContent}`);
+
+  it('confirmDialog: ESC in the head, grey Cancel and a green primary key; a destructive label turns red', async () => {
+    let p = confirmDialog('Save?', 'Keep the changes', 'Save');
+    expect(modal().querySelector('.head h2')?.textContent).toBe('Save?');
+    expect(modal().querySelector('.head button.esc')?.textContent).toBe('ESC');
+    expect(keys()).toEqual(['keycap grey cancel|Cancel', 'keycap green primary|Save']);
+    (modal().querySelector('button.cancel') as HTMLButtonElement).click();
+    expect(await p).toBe(false);
+
+    p = confirmDialog('Delete', 'Gone for good', 'Delete');
+    expect(keys()).toEqual(['keycap grey cancel|Cancel', 'keycap red primary|Delete']);
+    (modal().querySelector('button.esc') as HTMLButtonElement).click();
+    expect(await p).toBe(false);
+  });
+
+  it('choiceDialog: always has a Cancel key and resolves with the label pressed', async () => {
+    let p = choiceDialog('Download', ['How?'], ['As on the host', 'Convert to UTF-8']);
+    expect(keys()).toEqual(['keycap grey cancel|Cancel', 'keycap blue|As on the host', 'keycap green primary|Convert to UTF-8']);
+    (modal().querySelector('button.primary') as HTMLButtonElement).click();
+    expect(await p).toBe('Convert to UTF-8');
+    p = choiceDialog('Changed', [], ['Drop changes']);
+    expect(keys()).toEqual(['keycap grey cancel|Cancel', 'keycap red primary|Drop changes']);
+    (modal().querySelector('button.cancel') as HTMLButtonElement).click();
+    expect(await p).toBeUndefined();
+  });
+
+  it('messageDialog and promptDialog use the same frame', async () => {
+    let done = false;
+    void messageDialog('Note', ['One', 'Two']).then(() => (done = true));
+    expect(modal().querySelectorAll('p')).toHaveLength(2);
+    expect(keys()).toEqual(['keycap green primary|OK']);
+    modal().close();
+    await Promise.resolve();
+    expect(done).toBe(true);
+    const p = promptDialog('Rename', 'New name', { value: 'a.txt' });
+    expect(modal().querySelector('input')?.value).toBe('a.txt');
+    expect(keys()).toEqual(['keycap grey cancel|Cancel', 'keycap green primary|OK']);
+    (modal().querySelector('button.esc') as HTMLButtonElement).click();
     expect(await p).toBeUndefined();
   });
 });

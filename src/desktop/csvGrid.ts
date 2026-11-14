@@ -4,6 +4,7 @@
  * and a copy as an aligned text table. Nothing is written back from the grid: Text mode
  * edits the file.
  */
+import { actionButton } from './icons';
 import { alignedTable } from './sqlText';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -113,7 +114,7 @@ export class CsvGrid {
 
   constructor(private readonly onCopy?: (text: string) => void) {
     this.element = el('div', 'csv-grid');
-    this.bar = el('div', 'csv-bar');
+    this.bar = el('div', 'csv-bar icon-actions');
     const header = el('label', 'csv-header-toggle');
     const box = el('input');
     box.type = 'checkbox';
@@ -124,9 +125,8 @@ export class CsvGrid {
     });
     header.append(box, ' First row is the header');
     this.count = el('span', 'csv-count');
-    const copy = el('button', 'csv-copy', 'Copy as text');
-    copy.type = 'button';
-    copy.title = 'Copy the rows on show as an aligned text table';
+    const copy = actionButton('copy', 'Copy the rows on show as an aligned text table', 'blue');
+    copy.classList.add('csv-copy');
     copy.addEventListener('click', () => this.onCopy?.(this.alignedText()));
     this.bar.append(header, this.count, copy);
     this.scroll = el('div', 'csv-scroll');

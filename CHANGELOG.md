@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 - unreleased
+- One button style everywhere: every dialog (rename, delete, move, replace, drop changes, overwrite, download choice, the lists) has the Macros dialog's frame, an ESC key top right and keycaps along the bottom (grey Cancel, green primary, red for Delete / Discard / Overwrite); the settings pages get the same keys; Retry, the transfer Cancel, Subfolders and the CSV grid's Copy are icons or keys of the same family. A tool that is switched on (folder tree, Edit, Wrap, Find) no longer sits on a tinted disc: its shape takes the colour.
+- The Settings tool bar icon is a gear.
+- The CL / QSH Console tab is gone: Run SQL Scripts runs the same `CL: …` and `QSH: …` lines, keeps their output with the SQL output and highlights them.
+
 ## 0.3.1.1 - 2026-11-13
 - macOS updates itself like the other platforms: Help > Check for Updates downloads the universal zip from the release, checks it against SHA256SUMS, swaps the app bundle in place and reopens it. It works wherever the app sits in a folder you can write to (Applications owned by you, or ~/Applications); from the mounted disk image, or an Applications folder owned by an administrator, it still points you to the release page. The saved passwords stay: they live in the Keychain under Apple's `security` tool, not under the app's signature.
 
