@@ -13,7 +13,7 @@ import { signonGate } from '../shared/signonGate';
 import { errorText, goApp, onRelay, relay, type SystemInfo } from './bridge';
 import { Credentials } from './credentials';
 import { GoTransport } from './goTransport';
-import { BROKER_WINDOW, MAIN_WINDOW, TabRegistry, type RegistryEntry, type ToBroker, type ToWindow } from './relay';
+import { type ToolState, BROKER_WINDOW, MAIN_WINDOW, TabRegistry, type RegistryEntry, type ToBroker, type ToWindow } from './relay';
 import { Store } from './store';
 
 interface Session extends RegistryEntry {
@@ -56,6 +56,8 @@ class Broker {
   private readonly windows = new Set<string>();
   /** Tabs handed to a window that has not said hello yet. */
   private readonly pendingMoves = new Map<string, string[]>();
+  /** Tool tabs on their way to a window that has not said hello yet. */
+  private readonly pendingTools = new Map<string, Array<{ state: ToolState; at?: { x: number; y: number } }>>();
 
   async start(): Promise<void> {
     await this.store.load();
@@ -105,12 +107,17 @@ class Broker {
           }
         }
         this.pendingMoves.delete(msg.window);
+        for (const t of this.pendingTools.get(msg.window) ?? []) this.send(msg.window, { type: 'tool:opened', state: t.state, ...(t.at ? { at: t.at } : {}) });
+        this.pendingTools.delete(msg.window);
         break;
       case 'window:closed': {
         this.windows.delete(msg.window);
         this.pendingMoves.delete(msg.window);
         // Its sessions stay alive in another window; with no window left the app is quitting.
         const home = this.homeFor(msg.window);
+        // Tool tabs still on their way to it go to the home window instead.
+        for (const t of this.pendingTools.get(msg.window) ?? []) if (home) this.send(home, { type: 'tool:opened', state: t.state });
+        this.pendingTools.delete(msg.window);
         for (const s of this.tabs.byWindow(msg.window)) {
           if (!home) {
             this.close(s.tab);
@@ -153,6 +160,10 @@ class Broker {
       }
       case 'tab:reload':
         this.reload(msg.tab, msg.profile);
+        break;
+      case 'tool:move':
+        if (this.windows.has(msg.window)) this.send(msg.window, { type: 'tool:opened', state: msg.state, ...(msg.at ? { at: msg.at } : {}) });
+        else this.pendingTools.set(msg.window, [...(this.pendingTools.get(msg.window) ?? []), { state: msg.state, at: msg.at }]);
         break;
       case 'tab:move': {
         const s = this.tabs.get(msg.tab);

@@ -71,9 +71,11 @@ export class SqlTab {
 
   constructor(
     private readonly host: SqlHost,
-    private readonly request: SqlConnectRequest,
+    readonly request: SqlConnectRequest,
     /** Told whether the first sign-on worked (error = why not). */
     private readonly onSignon?: (error?: unknown) => void,
+    /** A tab handed over by another window: its connection is open already. */
+    private readonly resume?: { connection: string; script: string; filePath: string; dirty: boolean },
   ) {
     this.title = `SQL - ${request.host}`;
     this.frame = el('div', 'terminal-frame sql');
@@ -174,11 +176,27 @@ export class SqlTab {
 
   /** Signs on; called when the tab opens so a bad password shows at once. */
   async start(): Promise<void> {
+    if (this.resume?.connection) {
+      this.connection = this.resume.connection;
+      this.setScript(this.resume.script, this.resume.filePath);
+      this.dirty = this.resume.dirty;
+      this.updateTitle();
+      this.connEl.textContent = `${this.request.user.toUpperCase()}@${this.request.host} · ${this.naming.value === 'sys' ? 'system' : 'SQL'} naming`;
+      await this.showTransport();
+      this.statusEl.textContent = 'Ready';
+      return;
+    }
     await this.connect();
   }
 
-  dispose(): void {
-    if (this.connection) void goApp().SqlClose(this.connection);
+  /** Everything another window needs to carry this tab on (the results stay behind). */
+  snapshot(): { connection: string; script: string; filePath: string; dirty: boolean; naming: string } {
+    return { connection: this.connection, script: this.editor.value, filePath: this.filePath, dirty: this.dirty, naming: this.naming.value };
+  }
+
+  /** With keepSession the database connection stays open: another window takes the tab over. */
+  dispose(opts: { keepSession?: boolean } = {}): void {
+    if (this.connection && !opts.keepSession) void goApp().SqlClose(this.connection);
     this.endStatement();
     this.editor.destroy();
     this.frame.remove();

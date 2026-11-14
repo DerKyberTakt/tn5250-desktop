@@ -91,9 +91,11 @@ export class IfsTab {
 
   constructor(
     private readonly host: IfsHost,
-    private readonly request: IfsConnectRequest,
+    readonly request: IfsConnectRequest,
     /** Told whether the sign-on worked (error = why not). */
     private readonly onSignon?: (error?: unknown) => void,
+    /** A tab handed over by another window: its session is open already, carry on where it was. */
+    private readonly resume?: { session: string; cwd: string; history: string[] },
   ) {
     this.title = `IFS - ${request.host}`;
     this.frame = el('div', 'terminal-frame ifs');
@@ -575,8 +577,19 @@ export class IfsTab {
     this.frame.focus();
   }
 
+  /** Everything another window needs to carry this tab on. */
+  snapshot(): { session: string; cwd: string; history: string[] } {
+    return { session: this.session, cwd: this.cwd, history: [...this.history] };
+  }
+
   async start(): Promise<void> {
     const { host, user, timeoutMs } = this.request;
+    if (this.resume?.session) {
+      this.session = this.resume.session;
+      this.history = [...this.resume.history];
+      await this.go(this.resume.cwd, false, true);
+      return;
+    }
     this.setBusy(true);
     this.statusEl.textContent = 'Connecting…';
     this.showLoading(`Signing on to ${host} as ${user.toUpperCase()}…`);
@@ -611,9 +624,10 @@ export class IfsTab {
     this.messageEl.hidden = false;
   }
 
-  dispose(): void {
+  /** With keepSession the file-server session stays open: another window takes the tab over. */
+  dispose(opts: { keepSession?: boolean } = {}): void {
     this.stopProgress?.();
-    if (this.session) void goApp().IfsClose(this.session);
+    if (this.session && !opts.keepSession) void goApp().IfsClose(this.session);
     this.frame.remove();
   }
 

@@ -140,6 +140,17 @@ describe('tab drag: live shuffle', () => {
     expect(ghost.classList.contains('offscreen')).toBe(false);
   });
 
+  it('a drop inside the window but away from the bar detaches too (a maximised window has no outside)', async () => {
+    const { host, buttons, fire } = setup();
+    const b = buttons.get('B') as HTMLElement;
+    fire(b, 'pointerdown', 150, 55);
+    fire(b, 'pointermove', 150, 200);
+    fire(b, 'pointermove', 400, 400);
+    fire(b, 'pointerup', 400, 400);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(host.onDetach).toHaveBeenCalledWith('B', { x: 840, y: 636 }, { x: 900, y: 700 });
+  });
+
   it('a drop outside the window detaches, with the drop point for the landing splash', async () => {
     const { host, buttons, fire } = setup();
     const b = buttons.get('B') as HTMLElement;

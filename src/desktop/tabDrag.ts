@@ -1,8 +1,9 @@
 /**
- * Dragging session tabs: reorder inside the tab bar (the other tabs shuffle aside while the
- * dragged one follows the pointer), drop outside the window to detach the session into a
- * window of its own, drop on another window of the app to merge it there.
- * The pure helpers (hit tests, ordering) are tested; TabDrag wires them to pointer events.
+ * Dragging tabs: reorder inside the bar (the other tabs shuffle aside while the dragged
+ * one follows the pointer), drop anywhere away from the bar to detach the tab into a
+ * window of its own (so it works in a maximised window too), drop on another window of
+ * the app to merge it there. The pure helpers (hit tests, ordering) are tested; TabDrag
+ * wires them to pointer events.
  */
 import type { WindowBounds } from './bridge';
 import { layoutRect, settle } from './flip';
@@ -43,6 +44,19 @@ export function reorder<T>(list: T[], from: number, to: number): T[] {
   if (item === undefined) return list.slice();
   out.splice(Math.max(0, Math.min(to, out.length)), 0, item);
   return out;
+}
+
+/**
+ * The list with `item` moved to place `to` among the members of its own group (the tabs
+ * of one bar), the other members keeping their places in the list.
+ */
+export function reorderWithin<T>(list: T[], inGroup: (t: T) => boolean, item: T, to: number): T[] {
+  const group = list.filter(inGroup);
+  const from = group.indexOf(item);
+  if (from < 0) return list.slice();
+  const moved = reorder(group, from, to);
+  let i = 0;
+  return list.map((t) => (inGroup(t) ? (moved[i++] as T) : t));
 }
 
 /** The window (other than `exclude`) under a screen point, if any. */
@@ -246,7 +260,7 @@ export class TabDrag<T> {
       this.cancel();
       return;
     }
-    const inside = now.x >= 0 && now.y >= 0 && now.x < window.innerWidth && now.y < window.innerHeight;
+    // Away from the bar the tab leaves: into the window of the app under the pointer, or a new one.
     this.release(true);
     void this.host
       .windows()
@@ -254,8 +268,7 @@ export class TabDrag<T> {
       .then((windows) => {
         const target = windowAt(windows, screen.x, screen.y, this.host.windowName);
         if (target) this.host.onMerge(item, target.name, screen);
-        else if (!inside) this.host.onDetach(item, detachOrigin(screen.x, screen.y), screen);
-        else this.putBack(item, p.startIndex);
+        else this.host.onDetach(item, detachOrigin(screen.x, screen.y), screen);
         this.dropGhost();
       });
   };

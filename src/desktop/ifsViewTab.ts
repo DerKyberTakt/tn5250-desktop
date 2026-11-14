@@ -70,6 +70,8 @@ export class IfsViewTab {
     readonly sessionId: string,
     readonly path: string,
     private info: IfsFileInfo,
+    /** Unsaved text handed over by another window: applied once the file is loaded. */
+    private draft?: string,
   ) {
     this.title = path.split('/').pop() || path;
     this.language = languageFor(this.title);
@@ -166,6 +168,11 @@ export class IfsViewTab {
     return this.dirty;
   }
 
+  /** What another window needs to show this file; the unsaved text when there is some. */
+  snapshot(): { sessionId: string; path: string; info: IfsFileInfo; draft?: string } {
+    return { sessionId: this.sessionId, path: this.path, info: this.info, ...(this.dirty ? { draft: this.text } : {}) };
+  }
+
   focus(): void {
     this.editor.focus();
   }
@@ -192,6 +199,14 @@ export class IfsViewTab {
       this.setDirty(false);
       this.decode();
       this.host.log?.(`Viewer: ${this.path}: ${this.bytes.length} bytes, file says CCSID ${this.reported || 'unknown'}, reading as ${encodingLabel(this.ccsid)}${this.binary ? ', shown as hex' : ''}${this.language.kind !== 'plain' ? `, ${this.language.name}` : ''}`);
+      if (this.draft !== undefined && !this.binary) {
+        this.text = this.draft;
+        this.draft = undefined;
+        this.editor.value = this.text;
+        this.csv?.setText(this.text);
+        this.toggleEdit();
+        this.setDirty(true);
+      }
     } catch (err) {
       this.statusEl.textContent = 'Could not read the file';
       this.host.notify(errorText(err));

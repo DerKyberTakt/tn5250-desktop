@@ -34,6 +34,8 @@ export const ICONS = {
   ifs: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="#b8891f" fill="#f2c95e"/><path d="M8 14h8" stroke="#7a5a10"/>'),
   /** Run SQL Scripts: a table with a lightning stroke. */
   sql: svg('<rect x="3" y="5" width="18" height="14" rx="1.5" stroke="#1f5fa8"/><path d="M3 10h18M9 10v9" stroke="#1f5fa8"/><path d="m15 7-2.5 4.5h3L13 16" stroke="#e0a21b" stroke-width="2" fill="none"/>'),
+  /** A file viewer tab: a page with lines. */
+  viewer: svg('<path d="M6 3.5h8l4 4V20.5H6z" stroke="currentColor"/><path d="M14 3.5v4h4" stroke="currentColor"/><path d="M8.5 12h7M8.5 15h7M8.5 18h4" stroke="#1f5fa8"/>'),
   /** Settings: a gear (eight teeth around a hub). */
   settings: svg(
     '<path d="M10.6 3.2h2.8l.5 2.3a6.9 6.9 0 0 1 1.9 1.1l2.2-.8 1.4 2.4-1.7 1.6a6.9 6.9 0 0 1 0 2.2l1.7 1.6-1.4 2.4-2.2-.8a6.9 6.9 0 0 1-1.9 1.1l-.5 2.3h-2.8l-.5-2.3a6.9 6.9 0 0 1-1.9-1.1l-2.2.8-1.4-2.4 1.7-1.6a6.9 6.9 0 0 1 0-2.2L4.6 8.2 6 5.8l2.2.8a6.9 6.9 0 0 1 1.9-1.1z" stroke="currentColor"/><circle cx="12" cy="12" r="2.6" stroke="currentColor"/>',

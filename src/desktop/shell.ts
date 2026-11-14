@@ -12,10 +12,10 @@ import { IfsViewTab, type IfsViewHost } from './ifsViewTab';
 import { SettingsTab } from './settingsTab';
 import { SqlTab, type SqlHost } from './sqlTab';
 import { Store, type AppTheme } from './store';
-import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow } from './relay';
+import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow, type ToolState } from './relay';
 import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
-import { TabDrag, reorder, type Point } from './tabDrag';
+import { TabDrag, reorderWithin, type DragHost, type Point } from './tabDrag';
 import { ACS_EMULATOR_DIR, HOD_FILTERS, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
 import { watchRecording, MacroRecorder, describeStep, macrosFromJson, macrosToJson, mergeMacros, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
 import { macroEditorDialog } from './macroEditor';
@@ -69,11 +69,16 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
 
   private entries: Entry[] = [];
   private active: Entry | undefined;
-  private readonly drag = new TabDrag<Entry>({
-    bar: byId<HTMLDivElement>('tabbar'),
+  /** Session tabs live in the tab bar; the tools (IFS, SQL, viewers, Settings) in the strip right of the tool bar. */
+  private readonly drag = new TabDrag<Entry>(this.dragHost(byId<HTMLDivElement>('tabbar'), (e) => e.kind === 'terminal'));
+  private readonly toolDrag = new TabDrag<Entry>(this.dragHost(byId<HTMLDivElement>('toolstrip'), (e) => e.kind !== 'terminal'));
+
+  private dragHost(bar: HTMLDivElement, inBar: (e: Entry) => boolean): DragHost<Entry> {
+    return {
+    bar,
     buttonOf: (e) => e.button,
-    items: () => this.entries,
-    detachable: (e) => e.kind === 'terminal' && !e.tab.isDemo,
+    items: () => this.entries.filter(inBar),
+    detachable: (e) => !(e.kind === 'terminal' && e.tab.isDemo),
     windows: () => goApp().WindowList().then((w) => w ?? []),
     windowName: windowNameFromUrl(location.search),
     onLiveReorder: (e, to) => this.liveReorder(e, to),
@@ -99,7 +104,9 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       },
     },
     log: (line) => this.log(line),
-  });
+    };
+  }
+
   private ghostAt: Point | undefined;
   private ghostFrame: number | undefined;
   private selectedSession = -1;
@@ -109,6 +116,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   private statusTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly tabbar = byId<HTMLDivElement>('tabbar');
+  private readonly toolstrip = byId<HTMLDivElement>('toolstrip');
   private readonly frames = byId<HTMLElement>('frames');
   private readonly empty = byId<HTMLDivElement>('empty');
   private readonly sidebar = byId<HTMLElement>('sidebar');
@@ -412,15 +420,63 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   }
 
   /** A viewer tab for a file of an IFS session (one tab per path; an open one is brought to the front). */
-  openPath(sessionId: string, path: string, info: { size: number; modified: string }): void {
+  openPath(sessionId: string, path: string, info: { size: number; modified: string }, draft?: string): Entry {
     const open = this.entries.find((e) => e.kind === 'ifsview' && e.tab.path === path && e.tab.sessionId === sessionId);
     if (open) {
       this.activate(open);
-      return;
+      return open;
     }
-    const tab = new IfsViewTab(this, sessionId, path, info);
-    this.addEntry({ kind: 'ifsview', tab, button: el('div') }, true);
+    const tab = new IfsViewTab(this, sessionId, path, info, draft);
+    const entry: Entry = { kind: 'ifsview', tab, button: el('div') };
+    this.addEntry(entry, true);
     void tab.load();
+    return entry;
+  }
+
+  /** A tool tab handed over by another window: the same tab again, on the same host-server session. */
+  private openToolState(state: ToolState): Entry {
+    switch (state.kind) {
+      case 'ifs': {
+        const tab = new IfsTab(this, state.request, undefined, { session: state.session, cwd: state.cwd, history: state.history });
+        const entry: Entry = { kind: 'ifs', tab, button: el('div') };
+        this.addEntry(entry, true);
+        void tab.start();
+        return entry;
+      }
+      case 'sql': {
+        const tab = new SqlTab(this, state.request, undefined, { connection: state.connection, script: state.script, filePath: state.filePath, dirty: state.dirty });
+        const entry: Entry = { kind: 'sql', tab, button: el('div') };
+        this.addEntry(entry, true);
+        void tab.start();
+        return entry;
+      }
+      case 'ifsview':
+        return this.openPath(state.sessionId, state.path, state.info, state.draft);
+      default: {
+        this.openSettings(state.select);
+        return this.entries.find((e) => e.kind === 'settings') as Entry;
+      }
+    }
+  }
+
+  /** What a tool tab is made of, for the window that takes it over. */
+  private toolState(entry: Entry): ToolState | undefined {
+    switch (entry.kind) {
+      case 'ifs': {
+        const s = entry.tab.snapshot();
+        return s.session ? { kind: 'ifs', request: entry.tab.request, ...s } : undefined;
+      }
+      case 'sql': {
+        const s = entry.tab.snapshot();
+        return s.connection ? { kind: 'sql', request: { ...entry.tab.request, naming: s.naming }, connection: s.connection, script: s.script, filePath: s.filePath, dirty: s.dirty } : undefined;
+      }
+      case 'ifsview':
+        return { kind: 'ifsview', ...entry.tab.snapshot() };
+      case 'settings':
+        return { kind: 'settings', select: -1 };
+      default:
+        return undefined;
+    }
   }
 
   /** Tools > Saved Passwords: the USER@host passwords in the credential store. */
@@ -558,11 +614,11 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
         this.activate(entry);
       }
     });
-    this.tabbar.append(entry.button);
+    this.barOf(entry).append(entry.button);
     if (entry.tab.frame instanceof HTMLIFrameElement) entry.tab.frame.addEventListener('load', () => this.applyThemeTo(entry.tab.frame));
     this.frames.append(entry.tab.frame);
     this.renderTabButton(entry);
-    this.drag.attach(entry);
+    (entry.kind === 'terminal' ? this.drag : this.toolDrag).attach(entry);
     if (activate) this.activate(entry);
     else this.refresh();
   }
@@ -572,20 +628,30 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
    * into their new places (FLIP); the dragged one stays under the pointer.
    */
   private liveReorder(entry: Entry, to: number): void {
-    const from = this.entries.indexOf(entry);
-    if (from < 0) return;
-    const others = this.entries.filter((e) => e !== entry).map((e) => [e, e.button] as const);
+    if (!this.entries.includes(entry)) return;
+    const inBar = this.sameBar(entry);
+    const others = this.entries.filter((e) => e !== entry && inBar(e)).map((e) => [e, e.button] as const);
     const before = snapshot(others);
-    this.entries = reorder(this.entries, from, to);
+    this.entries = reorderWithin(this.entries, inBar, entry, to);
     // The dragged button holds the pointer capture: the others move around it, it stays put.
-    placeAround(this.tabbar, entry.button, this.entries.map((e) => e.button));
+    placeAround(this.barOf(entry), entry.button, this.entries.filter(inBar).map((e) => e.button));
     play(others, before, entry);
   }
 
   /** A tab dropped within the bar: the order is already as shown; the rest of the app learns about it. */
   private reorderTab(entry: Entry, to: number): void {
-    if (this.entries.indexOf(entry) !== to) this.liveReorder(entry, to);
+    if (this.entries.filter(this.sameBar(entry)).indexOf(entry) !== to) this.liveReorder(entry, to);
     this.syncSettingsTabs();
+  }
+
+  /** Which bar an entry's button lives in: sessions in the tab bar, tools in the strip. */
+  private barOf(entry: Entry): HTMLDivElement {
+    return entry.kind === 'terminal' ? this.tabbar : this.toolstrip;
+  }
+
+  private sameBar(entry: Entry): (e: Entry) => boolean {
+    const terminal = entry.kind === 'terminal';
+    return (e) => (e.kind === 'terminal') === terminal;
   }
 
   /** Water-drop rings at a client point: the pointer crossing the edge, or a tab landing. */
@@ -642,6 +708,11 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       const dot = el('span', `dot ${entry.tab.status}`);
       dot.title = entry.tab.statusDetail || entry.tab.status;
       b.append(dot);
+    } else {
+      b.classList.add('tooltab');
+      const icon = el('span', 'tool-icon');
+      icon.innerHTML = ICONS[entry.kind === 'ifs' ? 'ifs' : entry.kind === 'sql' ? 'sql' : entry.kind === 'settings' ? 'settings' : 'viewer'];
+      b.append(icon);
     }
     const label = el('span', 'label', entry.tab.title);
     b.title = entry.tab.title;
@@ -683,14 +754,16 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     this.removeEntry(entry);
   }
 
-  /** Takes a tab out of this window (closed, or handed to another window). */
-  private removeEntry(entry: Entry): void {
+  /** Takes a tab out of this window (closed, or handed to another window, which keeps its session). */
+  private removeEntry(entry: Entry, handedOver = false): void {
     const i = this.entries.indexOf(entry);
     if (i < 0) return;
     this.entries.splice(i, 1);
-    entry.tab.dispose();
+    if (handedOver && (entry.kind === 'ifs' || entry.kind === 'sql')) entry.tab.dispose({ keepSession: true });
+    else entry.tab.dispose();
     entry.button.remove();
     this.drag.detach(entry);
+    this.toolDrag.detach(entry);
     if (this.active === entry) {
       this.active = undefined;
       const next = this.entries[Math.min(i, this.entries.length - 1)];
@@ -741,7 +814,9 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     // One tab needs no tab bar (the window title names it); it appears with the second tab,
     // or as soon as there is another window to drag the tab to.
     const windows = new Set(this.registry.map((t) => t.window)).add(this.windowName);
-    this.tabbar.hidden = this.entries.length === 0 || (this.entries.length < 2 && windows.size < 2);
+    const sessions = this.entries.filter((e) => e.kind === 'terminal').length;
+    this.tabbar.hidden = sessions === 0 || (sessions < 2 && windows.size < 2);
+    this.toolstrip.classList.toggle('has-tools', sessions < this.entries.length);
     const t = this.activeTerminal();
     const title = this.active ? `${this.active.tab.title} - ${APP_NAME}` : APP_NAME;
     document.title = title;
@@ -1297,6 +1372,13 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       void this.askFromBroker(msg);
       return;
     }
+    if (msg.type === 'tool:opened') {
+      const adopted = this.openToolState(msg.state);
+      this.dropIn(adopted);
+      const r = adopted.button.getBoundingClientRect();
+      this.splash(msg.at ? this.clientFromScreen(msg.at) : { x: r.left + r.width / 2, y: r.top + r.height / 2 }, 'land');
+      return;
+    }
     const entry = this.entries.find((e) => e.kind === 'terminal' && e.tab.id === msg.tab);
     if (entry?.kind === 'terminal') {
       entry.tab.receive(msg);
@@ -1323,7 +1405,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   /** The active session leaves for a new window; the broker keeps it connected throughout. */
   private async moveActiveToNewWindow(): Promise<void> {
     const entry = this.active;
-    if (entry?.kind !== 'terminal' || entry.tab.isDemo) return;
+    if (!entry || (entry.kind === 'terminal' && entry.tab.isDemo)) return;
     let name: string;
     try {
       name = await this.newWindow();
@@ -1337,7 +1419,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   /** The active session joins the main window (Window menu, from a detached window). */
   private async mergeActiveIntoMain(): Promise<void> {
     const entry = this.active;
-    if (entry?.kind !== 'terminal' || entry.tab.isDemo || this.windowName === MAIN_WINDOW) return;
+    if (!entry || (entry.kind === 'terminal' && entry.tab.isDemo) || this.windowName === MAIN_WINDOW) return;
     await this.moveTab(entry, MAIN_WINDOW);
     void goApp().WindowFocus(MAIN_WINDOW).catch(() => undefined);
   }
@@ -1347,15 +1429,31 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
    * window adopts it. A detached window that gave away its last tab closes.
    */
   private async moveTab(entry: Entry, window: string, at?: Point): Promise<void> {
-    if (entry.kind !== 'terminal' || !entry.tab.profile) return;
-    entry.tab.handOver();
-    try {
-      await relay('broker', { type: 'tab:move', tab: entry.tab.id, window, ...(at ? { at } : {}) });
-    } catch (err) {
-      this.notify(`Could not move the tab: ${errorText(err)}`);
-      return;
+    if (entry.kind === 'terminal') {
+      if (!entry.tab.profile) return;
+      entry.tab.handOver();
+      try {
+        await relay('broker', { type: 'tab:move', tab: entry.tab.id, window, ...(at ? { at } : {}) });
+      } catch (err) {
+        this.notify(`Could not move the tab: ${errorText(err)}`);
+        return;
+      }
+      this.removeEntry(entry);
+    } else {
+      // A tool tab: its state travels, the host-server session it uses stays open.
+      const state = this.toolState(entry);
+      if (!state) {
+        this.notify('That tab is still signing on; move it once it is connected');
+        return;
+      }
+      try {
+        await relay('broker', { type: 'tool:move', window, state, ...(at ? { at } : {}) });
+      } catch (err) {
+        this.notify(`Could not move the tab: ${errorText(err)}`);
+        return;
+      }
+      this.removeEntry(entry, true);
     }
-    this.removeEntry(entry);
     if (this.windowName !== MAIN_WINDOW && !this.entries.length) void goApp().WindowClose(this.windowName).catch(() => undefined);
   }
 
@@ -1454,6 +1552,13 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       if (tool.icon === 'update') this.updateButton = b;
       this.toolbarItems.push({ button: b, enabled: tool.enabled, pressed: tool.pressed });
     }
+    // The tool strip takes the rest of the row; the wheel scrolls it sideways when the tools overflow.
+    bar.append(this.toolstrip);
+    this.toolstrip.addEventListener('wheel', (ev) => {
+      if (!ev.deltaY || ev.deltaX) return;
+      ev.preventDefault();
+      this.toolstrip.scrollLeft += ev.deltaY;
+    });
   }
 
   private updateToolbar(): void {
