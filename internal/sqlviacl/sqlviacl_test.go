@@ -123,6 +123,31 @@ func TestParseCSVAndColumns(t *testing.T) {
 	}
 }
 
+func TestStreamText(t *testing.T) {
+	// "ls" output written by QSH in a CCSID 37 job: names separated by X'25'.
+	ebcdic := []byte{0x81, 0x4B, 0x97, 0x99, 0x96, 0x86, 0x89, 0x93, 0x85, 0x25, 0xA3, 0x85, 0xA2, 0xA3, 0x4B, 0xA3, 0xA7, 0xA3, 0x25}
+	if got := string(StreamText(ebcdic, 37)); got != "a.profile\ntest.txt\n" {
+		t.Fatalf("ccsid 37: %q", got)
+	}
+	if got := string(StreamText(ebcdic, 0)); got != "a.profile\ntest.txt\n" {
+		t.Fatalf("untagged ebcdic: %q", got)
+	}
+	if got := string(StreamText([]byte("a.profile\ntest.txt\n"), 1208)); got != "a.profile\ntest.txt\n" {
+		t.Fatalf("utf-8: %q", got)
+	}
+	if got := string(StreamText([]byte("a.profile\ntest.txt\n"), 65535)); got != "a.profile\ntest.txt\n" {
+		t.Fatalf("untagged ascii: %q", got)
+	}
+	// NL (X'15') also ends a line.
+	if got := string(StreamText([]byte{0xC1, 0x15, 0xC2}, 37)); got != "A\nB" {
+		t.Fatalf("NL: %q", got)
+	}
+	rows := Lines(StreamText(ebcdic, 37))
+	if len(rows) != 2 || *rows[1][0] != "test.txt" {
+		t.Fatalf("rows: %d", len(rows))
+	}
+}
+
 func TestQshAndLines(t *testing.T) {
 	cmd := QshCommand("ls -la /home/jsmith | grep 'x'", "/tmp/tn5250-q.txt")
 	if cmd != "QSH CMD('ls -la /home/jsmith | grep ''x'' > /tmp/tn5250-q.txt 2>&1')" {

@@ -22,6 +22,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"golang.org/x/text/encoding/charmap"
 )
 
 // Kind of statement.
@@ -250,6 +252,46 @@ func ParseCSV(data []byte, header bool) (names []string, rows [][]*string, err e
 // QSH CMD('<line> > /tmp/x 2>&1'). The line's apostrophes are doubled for CL.
 func QshCommand(line, stmf string) string {
 	return "QSH CMD(" + Quote(strings.TrimSpace(line)+" > "+stmf+" 2>&1") + ")"
+}
+
+// StreamText returns the text of a stream file as UTF-8. A file tagged with an EBCDIC
+// CCSID (what QSH gives a file created by a redirection in a job whose CCSID is EBCDIC)
+// is decoded with code page 37 and its record separators (NL X'15', LF X'25') become
+// line feeds; a file tagged ASCII/UTF-8 is returned as it is. An untagged file
+// (0 or 65535) is sniffed: EBCDIC letters outnumbering ASCII ones means EBCDIC.
+func StreamText(data []byte, ccsid uint16) []byte {
+	switch ccsid {
+	case 0, 65535:
+		if !looksEBCDIC(data) {
+			return data
+		}
+	case 819, 1208, 1252, 1200, 13488, 367, 850, 437:
+		return data
+	default:
+		if ccsid >= 1250 && ccsid <= 1258 || ccsid >= 28591 && ccsid <= 28605 {
+			return data
+		}
+	}
+	out, err := charmap.CodePage037.NewDecoder().Bytes(data)
+	if err != nil {
+		return data
+	}
+	out = bytes.ReplaceAll(out, []byte("\u0085"), []byte("\n"))
+	return out
+}
+
+// looksEBCDIC guesses the encoding of untagged bytes from where its letters sit.
+func looksEBCDIC(data []byte) bool {
+	ascii, ebcdic := 0, 0
+	for _, b := range data {
+		switch {
+		case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z':
+			ascii++
+		case b >= 0x81 && b <= 0xA9, b >= 0xC1 && b <= 0xE9:
+			ebcdic++
+		}
+	}
+	return ebcdic > ascii
 }
 
 // Lines splits a stream file's text into rows of one column.
