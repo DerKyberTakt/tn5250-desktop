@@ -55,6 +55,22 @@ const action = (body: string): string =>
 export const ACTION_ICONS = {
   /** Run: a play triangle. */
   play: action('<path class="shape" d="M9.3 7.2v9.6l7.9-4.8z" fill="currentColor" stroke="none"/>'),
+  /** Run all: two play triangles. */
+  playAll: action('<path class="shape" d="M5.5 7.4v9.2l6.4-4.6zM12.3 7.4v9.2l6.4-4.6z" fill="currentColor" stroke="none"/>'),
+  /** Stop: a square. */
+  stop: action('<rect class="shape" x="7.5" y="7.5" width="9" height="9" rx="1.2" fill="currentColor" stroke="none"/>'),
+  /** Open: a folder opening. */
+  folderOpen: action('<g class="shape"><path d="M4.5 8V6.5a1 1 0 0 1 1-1h3.2l1.4 1.4h7.4a1 1 0 0 1 1 1V10"/><path d="M3.8 10.5h14.9l-1.6 7.5a1 1 0 0 1-1 .8H6.2a1 1 0 0 1-1-.8z"/></g>'),
+  /** Markdown: a page with an M. */
+  markdown: action('<g class="shape"><rect x="5" y="6" width="14" height="12" rx="1.2"/><path d="M8 15v-6l2.5 3 2.5-3v6"/><path d="M15.5 9.5v5.5M14 13.5l1.5 1.5 1.5-1.5"/></g>'),
+  /** TSV: a table. */
+  tsv: action('<g class="shape"><rect x="5" y="6" width="14" height="12" rx="1.2"/><path d="M5 10h14M5 14h14M10 6v12M15 6v12"/></g>'),
+  /** CSV file: a page with a down arrow. */
+  csv: action('<g class="shape"><path d="M7 4.5h6.5L17 8v11.5H7z"/><path d="M13.5 4.5V8H17"/><path d="M12 10.5v6M9.8 14.3l2.2 2.2 2.2-2.2"/></g>'),
+  /** Fetch more: rows with an arrow down. */
+  fetchMore: action('<g class="shape"><path d="M5.5 7h8M5.5 10.5h8M5.5 14h5"/><path d="M17 7v10M14.6 14.6 17 17l2.4-2.4"/></g>'),
+  /** Retrieve all: rows with a double arrow down. */
+  fetchAll: action('<g class="shape"><path d="M5.5 7h7M5.5 10.5h7M5.5 14h4"/><path d="M17 5.5v12M14.6 11.2 17 13.6l2.4-2.4M14.6 15.1 17 17.5l2.4-2.4"/></g>'),
   /** Edit: a pencil. */
   pencil: action('<g class="shape"><path d="m14.6 6.4 3 3L9.4 17.6 6 18l.4-3.4z"/><path d="m13.2 7.8 3 3"/></g>'),
   /** Delete: a trash can; the lid is its own group and swings open on hover. */

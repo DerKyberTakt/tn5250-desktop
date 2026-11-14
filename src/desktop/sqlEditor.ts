@@ -39,7 +39,7 @@ export interface SqlEditorOptions {
   /** The document changed (typing, paste, undo, setScript). */
   onChange?: () => void;
   /** Shortcuts the tab owns: Ctrl+R, Ctrl+Shift+R, Ctrl+Alt+R, Ctrl+S (Cmd on macOS). */
-  keys?: Partial<Record<'run' | 'runAll' | 'runFrom' | 'save', () => void>>;
+  keys?: Partial<Record<'run' | 'runAll' | 'save', () => void>>;
 }
 
 /** Syntax colours by token kind, for every language the app edits; the variables are defined in sql.css. */
@@ -285,7 +285,7 @@ export class SqlEditor {
             },
           ]
         : [];
-    own.push(Prec.highest(keymap.of([...bind('Mod-r', k.run), ...bind('Mod-Shift-r', k.runAll), ...bind('Mod-Alt-r', k.runFrom), ...bind('Mod-s', k.save)])));
+    own.push(Prec.highest(keymap.of([...bind('Mod-r', k.run), ...bind('Mod-Shift-r', k.runAll), ...bind('Mod-s', k.save)])));
     this.view = new EditorView({
       parent: this.element,
       state: EditorState.create({ doc: '', extensions: [...sqlEditorExtensions(), ...own] }),

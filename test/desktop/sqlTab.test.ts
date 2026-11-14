@@ -62,7 +62,8 @@ async function openTab(): Promise<SqlTab> {
 
 /** The status line of the pane on show (a result tab). */
 const status = (tab: SqlTab): string => tab.frame.querySelector('.sql-pane:not([hidden]) .sql-results-status')?.textContent ?? '';
-const foot = (tab: SqlTab): string => tab.frame.querySelector('.sql-foot span')!.textContent ?? '';
+const foot = (tab: SqlTab): string => tab.frame.querySelector('.sql-foot .sql-foot-left span')!.textContent ?? '';
+const last = (tab: SqlTab): string => tab.frame.querySelector('.sql-foot .sql-last')!.textContent ?? '';
 const job = (tab: SqlTab): string => tab.frame.querySelector('.sql-job')!.textContent ?? '';
 const selectedPane = (tab: SqlTab): string => tab.frame.querySelector('.sql-tabs button[aria-selected="true"]')!.firstChild?.textContent ?? '';
 const resultTabs = (tab: SqlTab): string[] => [...tab.frame.querySelectorAll('.sql-tabs button[role="tab"]')].map((b) => b.firstChild?.textContent ?? '').filter((t) => t.startsWith('Result'));
@@ -94,6 +95,8 @@ describe('Run SQL Scripts: one Output pane and numbered Result tabs', () => {
     expect(gridRows(tab)).toBe(2);
     expect(status(tab)).toBe('Loaded 2 rows in 12 ms. More rows available.');
     expect(foot(tab)).toBe('1 of 1 statement ran');
+    expect(last(tab)).toBe('✓ Loaded 2 rows in 12 ms. More rows available · SELECT * FROM QSYS2.SYSTABLES');
+    expect(fake.app.SqlRun).toHaveBeenLastCalledWith('S1', 'SELECT * FROM QSYS2.SYSTABLES', 100);
     expect(lastLine(tab)).toBe('✓ Loaded 2 rows in 12 ms. More rows available. Result 1');
     // The statement is echoed with its keywords coloured.
     expect(tab.frame.querySelector('.sql-out-stmt .sq-kw')?.textContent).toBe('SELECT');
@@ -104,12 +107,15 @@ describe('Run SQL Scripts: one Output pane and numbered Result tabs', () => {
     const tab = await openTab();
     tab.setScript('SELECT * FROM QSYS2.SYSTABLES;');
     await tab.runAll();
-    (tab.frame.querySelector('.sql-pane:not([hidden]) .sql-more button') as HTMLButtonElement).click();
+    const more = tab.frame.querySelector('.sql-pane:not([hidden]) .sql-result-bar button.more') as HTMLButtonElement;
+    expect(more.disabled).toBe(false);
+    more.click();
     await tick();
     await tick();
     expect(gridRows(tab)).toBe(5);
     expect(status(tab)).toBe('Loaded 5 rows in 12 ms + 8 ms. End of data.');
-    expect(tab.frame.querySelector('.sql-pane:not([hidden]) .sql-more button')!.textContent).not.toMatch(/more rows/);
+    expect(more.disabled).toBe(true);
+    expect((tab.frame.querySelector('.sql-pane:not([hidden]) .sql-result-bar button.all') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('a DELETE stays in Output with the rows affected and opens no result', async () => {
@@ -187,21 +193,23 @@ describe('Run SQL Scripts: one Output pane and numbered Result tabs', () => {
     const tab = await openTab();
     tab.setScript('SELECT * FROM QSYS2.SYSTABLES;');
     await tab.runAll();
-    const buttons = [...tab.frame.querySelectorAll('.sql-pane:not([hidden]) .sql-more button')] as HTMLButtonElement[];
-    const by = (text: string): HTMLButtonElement => buttons.find((b) => b.textContent === text)!;
-    by('Copy').click();
+    const by = (key: string): HTMLButtonElement => tab.frame.querySelector(`.sql-pane:not([hidden]) .sql-result-bar button.${key}`)!;
+    // The bar sits above the grid, left-justified: copies, save, then fetch.
+    expect([...tab.frame.querySelectorAll('.sql-pane:not([hidden]) .sql-result-bar button')].map((b) => b.className.split(' ')[1])).toEqual(['copy', 'markdown', 'tsv', 'csv', 'fetchMore', 'fetchAll']);
+    expect(tab.frame.querySelector('.sql-pane:not([hidden])')!.firstElementChild!.className).toBe('sql-result-bar icon-actions');
+    by('copy').click();
     await tick();
     expect(fake.app.ClipboardSet).toHaveBeenLastCalledWith('ID  NAME\r\n--  ------\r\n 1  name 1\r\n 2  -\r\n');
-    by('Copy as Markdown').click();
+    by('markdown').click();
     await tick();
     expect(fake.app.ClipboardSet).toHaveBeenLastCalledWith('| ID | NAME |\r\n| ---: | --- |\r\n| 1 | name 1 |\r\n| 2 |  |\r\n');
-    by('Copy as TSV').click();
+    by('tsv').click();
     await tick();
     expect(fake.app.ClipboardSet).toHaveBeenLastCalledWith('ID\tNAME\r\n1\tname 1\r\n2\t\r\n');
     // A selected row narrows the copy.
     (tab.frame.querySelector('.sql-pane:not([hidden]) .sql-grid tbody tr') as HTMLElement).click();
     expect(status(tab)).toBe('Loaded 2 rows in 12 ms. More rows available. 1 row selected.');
-    by('Copy').click();
+    by('copy').click();
     await tick();
     expect(fake.app.ClipboardSet).toHaveBeenLastCalledWith('ID  NAME\r\n--  ------\r\n 1  name 1\r\n');
   });
@@ -234,5 +242,45 @@ describe('outcomeText', () => {
     expect(outcomeText({ kind: 'rows', columns: [{ name: 'A', type: 'CHAR', length: 1, scale: 0, nullable: false }], rows: [['x']], more: false, updateCount: 0, messages: [], elapsedMs: 1234 }, 0)).toBe('Loaded 1 row in 1,234 ms. End of data.');
     expect(outcomeText({ kind: 'count', more: false, updateCount: 1, messages: [], elapsedMs: 3 }, 0)).toBe('1 row affected in 3 ms.');
     expect(outcomeText({ kind: 'error', more: false, updateCount: 0, messages: [], elapsedMs: 3 }, 0)).toBe('Failed after 3 ms.');
+  });
+  it('the tool bar is icon buttons: run, run all, stop, open, save, save as; no Run From Cursor', async () => {
+    fakeHost();
+    const tab = await openTab();
+    const icons = [...tab.frame.querySelectorAll<HTMLButtonElement>('.sql-top button.act')].map((b) => `${b.className.split(' ')[1]}:${b.className.split(' ')[2]}`);
+    expect(icons).toEqual(['play:green', 'playAll:green', 'stop:red', 'folderOpen:blue', 'save:blue', 'saveAs:blue']);
+    expect(tab.frame.querySelector('.sql-top button.stop')?.getAttribute('title')).toMatch(/^Cancel/);
+    expect((tab.frame.querySelector('.sql-top button.stop') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('Retrieve all keeps fetching until End of data; a later statement takes the cursor from older results', async () => {
+    const fake = fakeHost();
+    let blocks = 0;
+    const rows = (n: number, from = 1): (string | null)[][] => Array.from({ length: n }, (_, i) => [String(from + i), i % 2 ? null : `name ${from + i}`]);
+    const columns = [
+      { name: 'ID', type: 'INTEGER', length: 10, scale: 0, nullable: false },
+      { name: 'NAME', type: 'VARCHAR', length: 20, scale: 0, nullable: true },
+    ];
+    fake.app.SqlFetch.mockImplementation(async (): Promise<SqlResult> => {
+      blocks++;
+      return { kind: 'rows', columns, rows: rows(2, 10 + blocks), more: blocks < 3, cursor: 'db', updateCount: 0, messages: [], elapsedMs: 4 };
+    });
+    const tab = await openTab();
+    tab.setScript('SELECT * FROM QSYS2.SYSTABLES;');
+    await tab.runAll();
+    (tab.frame.querySelector('.sql-pane:not([hidden]) .sql-result-bar button.all') as HTMLButtonElement).click();
+    for (let i = 0; i < 8; i++) await tick();
+    expect(blocks).toBe(3);
+    expect(gridRows(tab)).toBe(8);
+    expect(status(tab)).toBe('Loaded 8 rows in 12 ms + 12 ms. End of data.');
+    // A second SELECT: Result 1 keeps its rows, its fetch keys go off and the status says why.
+    fake.app.SqlFetch.mockImplementation(async (): Promise<SqlResult> => ({ kind: 'rows', columns, rows: rows(1, 1), more: true, updateCount: 0, messages: [], elapsedMs: 1 }));
+    tab.setScript(['SELECT * FROM QSYS2.SYSTABLES;', 'SELECT * FROM QSYS2.SYSCOLUMNS;'].join(String.fromCharCode(10)));
+    await tab.runAll();
+    expect(resultTabs(tab)).toEqual(['Result 1', 'Result 2', 'Result 3']);
+    const panes = [...tab.frame.querySelectorAll<HTMLElement>('.sql-pane.sql-results')];
+    const more2 = panes[1]!.querySelector('button.more') as HTMLButtonElement;
+    expect(more2.disabled).toBe(true);
+    expect(panes[1]!.querySelector('.sql-results-status')?.textContent).toContain('another statement ran');
+    expect((panes[2]!.querySelector('button.more') as HTMLButtonElement).disabled).toBe(false);
   });
 });

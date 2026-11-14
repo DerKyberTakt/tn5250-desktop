@@ -23,8 +23,32 @@
 
 .sql-top .group {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
+}
+
+.sql-top.icon-actions button.act,
+.sql-result-bar.icon-actions button.act {
+  width: 30px;
+  height: 30px;
+}
+
+/* Fetch and Retrieve all sit after a separator; the bar is left-justified under the tab row. */
+.sql-result-bar {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  align-items: center;
+  padding: 2px 6px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.sql-result-bar .sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--chrome-border);
 }
 
 .sql-top .sep {
@@ -313,10 +337,6 @@
   background: var(--sql-selection);
 }
 
-.sql-more {
-  padding: 6px 8px;
-}
-
 /* Output: the run story in order, the way ACS's message pane reads. */
 .sql-output {
   padding: 6px 10px;
@@ -419,4 +439,26 @@
 .sql-job {
   opacity: 0.75;
   white-space: nowrap;
+}
+
+.sql-foot-left {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.sql-last {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.sql-last.ok {
+  color: var(--sql-ok);
+}
+
+.sql-last.error {
+  color: var(--sql-err);
 }

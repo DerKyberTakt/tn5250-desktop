@@ -2,6 +2,7 @@
 
 ## 0.3.2 - unreleased
 - One button style everywhere: every dialog (rename, delete, move, replace, drop changes, overwrite, download choice, the lists) has the Macros dialog's frame, an ESC key top right and keycaps along the bottom (grey Cancel, green primary, red for Delete / Discard / Overwrite); the settings pages get the same keys; Retry, the transfer Cancel, Subfolders and the CSV grid's Copy are icons or keys of the same family. A tool that is switched on (folder tree, Edit, Wrap, Find) no longer sits on a tinted disc: its shape takes the colour.
+- Run SQL Scripts: the tool bar is icons (green Run and Run All, red Stop, Open, Save, Save as); Run From Cursor is gone (Ctrl+R on a statement and a selection cover it). Each Result tab has its tools on a row above the grid, left to right: Copy as text, Copy as Markdown, Copy as TSV, Save as CSV, Fetch more, Retrieve all. The first block is 100 rows, as Db2 for i loads; Fetch more adds 100 and Retrieve all keeps going until End of data (Stop ends it). A session holds one open cursor, so when another SQL statement runs the earlier results keep their rows and say that more cannot come. The foot keeps the last statement's outcome next to the status.
 - The Settings tool bar icon is a gear.
 - The CL / QSH Console tab is gone: Run SQL Scripts runs the same `CL: …` and `QSH: …` lines, keeps their output with the SQL output and highlights them.
 
