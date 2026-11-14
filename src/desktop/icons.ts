@@ -34,6 +34,10 @@ export const ICONS = {
   ifs: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="#b8891f" fill="#f2c95e"/><path d="M8 14h8" stroke="#7a5a10"/>'),
   /** Run SQL Scripts: a table with a lightning stroke. */
   sql: svg('<rect x="3" y="5" width="18" height="14" rx="1.5" stroke="#1f5fa8"/><path d="M3 10h18M9 10v9" stroke="#1f5fa8"/><path d="m15 7-2.5 4.5h3L13 16" stroke="#e0a21b" stroke-width="2" fill="none"/>'),
+  /** Split right: a window with a second pane beside the first. */
+  split: svg('<rect x="3" y="5" width="18" height="14" rx="1.5" stroke="currentColor"/><path d="M12 5v14" stroke="currentColor"/><path d="M15 10.5 17.5 12 15 13.5" stroke="#2e9b48" stroke-width="1.6"/>'),
+  /** Unsplit: the pane folds back into the tab bar. */
+  unsplit: svg('<rect x="3" y="5" width="18" height="14" rx="1.5" stroke="currentColor"/><path d="M12 5v14" stroke="currentColor"/><path d="m18 10.5-2.5 1.5 2.5 1.5" stroke="#c4372c" stroke-width="1.6"/>'),
   /** A file viewer tab: a page with lines. */
   viewer: svg('<path d="M6 3.5h8l4 4V20.5H6z" stroke="currentColor"/><path d="M14 3.5v4h4" stroke="currentColor"/><path d="M8.5 12h7M8.5 15h7M8.5 18h4" stroke="#1f5fa8"/>'),
   /** Settings: a gear (eight teeth around a hub). */

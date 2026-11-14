@@ -70,7 +70,9 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   private entries: Entry[] = [];
   private active: Entry | undefined;
   /** Session tabs live in the tab bar; the tools (IFS, SQL, viewers, Settings) in the strip right of the tool bar. */
-  private readonly drag = new TabDrag<Entry>(this.dragHost(byId<HTMLDivElement>('tabbar'), (e) => e.kind === 'terminal'));
+  private readonly drag = new TabDrag<Entry>(this.dragHost(byId<HTMLDivElement>('tabbar'), (e) => e.kind === 'terminal' && e !== this.split));
+  /** The session shown in the pane right of the others (View/Window > Split Right); its tab sits above that pane. */
+  private split: Entry | undefined;
   private readonly toolDrag = new TabDrag<Entry>(this.dragHost(byId<HTMLDivElement>('toolstrip'), (e) => e.kind !== 'terminal'));
 
   private dragHost(bar: HTMLDivElement, inBar: (e: Entry) => boolean): DragHost<Entry> {
@@ -118,6 +120,8 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   private readonly tabbar = byId<HTMLDivElement>('tabbar');
   private readonly toolstrip = byId<HTMLDivElement>('toolstrip');
   private readonly frames = byId<HTMLElement>('frames');
+  private readonly pane2 = byId<HTMLElement>('pane2');
+  private readonly paneSplit = byId<HTMLDivElement>('pane-split');
   private readonly empty = byId<HTMLDivElement>('empty');
   private readonly sidebar = byId<HTMLElement>('sidebar');
   private toolbarItems: Array<{ button: HTMLButtonElement; enabled?: () => boolean; pressed?: () => boolean }> = [];
@@ -158,6 +162,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     this.buildToolbar();
     this.bindSidebar();
     this.statusText.addEventListener('click', () => this.toggleLog());
+    this.paneSplit.addEventListener('mousedown', (e) => this.startPaneResize(e));
     byId<HTMLButtonElement>('log-close').addEventListener('click', () => this.toggleLog(false));
     this.renderSessions();
     window.addEventListener('message', (ev) => this.onFrameMessage(ev));
@@ -651,7 +656,68 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
 
   private sameBar(entry: Entry): (e: Entry) => boolean {
     const terminal = entry.kind === 'terminal';
-    return (e) => (e.kind === 'terminal') === terminal;
+    return (e) => (e.kind === 'terminal') === terminal && e !== this.split;
+  }
+
+  // --- split view ---
+
+  /** Shows a session in a pane of its own right of the others; the pane holds one session, its tab above it. */
+  private splitRight(entry: Entry): void {
+    if (entry.kind !== 'terminal') return;
+    if (this.split === entry) return;
+    if (this.split) this.unsplit(false);
+    this.split = entry;
+    const tabs = this.pane2.querySelector('.pane-tabs') as HTMLElement;
+    const frames = this.pane2.querySelector('.pane-frames') as HTMLElement;
+    tabs.append(entry.button);
+    frames.append(entry.tab.frame);
+    entry.button.classList.add('in-pane');
+    entry.tab.frame.classList.add('active');
+    this.pane2.hidden = false;
+    this.paneSplit.hidden = false;
+    if (this.active === entry) {
+      const other = this.entries.find((e) => e !== entry);
+      if (other) this.activate(other);
+      else this.active = undefined;
+    }
+    this.renderTabButton(entry);
+    this.refresh();
+    entry.tab.focus();
+  }
+
+  /** The pane's session goes back among the tabs (and to the front, unless told otherwise). */
+  private unsplit(bringToFront = true): void {
+    const entry = this.split;
+    if (!entry) return;
+    this.split = undefined;
+    entry.button.classList.remove('in-pane');
+    this.tabbar.append(entry.button);
+    // Keep the bar in the entries' order.
+    for (const e of this.entries) if (e.kind === 'terminal') this.tabbar.append(e.button);
+    this.frames.append(entry.tab.frame);
+    this.pane2.hidden = true;
+    this.paneSplit.hidden = true;
+    this.renderTabButton(entry);
+    if (bringToFront) this.activate(entry);
+    else {
+      entry.tab.frame.classList.toggle('active', entry === this.active);
+      this.refresh();
+    }
+  }
+
+  private startPaneResize(e: MouseEvent): void {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = this.pane2.getBoundingClientRect().width;
+    const move = (ev: MouseEvent): void => {
+      this.pane2.style.width = `${Math.max(240, startW - (ev.clientX - startX))}px`;
+    };
+    const up = (): void => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
   }
 
   /** Water-drop rings at a client point: the pointer crossing the edge, or a tab landing. */
@@ -720,18 +786,34 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     close.title = 'Close';
     close.addEventListener('mousedown', (ev) => ev.stopPropagation());
     close.addEventListener('click', () => void this.close(entry));
-    b.append(label, close);
+    b.append(label);
+    if (entry.kind === 'terminal') {
+      const inPane = entry === this.split;
+      const split = el('button', 'split');
+      split.type = 'button';
+      split.title = inPane ? 'Back among the tabs (unsplit)' : 'Show in a pane on the right (split)';
+      split.innerHTML = ICONS[inPane ? 'unsplit' : 'split'];
+      split.addEventListener('mousedown', (ev) => ev.stopPropagation());
+      split.addEventListener('click', () => (inPane ? this.unsplit() : this.splitRight(entry)));
+      b.append(split);
+    }
+    b.append(close);
     b.classList.toggle('active', entry === this.active);
     b.setAttribute('aria-selected', String(entry === this.active));
   }
 
   private activate(entry: Entry): void {
+    if (entry === this.split) {
+      // The pane's session is always on show; a click on its tab only gives it the keyboard.
+      entry.tab.focus();
+      return;
+    }
     const previous = this.active;
     this.active = entry;
     for (const e of this.entries) {
-      e.tab.frame.classList.toggle('active', e === entry);
-      e.button.classList.toggle('active', e === entry);
-      e.button.setAttribute('aria-selected', String(e === entry));
+      e.tab.frame.classList.toggle('active', e === entry || e === this.split);
+      e.button.classList.toggle('active', e === entry || e === this.split);
+      e.button.setAttribute('aria-selected', String(e === entry || e === this.split));
     }
     if (previous !== entry) entry.button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     this.refresh();
@@ -758,6 +840,11 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   private removeEntry(entry: Entry, handedOver = false): void {
     const i = this.entries.indexOf(entry);
     if (i < 0) return;
+    if (entry === this.split) {
+      this.split = undefined;
+      this.pane2.hidden = true;
+      this.paneSplit.hidden = true;
+    }
     this.entries.splice(i, 1);
     if (handedOver && (entry.kind === 'ifs' || entry.kind === 'sql')) entry.tab.dispose({ keepSession: true });
     else entry.tab.dispose();
@@ -814,8 +901,8 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     // One tab needs no tab bar (the window title names it); it appears with the second tab,
     // or as soon as there is another window to drag the tab to.
     const windows = new Set(this.registry.map((t) => t.window)).add(this.windowName);
-    const sessions = this.entries.filter((e) => e.kind === 'terminal').length;
-    this.tabbar.hidden = sessions === 0 || (sessions < 2 && windows.size < 2);
+    const sessions = this.entries.filter((e) => e.kind === 'terminal' && e !== this.split).length;
+    this.tabbar.hidden = sessions === 0 || (sessions < 2 && windows.size < 2 && !this.split);
     this.toolstrip.classList.toggle('has-tools', sessions < this.entries.length);
     const t = this.activeTerminal();
     const title = this.active ? `${this.active.tab.title} - ${APP_NAME}` : APP_NAME;
@@ -1665,6 +1752,9 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
           { label: 'Duplicate Session', run: () => this.duplicate(), enabled: live },
           { label: 'Close Tab', run: () => this.active && void this.close(this.active), enabled: () => !!this.active },
           '-',
+          { label: 'Split Right', run: () => this.active && this.splitRight(this.active), enabled: () => this.active?.kind === 'terminal' && this.entries.filter((e) => e.kind === 'terminal').length > 1 },
+          { label: 'Unsplit', run: () => this.unsplit(), enabled: () => !!this.split },
+          '-',
           { label: 'New Window', run: () => void this.newWindow().catch((err: unknown) => this.notify(`Could not open a window: ${errorText(err)}`)) },
           { label: 'Move Tab to New Window', run: () => void this.moveActiveToNewWindow(), enabled: live },
           { label: 'Merge Tab into Main Window', run: () => void this.mergeActiveIntoMain(), enabled: () => live() && this.windowName !== MAIN_WINDOW },
@@ -1745,9 +1835,10 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   }
 
   private cycle(step: number): void {
-    if (!this.active || this.entries.length < 2) return;
-    const i = this.entries.indexOf(this.active);
-    const next = this.entries[(i + step + this.entries.length) % this.entries.length];
+    const list = this.entries.filter((e) => e !== this.split);
+    if (!this.active || list.length < 2) return;
+    const i = list.indexOf(this.active);
+    const next = list[(i + step + list.length) % list.length];
     if (next) this.activate(next);
   }
 
