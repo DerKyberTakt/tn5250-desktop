@@ -4,6 +4,7 @@ import { decoratedFieldCells, detectSubfiles, fieldRanges, keyLabelsIn, markedFi
 import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
 import { highlightScreen, Tok } from '../shared/sourceHighlight';
 import { fitFont, shrinkScale } from './fit';
+import { placeWatermark, tileWatermark } from './watermark';
 import { scrollBarGeometry, scrollBarHit, type Rect, type ScrollBarGeometry, type ScrollHit } from './gui';
 
 /** Width of the gutter right of the text where the synthetic subfile scroll bar lives. */
@@ -81,6 +82,8 @@ const SYNTAX_COLORS: Record<number, Color> = {
 export interface Theme {
   background: string;
   colors: Record<Color, string>;
+  /** Background behind text of a colour; missing or '' = the screen background. */
+  backgrounds?: Partial<Record<Color, string>>;
   cursor: string;
   activeField: string;
   ruleLine: string;
@@ -588,8 +591,12 @@ export class Renderer {
       const kind = this.syntax?.[i];
       if (kind && current.color === 'green' && !current.reverse) fg = this.theme.colors[SYNTAX_COLORS[kind] ?? 'green'];
 
+      const bg = this.theme.backgrounds?.[current.color] || '';
       if (current.reverse) {
         ctx.fillStyle = fg;
+        ctx.fillRect(x, y, this.cellW + 0.5, this.cellH);
+      } else if (bg && ch !== NULL) {
+        ctx.fillStyle = bg;
         ctx.fillRect(x, y, this.cellW + 0.5, this.cellH);
       }
       // Enhanced mode replaces the underline of input fields with boxes; everything else
@@ -1098,20 +1105,7 @@ export class Renderer {
     const pad = o.watermarkPadding;
     const p = o.watermarkPosition;
     const tile = p === 'tile';
-    const place = (mw: number, mh: number): [number, number] => {
-      let x = (w - mw) / 2;
-      let y = (h - mh) / 2;
-      if (p === 'custom') {
-        const pct = (v: number): number => Math.max(0, Math.min(100, v)) / 100;
-        x = (w - mw) * pct(o.watermarkX);
-        y = (h - mh) * pct(o.watermarkY);
-      }
-      if (p.startsWith('top')) y = pad;
-      if (p.startsWith('bottom')) y = h - mh - pad;
-      if (p.endsWith('Left')) x = pad;
-      if (p.endsWith('Right')) x = w - mw - pad;
-      return [x + o.watermarkOffsetX, y + o.watermarkOffsetY];
-    };
+    const place = (mw: number, mh: number): [number, number] => placeWatermark({ position: p, x: o.watermarkX, y: o.watermarkY, padding: pad, offsetX: o.watermarkOffsetX, offsetY: o.watermarkOffsetY }, w, h, mw, mh);
     /** Draws one mark, or (tile) repeats it over the whole screen in a brick pattern shifted by the offsets. */
     const stamp = (mw: number, mh: number, draw: (x: number, y: number) => void): void => {
       if (!tile) {
@@ -1119,12 +1113,7 @@ export class Renderer {
         draw(x, y);
         return;
       }
-      const gap = Math.max(8, pad * 2);
-      const stepX = mw + gap;
-      const stepY = mh + gap;
-      const mod = (a: number, b: number): number => ((a % b) + b) % b;
-      const x0 = mod(o.watermarkOffsetX, stepX) - stepX;
-      const y0 = mod(o.watermarkOffsetY, stepY) - stepY;
+      const { stepX, stepY, x0, y0 } = tileWatermark({ gap: pad, offsetX: o.watermarkOffsetX, offsetY: o.watermarkOffsetY }, mw, mh);
       for (let row = 0, y = y0; y < h; row++, y += stepY) {
         const shift = row % 2 ? stepX / 2 : 0;
         for (let x = x0 - shift; x < w; x += stepX) draw(x, y);

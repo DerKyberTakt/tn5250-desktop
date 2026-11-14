@@ -774,6 +774,13 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       const dot = el('span', `dot ${entry.tab.status}`);
       dot.title = entry.tab.statusDetail || entry.tab.status;
       b.append(dot);
+      // Tab Setup: a colour stripe and a short mark per connection, to tell production from test.
+      const p = entry.tab.profile;
+      const color = p?.tabColor && /^#[0-9a-fA-F]{6}$/.test(p.tabColor) ? p.tabColor : '';
+      b.style.setProperty('--tab-color', color);
+      b.classList.toggle('coloured', !!color);
+      const mark = p?.tabIcon?.trim().slice(0, 3) ?? '';
+      if (mark) b.append(el('span', 'mark', mark));
     } else {
       b.classList.add('tooltab');
       const icon = el('span', 'tool-icon');

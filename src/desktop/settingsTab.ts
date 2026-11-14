@@ -73,7 +73,7 @@ export class SettingsTab {
     const sessions = store.readSessions();
     const current = this.select < 0 ? defaults : resolveSettings(defaults, sessions[this.select] ?? { host: '' });
     const merged = { ...current, ...(patch ?? {}) };
-    return { type: 'data', defaults, sessions, select: this.select, patch, fonts: [], watermarkImageData: await this.watermarkData(merged) };
+    return { type: 'data', defaults, sessions, select: this.select, patch, fonts: [], watermarkImageData: await this.watermarkData(merged), hostKind: 'desktop' };
   }
 
   /** The watermark image of a profile as a data URL, for the preview. */

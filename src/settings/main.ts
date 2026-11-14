@@ -154,6 +154,10 @@ type FieldSpec = { showIf?: Key; hideIf?: Key; showWhen?: [Key, string[]]; locke
   | { kind: 'bool'; key: Key; label: string; note?: string }
   | { kind: 'select'; key: Key; label: string; options: Array<[string, string]> }
   | { kind: 'color'; key: Key; label: string }
+  /** A text colour with the background behind it (field colours). */
+  | { kind: 'colorPair'; key: Key; bgKey: Key; label: string }
+  /** Small buttons side by side on one row. */
+  | { kind: 'buttonRow'; label: string; buttons: Array<{ text: string; message: 'exportColors' | 'importColors' | 'resetColors'; title: string }> }
   | { kind: 'file'; key: Key; label: string; message: 'browseWatermark' | 'browseFile' }
   | { kind: 'font'; key: Key; label: string }
   | { kind: 'watermarkPreview' }
@@ -189,8 +193,11 @@ const HELP: Partial<Record<Key, string>> = {
   tlsClientCert: 'PKCS#12 (.pfx/.p12) bundle, or the PEM certificate when using separate files.',
   tlsClientKey: 'PEM private key, only for the PEM mode. The passphrase, if any, is set with the button below and kept in the secret store.',
   fontFile: 'Font file imported into the extension storage.',
-  watermarkOffsetX: 'Moves the watermark left (negative) or right (positive) from its position. Drag it in the preview.',
-  watermarkOffsetY: 'Moves the watermark up (negative) or down (positive) from its position. Drag it in the preview.',
+  watermarkOffsetX: 'Moves the watermark left (negative) or right (positive) from its position (Center, a corner, or the tile pattern). Drag it in the preview. A Custom position uses the sliders alone.',
+  watermarkOffsetY: 'Moves the watermark up (negative) or down (positive) from its position (Center, a corner, or the tile pattern). Drag it in the preview. A Custom position uses the sliders alone.',
+  tabColor: 'A colour stripe on this connection\u2019s tab in the desktop app, to tell production from test at a glance. Blank = none.',
+  tabIcon: 'A short mark (an emoji or up to three letters) shown before the title on this connection\u2019s tab. Blank = none.',
+  colorGreenBg: 'Background behind text of this colour. Blank = the screen background.',
   cursorStyle: 'Block fills the whole cell; Underline draws a line under it.',
   pointer: 'Mouse pointer shape over the screen.',
   cursorBlink: 'Blink the cursor. Off keeps it steady.',
@@ -407,8 +414,8 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'range', key: 'watermarkY', label: 'Vertical position (%)', min: 0, max: 100, step: 0.5, showWhen: ['watermarkPosition', ['custom']] },
       { kind: 'range', key: 'watermarkPadding', label: 'Edge distance (px)', min: 0, max: 200, step: 1, showWhen: ['watermarkPosition', ['topLeft', 'topRight', 'bottomLeft', 'bottomRight']] },
       { kind: 'range', key: 'watermarkPadding', label: 'Gap between marks (px)', min: 0, max: 200, step: 1, showWhen: ['watermarkPosition', ['tile']] },
-      { kind: 'range', key: 'watermarkOffsetX', label: 'Horizontal offset (px)', min: -600, max: 600, step: 1 },
-      { kind: 'range', key: 'watermarkOffsetY', label: 'Vertical offset (px)', min: -400, max: 400, step: 1 },
+      { kind: 'range', key: 'watermarkOffsetX', label: 'Horizontal offset (px)', min: -600, max: 600, step: 1, showWhen: ['watermarkPosition', ['center', 'topLeft', 'topRight', 'bottomLeft', 'bottomRight', 'tile']] },
+      { kind: 'range', key: 'watermarkOffsetY', label: 'Vertical offset (px)', min: -400, max: 400, step: 1, showWhen: ['watermarkPosition', ['center', 'topLeft', 'topRight', 'bottomLeft', 'bottomRight', 'tile']] },
       { kind: 'range', key: 'watermarkOpacity', label: 'Opacity', min: 0, max: 1, step: 0.05 },
       { kind: 'watermarkPreview' },
     ],
@@ -418,14 +425,23 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     title: 'Colors',
     group: 'Appearance',
     fields: [
-      { kind: 'heading', label: 'Field colours' },
-      { kind: 'color', key: 'colorGreen', label: 'Green' },
-      { kind: 'color', key: 'colorWhite', label: 'White' },
-      { kind: 'color', key: 'colorRed', label: 'Red' },
-      { kind: 'color', key: 'colorTurquoise', label: 'Turquoise' },
-      { kind: 'color', key: 'colorYellow', label: 'Yellow' },
-      { kind: 'color', key: 'colorPink', label: 'Pink' },
-      { kind: 'color', key: 'colorBlue', label: 'Blue' },
+      {
+        kind: 'buttonRow',
+        label: 'Colour set',
+        buttons: [
+          { text: 'Export…', message: 'exportColors', title: 'Save every colour on this page to a .json file' },
+          { text: 'Import…', message: 'importColors', title: 'Load the colours from a .json file (Save keeps them)' },
+          { text: 'Reset All', message: 'resetColors', title: 'Every colour on this page back to its default' },
+        ],
+      },
+      { kind: 'heading', label: 'Field colours (text, background)' },
+      { kind: 'colorPair', key: 'colorGreen', bgKey: 'colorGreenBg', label: 'Green' },
+      { kind: 'colorPair', key: 'colorWhite', bgKey: 'colorWhiteBg', label: 'White' },
+      { kind: 'colorPair', key: 'colorRed', bgKey: 'colorRedBg', label: 'Red' },
+      { kind: 'colorPair', key: 'colorTurquoise', bgKey: 'colorTurquoiseBg', label: 'Turquoise' },
+      { kind: 'colorPair', key: 'colorYellow', bgKey: 'colorYellowBg', label: 'Yellow' },
+      { kind: 'colorPair', key: 'colorPink', bgKey: 'colorPinkBg', label: 'Pink' },
+      { kind: 'colorPair', key: 'colorBlue', bgKey: 'colorBlueBg', label: 'Blue' },
       { kind: 'heading', label: 'OIA colours' },
       { kind: 'color', key: 'colorOiaStatus', label: 'Status indicators' },
       { kind: 'color', key: 'colorOiaInfo', label: 'Information indicators' },
@@ -438,9 +454,6 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       { kind: 'color', key: 'colorActiveField', label: 'Active field', lockedWhen: whenEnhanced },
       { kind: 'color', key: 'colorRuleLine', label: 'Crosshair ruler' },
       { kind: 'text', key: 'colorColumnSeparator', label: 'Column separator', placeholder: 'blank = field colour, or #rrggbb' },
-      { kind: 'button', label: '', text: 'Export…', message: 'exportColors' },
-      { kind: 'button', label: '', text: 'Import…', message: 'importColors' },
-      { kind: 'button', label: '', text: 'Reset All', message: 'resetColors' },
       { kind: 'preview' },
     ],
   },
@@ -529,7 +542,9 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       YESNO('switchToNewTab', 'Switch to new tab when created'),
       YESNO('warnOnCloseMultiple', 'Send a warning when disconnecting multiple tabs'),
       { kind: 'static', label: 'New tab action', text: 'TN5250: New Tab (Ctrl+Alt+N) runs the same session as the focused tab.' },
-      { kind: 'static', label: 'Tab appearance', text: 'VS Code does not allow per-tab colours, fonts or sizes; the title is composed on the Window Title page.' },
+      { kind: 'heading', label: 'Tab appearance (per connection; the title is composed on the Window Title page)' },
+      { kind: 'color', key: 'tabColor', label: 'Tab colour' },
+      { kind: 'text', key: 'tabIcon', label: 'Tab mark', placeholder: 'an emoji or up to 3 letters, e.g. PRD' },
     ],
   },
   { id: 'keyboard', title: 'Keyboard', group: 'Keyboard', fields: [] },
@@ -618,7 +633,7 @@ function searchFields(query: string): Array<{ page: (typeof PAGES)[number]; fiel
   const out: Array<{ page: (typeof PAGES)[number]; field: FieldSpec }> = [];
   for (const p of PAGES) {
     for (const f of p.fields) {
-      if (f.kind === 'heading' || f.kind === 'preview' || f.kind === 'watermarkPreview' || f.kind === 'static') continue;
+      if (f.kind === 'heading' || f.kind === 'preview' || f.kind === 'watermarkPreview' || f.kind === 'static' || f.kind === 'buttonRow') continue;
       const hay = [f.label, 'key' in f ? String(f.key) : '', 'key' in f ? (HELP[f.key] ?? '') : '', p.title, p.group].join(' ').toLowerCase();
       if (hay.includes(q)) out.push({ page: p, field: f });
     }
@@ -630,6 +645,7 @@ let searchQuery = '';
 /** Filter typed into the Keyboard page's own search box. */
 let keySearch = '';
 let fonts: Array<{ family: string; monospace: boolean }> = [];
+let hostKind: 'vscode' | 'desktop' = 'vscode';
 let watermarkImageData: string | undefined;
 let fontFace: { family: string; url: string } | undefined;
 let monospaceOnly = true;
@@ -689,6 +705,19 @@ function renderNav(): HTMLElement {
   return nav;
 }
 
+/** Export, Import and Reset All of the Colors page. */
+function runColorButton(message: 'exportColors' | 'importColors' | 'resetColors'): void {
+  if (message === 'resetColors') {
+    for (const k of COLOR_KEYS) (values as unknown as Record<string, unknown>)[k] = SETTINGS_DEFAULTS[k];
+    dirty = true;
+    render();
+  } else if (message === 'exportColors') {
+    const out: Record<string, string> = {};
+    for (const k of COLOR_KEYS) out[k] = String(values[k]);
+    post({ type: 'exportColors', values: out });
+  } else post({ type: 'importColors' });
+}
+
 function colorInput(key: Key): HTMLElement {
   const wrap = el('span', 'colorrow');
   const current = String(values[key] ?? '');
@@ -724,6 +753,7 @@ function updatePreview(): void {
     background: v.colorBackground,
     cursor: v.colorCursor,
     colors: { green: v.colorGreen, white: v.colorWhite, red: v.colorRed, turquoise: v.colorTurquoise, yellow: v.colorYellow, pink: v.colorPink, blue: v.colorBlue },
+    backgrounds: { green: v.colorGreenBg, white: v.colorWhiteBg, red: v.colorRedBg, turquoise: v.colorTurquoiseBg, yellow: v.colorYellowBg, pink: v.colorPinkBg, blue: v.colorBlueBg },
     activeField: v.colorActiveField,
     ruleLine: v.colorRuleLine,
     columnSeparator: v.colorColumnSeparator,
@@ -818,16 +848,23 @@ function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
     c.id = 'preview';
     c.title = 'Drag the watermark to adjust its offset';
     box.append(c);
-    let drag: { x: number; y: number; ox: number; oy: number } | undefined;
+    let drag: { x: number; y: number; ox: number; oy: number; px: number; py: number } | undefined;
     c.onmousedown = (e) => {
-      drag = { x: e.clientX, y: e.clientY, ox: values.watermarkOffsetX, oy: values.watermarkOffsetY };
+      drag = { x: e.clientX, y: e.clientY, ox: values.watermarkOffsetX, oy: values.watermarkOffsetY, px: values.watermarkX, py: values.watermarkY };
     };
     window.addEventListener('mousemove', (e) => {
       if (!drag) return;
-      // The preview is 560 px wide for an 80-column screen; scale to full-size pixels.
-      const scale = 2;
-      values.watermarkOffsetX = Math.round(drag.ox + (e.clientX - drag.x) * scale);
-      values.watermarkOffsetY = Math.round(drag.oy + (e.clientY - drag.y) * scale);
+      if (values.watermarkPosition === 'custom') {
+        // A custom position is a percentage of the screen: the drag moves the sliders.
+        const pct = (d: number, size: number): number => (d / size) * 100;
+        values.watermarkX = Math.max(0, Math.min(100, Math.round((drag.px + pct(e.clientX - drag.x, c.clientWidth || 560)) * 2) / 2));
+        values.watermarkY = Math.max(0, Math.min(100, Math.round((drag.py + pct(e.clientY - drag.y, c.clientHeight || 200)) * 2) / 2));
+      } else {
+        // The preview is 560 px wide for an 80-column screen; scale to full-size pixels.
+        const scale = 2;
+        values.watermarkOffsetX = Math.round(drag.ox + (e.clientX - drag.x) * scale);
+        values.watermarkOffsetY = Math.round(drag.oy + (e.clientY - drag.y) * scale);
+      }
       dirty = true;
       updatePreview();
     });
@@ -859,6 +896,17 @@ function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
   row.append(label);
   if (f.kind === 'static') {
     row.append(el('span', f.label === 'Warning' ? 'static warn' : 'static', f.text));
+    return row;
+  }
+  if (f.kind === 'buttonRow') {
+    const wrap = el('span', 'buttonrow');
+    for (const spec of f.buttons) {
+      const b = el('button', 'secondary small', spec.text);
+      b.title = spec.title;
+      b.onclick = () => runColorButton(spec.message);
+      wrap.append(b);
+    }
+    row.append(wrap);
     return row;
   }
   if (f.kind === 'button') {
@@ -938,6 +986,12 @@ function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
   }
   if (f.kind === 'color') {
     row.append(colorInput(key));
+    return row;
+  }
+  if (f.kind === 'colorPair') {
+    const wrap = el('span', 'colorpair');
+    wrap.append(colorInput(key), el('span', 'pair-label', 'on'), colorInput(f.bgKey));
+    row.append(wrap);
     return row;
   }
   if (f.kind === 'file') {
@@ -1411,7 +1465,7 @@ function renderButtons(): void {
     remove.onclick = () => post({ type: 'removeSession', index: selected });
     bar.append(remove);
   }
-  const json = el('button', 'link', 'Open in VS Code Settings');
+  const json = el('button', 'link', hostKind === 'desktop' ? 'Open the settings file' : 'Open in VS Code Settings');
   json.onclick = () => post({ type: 'openJson' });
   bar.append(json);
 }
@@ -1600,6 +1654,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
   if (ev.data.type !== 'data') return;
   defaults = ev.data.defaults;
   sessions = ev.data.sessions;
+  if (ev.data.hostKind) hostKind = ev.data.hostKind;
   if (ev.data.fonts) fonts = ev.data.fonts;
   watermarkImageData = ev.data.watermarkImageData;
   fontFace = ev.data.fontFace;
