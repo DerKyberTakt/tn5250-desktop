@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -449,8 +448,8 @@ func (a *App) QshRun(id string, command string) (SqlResult, error) {
 		return SqlResult{}, err
 	}
 	out := SqlResult{Kind: "none", Messages: messagesOf(res), ElapsedMs: elapsed(start)}
-	if data, readErr := s.readAndRemove(stmf); readErr == nil {
-		out.Rows = sqlviacl.Lines(data)
+	if data, ccsid, readErr := s.readAndRemove(stmf); readErr == nil {
+		out.Rows = sqlviacl.Lines(sqlviacl.StreamText(data, ccsid))
 		if len(out.Rows) > 0 {
 			out.Kind = "rows"
 			out.Columns = []SqlColumn{{Name: "output", Type: "VARCHAR"}}
@@ -695,7 +694,7 @@ func (s *sqlSession) export(table, stmf string) ([]byte, []SqlMessage, error) {
 			}
 			return nil, messagesOf(res), nil
 		}
-		data, err := s.readAndRemove(stmf)
+		data, _, err := s.readAndRemove(stmf)
 		if err != nil {
 			return nil, nil, fmt.Errorf("reading the result file %s: %w", stmf, err)
 		}
@@ -745,23 +744,26 @@ func (s *sqlSession) tempFile(ext string) string {
 	return fmt.Sprintf("/tmp/tn5250-%s-%d-%d.%s", strings.ToLower(s.user), os.Getpid(), s.seq, ext)
 }
 
-// readAndRemove downloads a stream file over the file server and deletes it.
-func (s *sqlSession) readAndRemove(p string) ([]byte, error) {
+// readAndRemove downloads a stream file over the file server and deletes it; the file's
+// data CCSID comes back as the server tags it (0 = unknown).
+func (s *sqlSession) readAndRemove(p string) ([]byte, uint16, error) {
 	if s.files == nil {
 		c, err := ifs.Open(s.options)
 		if err != nil {
-			return nil, fmt.Errorf("file server: %w", err)
+			return nil, 0, fmt.Errorf("file server: %w", err)
 		}
 		s.files = c
 	}
-	var buf bytes.Buffer
-	err := s.files.Download(p, &buf, nil)
+	data, ccsid, _, err := s.files.ReadAll(p, streamFileMax)
 	_ = s.files.Remove(p, false)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return buf.Bytes(), nil
+	return data, ccsid, nil
 }
+
+// streamFileMax caps what a command's output file is read back as (256 MB).
+const streamFileMax = 256 << 20
 
 // keep remembers a result for paging, forgetting the oldest beyond a few.
 func (s *sqlSession) keep(table string, c *sqlCache) {
