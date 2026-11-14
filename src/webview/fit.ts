@@ -35,6 +35,15 @@ export interface FitResult {
 export const LINE_HEIGHT = 1.2;
 export const MIN_FONT_PX = 6;
 
+/**
+ * The factor that brings a drawing of cssW x cssH into a box of boxW x boxH (1 when it fits
+ * already): the whole screen stays in view instead of getting scroll bars.
+ */
+export function shrinkScale(cssW: number, cssH: number, boxW: number, boxH: number): number {
+  if (cssW <= 0 || cssH <= 0 || boxW <= 0 || boxH <= 0) return 1;
+  return Math.min(1, boxW / cssW, boxH / cssH);
+}
+
 export function fitFont(input: FitInput): FitResult {
   const { rows, cols, pad } = input;
   const availW = input.boxW - pad * 2;

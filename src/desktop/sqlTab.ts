@@ -2,7 +2,8 @@ import { errorText, goApp, type SqlConnInfo, type SqlConnectRequest, type SqlRes
 import { confirmDialog } from './dialogs';
 import { SqlEditor, highlightedCommand, highlightedSql } from './sqlEditor';
 import { ResultView, type ResultHost } from './sqlResult';
-import { splitStatements, statementLabel, statementsFrom, statementsIn, type Statement } from './sqlScript';
+import { actionButton, type ActionIconName, type ActionTone } from './icons';
+import { splitStatements, statementLabel, statementsIn, type Statement } from './sqlScript';
 import { isOutputLines, outcomeText } from './sqlText';
 import { explainToolError } from './toolErrors';
 
@@ -21,8 +22,8 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   return e;
 }
 
-/** Rows asked for per fetch; ACS shows 500 and offers more. */
-const FETCH_ROWS = 500;
+/** Rows asked for per fetch: the first block is quick like Db2 for i's; Fetch more and Retrieve all bring the rest. */
+const FETCH_ROWS = 100;
 const NOTHING_YET = 'No statement has run yet.';
 
 /** One statement's entry in the Output pane: its text, then what became of it. */
@@ -54,6 +55,8 @@ export class SqlTab {
   private results: ResultView[] = [];
   private resultSeq = 0;
   private readonly statusEl: HTMLSpanElement;
+  /** Next to the status: what the last statement did, so a run's outcome stays readable. */
+  private readonly lastEl: HTMLSpanElement;
   /** Right side of the foot: the server job and the transport. */
   private readonly jobEl: HTMLSpanElement;
   private readonly connEl: HTMLSpanElement;
@@ -68,39 +71,39 @@ export class SqlTab {
 
   constructor(
     private readonly host: SqlHost,
-    private readonly request: SqlConnectRequest,
+    readonly request: SqlConnectRequest,
     /** Told whether the first sign-on worked (error = why not). */
     private readonly onSignon?: (error?: unknown) => void,
+    /** A tab handed over by another window: its connection is open already. */
+    private readonly resume?: { connection: string; script: string; filePath: string; dirty: boolean },
   ) {
     this.title = `SQL - ${request.host}`;
     this.frame = el('div', 'terminal-frame sql');
     this.frame.tabIndex = -1;
 
-    const top = el('div', 'sql-top');
-    const btn = (key: string, text: string, title: string, run: () => void, primary = false): HTMLButtonElement => {
-      const b = el('button', primary ? 'primary' : undefined, text);
-      b.type = 'button';
-      b.title = title;
+    const top = el('div', 'sql-top icon-actions');
+    const btn = (key: string, icon: ActionIconName, title: string, tone: ActionTone, run: () => void): HTMLButtonElement => {
+      const b = actionButton(icon, title, tone);
+      b.classList.add(key);
       b.addEventListener('click', run);
       this.buttons[key] = b;
       return b;
     };
     const run = el('div', 'group');
     run.append(
-      btn('runSel', '▶ Run', 'Run the selected statements in order, or the one at the cursor (Ctrl+R)', () => void this.runSelected(), true),
-      btn('runAll', 'Run All', 'Run every statement (Ctrl+Shift+R)', () => void this.runAll()),
-      btn('runFrom', 'Run From Cursor', 'Run from the statement at the cursor to the end (Ctrl+Alt+R)', () => void this.runFromCursor()),
-      btn('stop', 'Stop', 'Cancel the current statement and stop', () => {
+      btn('runSel', 'play', 'Run the selected statements in order, or the one at the cursor (Ctrl+R)', 'green', () => void this.runSelected()),
+      btn('runAll', 'playAll', 'Run every statement (Ctrl+Shift+R)', 'green', () => void this.runAll()),
+      btn('stop', 'stop', 'Cancel the current statement and stop', 'red', () => {
         this.stopRequested = true;
-        void goApp().SqlCancel(this.connection);
-        if (this.busy) this.tick();
+        if (this.running) void goApp().SqlCancel(this.connection);
+        if (this.busy && this.running) this.tick();
       }),
     );
     const file = el('div', 'group');
     file.append(
-      btn('open', 'Open…', 'Open a .sql file', () => void this.open()),
-      btn('save', 'Save', 'Save the script (Ctrl+S)', () => void this.save(false)),
-      btn('saveAs', 'Save As…', 'Save the script under a new name', () => void this.save(true)),
+      btn('open', 'folderOpen', 'Open a .sql file', 'blue', () => void this.open()),
+      btn('save', 'save', 'Save the script (Ctrl+S)', 'blue', () => void this.save(false)),
+      btn('saveAs', 'saveAs', 'Save the script under a new name', 'blue', () => void this.save(true)),
     );
     this.naming = el('select');
     this.naming.title = 'Naming: SQL (schema.table) or system (library/file)';
@@ -118,7 +121,7 @@ export class SqlTab {
     this.notice.hidden = true;
 
     this.editor = new SqlEditor({
-      placeholder: 'SELECT * FROM QSYS2.SYSTABLES FETCH FIRST 50 ROWS ONLY;\nCL: DSPLIBL OUTPUT(*PRINT);\nQSH: ls -l /home',
+      placeholder: 'SELECT * FROM QSYS2.SYSTABLES FETCH FIRST 50 ROWS ONLY;\n-- CL commands and Qshell lines run here too:\nCL: DSPLIBL OUTPUT(*PRINT);\nQSH: ls -l /home',
       onChange: () => {
         this.dirty = true;
         this.updateTitle();
@@ -126,7 +129,6 @@ export class SqlTab {
       keys: {
         run: () => void this.runSelected(),
         runAll: () => void this.runAll(),
-        runFrom: () => void this.runFromCursor(),
         save: () => void this.save(false),
       },
     });
@@ -156,9 +158,13 @@ export class SqlTab {
 
     const foot = el('div', 'sql-foot');
     this.statusEl = el('span', undefined, 'Ready');
+    this.lastEl = el('span', 'sql-last');
+    this.lastEl.title = 'The last statement that ran and what became of it';
+    const left = el('span', 'sql-foot-left');
+    left.append(this.statusEl, this.lastEl);
     this.jobEl = el('span', 'sql-job');
     this.jobEl.title = 'The server job this session runs in';
-    foot.append(this.statusEl, this.jobEl);
+    foot.append(left, this.jobEl);
 
     this.frame.append(top, this.notice, this.editor.element, split, this.bottom, foot);
     this.updateButtons();
@@ -170,11 +176,27 @@ export class SqlTab {
 
   /** Signs on; called when the tab opens so a bad password shows at once. */
   async start(): Promise<void> {
+    if (this.resume?.connection) {
+      this.connection = this.resume.connection;
+      this.setScript(this.resume.script, this.resume.filePath);
+      this.dirty = this.resume.dirty;
+      this.updateTitle();
+      this.connEl.textContent = `${this.request.user.toUpperCase()}@${this.request.host} · ${this.naming.value === 'sys' ? 'system' : 'SQL'} naming`;
+      await this.showTransport();
+      this.statusEl.textContent = 'Ready';
+      return;
+    }
     await this.connect();
   }
 
-  dispose(): void {
-    if (this.connection) void goApp().SqlClose(this.connection);
+  /** Everything another window needs to carry this tab on (the results stay behind). */
+  snapshot(): { connection: string; script: string; filePath: string; dirty: boolean; naming: string } {
+    return { connection: this.connection, script: this.editor.value, filePath: this.filePath, dirty: this.dirty, naming: this.naming.value };
+  }
+
+  /** With keepSession the database connection stays open: another window takes the tab over. */
+  dispose(opts: { keepSession?: boolean } = {}): void {
+    if (this.connection && !opts.keepSession) void goApp().SqlClose(this.connection);
     this.endStatement();
     this.editor.destroy();
     this.frame.remove();
@@ -268,10 +290,6 @@ export class SqlTab {
     await this.runList(this.statements(), 'Run All');
   }
 
-  async runFromCursor(): Promise<void> {
-    await this.runList(statementsFrom(this.statements(), this.editor.selection().start, this.editor.value), 'Run From Cursor');
-  }
-
   private async runList(list: Statement[], label: string): Promise<void> {
     if (this.busy) return;
     if (!list.length) {
@@ -292,6 +310,8 @@ export class SqlTab {
           break;
         }
         const entry = this.beginStatement(i + 1, list.length, s);
+        // The session holds one open cursor: an SQL statement takes it from the earlier results.
+        if (s.kind === 'sql') for (const v of this.results) v.cursorLost();
         let r: SqlResult;
         try {
           r =
@@ -304,12 +324,14 @@ export class SqlTab {
           const why = explainToolError(s.kind === 'cl' ? 'CL' : s.kind === 'qsh' ? 'QSH' : 'SQL', this.request.host, errorText(err));
           this.endStatement();
           this.setOutcome(entry, 'error', `Failed: ${why.message}${why.hint ? ` ${why.hint}` : ''}`);
+          this.setLast('error', `Failed: ${why.message}`, s);
           failed = true;
           if (i < list.length - 1 && !(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue'))) break;
           continue;
         }
         this.endStatement();
         last = this.report(entry, s, r) ?? last;
+        this.setLast(r.kind === 'error' ? 'error' : 'ok', outcomeText(r, 0), s);
         if (r.kind === 'error') {
           failed = true;
           if (i < list.length - 1 && !(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue'))) break;
@@ -425,11 +447,18 @@ export class SqlTab {
     entry.box.scrollIntoView({ block: 'nearest' });
   }
 
+  /** The foot keeps the last statement's outcome next to the status, so Ready still tells what just happened. */
+  private setLast(kind: 'ok' | 'error', text: string, s: Statement): void {
+    this.lastEl.className = `sql-last ${kind}`;
+    this.lastEl.textContent = `${kind === 'ok' ? '✓' : '✗'} ${text.replace(/\.$/, '')} · ${statementLabel(s)}`;
+  }
+
   // ---- Result tabs -----------------------------------------------------------------
 
   private readonly resultHost: ResultHost = {
     fetchMore: async (cursor, max) => {
       if (this.busy) return undefined;
+      this.stopRequested = false;
       this.setBusy(true, 'Fetching more rows…');
       try {
         return await goApp().SqlFetch(this.connection, cursor, max);
@@ -440,6 +469,10 @@ export class SqlTab {
         this.setBusy(false);
         this.statusEl.textContent = 'Ready';
       }
+    },
+    stopRequested: () => this.stopRequested,
+    progress: (text) => {
+      if (text) this.statusEl.textContent = text;
     },
     notify: (text) => this.host.notify(text),
     activate: (view) => this.showResult(view),
@@ -536,8 +569,8 @@ export class SqlTab {
   }
 
   private updateButtons(): void {
-    for (const key of ['runSel', 'runAll', 'runFrom', 'open']) this.buttons[key]!.disabled = this.busy;
-    this.buttons.stop!.disabled = !this.busy;
+    for (const key of ['runSel', 'runAll', 'open']) this.buttons[key]!.disabled = this.busy;
+    this.buttons.stop!.disabled = !this.busy && !this.results.some((v) => v.fetching);
   }
 
   private updateTitle(): void {

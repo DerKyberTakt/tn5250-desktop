@@ -38,10 +38,15 @@ export const ICONS = {
   ifs: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="#b8891f" fill="#f2c95e"/><path d="M8 14h8" stroke="#7a5a10"/>'),
   /** Run SQL Scripts: a table with a lightning stroke. */
   sql: svg('<rect x="3" y="5" width="18" height="14" rx="1.5" stroke="#1f5fa8"/><path d="M3 10h18M9 10v9" stroke="#1f5fa8"/><path d="m15 7-2.5 4.5h3L13 16" stroke="#e0a21b" stroke-width="2" fill="none"/>'),
-  /** Console (CL / QSH): a prompt. */
-  console: svg('<rect x="3" y="5" width="18" height="14" rx="1.5" stroke="currentColor"/><path d="m7 9 3 3-3 3" stroke="#2e9b48" stroke-width="2"/><path d="M12 15h5" stroke="currentColor" stroke-width="2"/>'),
+  /** Split right: a window with a second pane beside the first. */
+  split: svg('<rect x="3" y="5" width="18" height="14" rx="1.5" stroke="currentColor"/><path d="M12 5v14" stroke="currentColor"/><path d="M15 10.5 17.5 12 15 13.5" stroke="#2e9b48" stroke-width="1.6"/>'),
+  /** Unsplit: the pane folds back into the tab bar. */
+  unsplit: svg('<rect x="3" y="5" width="18" height="14" rx="1.5" stroke="currentColor"/><path d="M12 5v14" stroke="currentColor"/><path d="m18 10.5-2.5 1.5 2.5 1.5" stroke="#c4372c" stroke-width="1.6"/>'),
+  /** A file viewer tab: a page with lines. */
+  viewer: svg('<path d="M6 3.5h8l4 4V20.5H6z" stroke="currentColor"/><path d="M14 3.5v4h4" stroke="currentColor"/><path d="M8.5 12h7M8.5 15h7M8.5 18h4" stroke="#1f5fa8"/>'),
+  /** Settings: a gear (eight teeth around a hub). */
   settings: svg(
-    '<circle cx="12" cy="12" r="3" stroke="currentColor"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor"/>',
+    '<path d="M10.6 3.2h2.8l.5 2.3a6.9 6.9 0 0 1 1.9 1.1l2.2-.8 1.4 2.4-1.7 1.6a6.9 6.9 0 0 1 0 2.2l1.7 1.6-1.4 2.4-2.2-.8a6.9 6.9 0 0 1-1.9 1.1l-.5 2.3h-2.8l-.5-2.3a6.9 6.9 0 0 1-1.9-1.1l-2.2.8-1.4-2.4 1.7-1.6a6.9 6.9 0 0 1 0-2.2L4.6 8.2 6 5.8l2.2.8a6.9 6.9 0 0 1 1.9-1.1z" stroke="currentColor"/><circle cx="12" cy="12" r="2.6" stroke="currentColor"/>',
   ),
   /** Check for updates: glows green when a newer release exists. */
   update: svg('<path d="M12 3.5v11" stroke="currentColor" stroke-width="2"/><path d="m7.5 10 4.5 4.5 4.5-4.5" stroke="currentColor" stroke-width="2"/><path d="M4.5 16v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V16" stroke="currentColor"/>'),
@@ -60,6 +65,22 @@ const action = (body: string): string =>
 export const ACTION_ICONS = {
   /** Run: a play triangle. */
   play: action('<path class="shape" d="M9.3 7.2v9.6l7.9-4.8z" fill="currentColor" stroke="none"/>'),
+  /** Run all: two play triangles. */
+  playAll: action('<path class="shape" d="M5.5 7.4v9.2l6.4-4.6zM12.3 7.4v9.2l6.4-4.6z" fill="currentColor" stroke="none"/>'),
+  /** Stop: a square. */
+  stop: action('<rect class="shape" x="7.5" y="7.5" width="9" height="9" rx="1.2" fill="currentColor" stroke="none"/>'),
+  /** Open: a folder opening. */
+  folderOpen: action('<g class="shape"><path d="M4.5 8V6.5a1 1 0 0 1 1-1h3.2l1.4 1.4h7.4a1 1 0 0 1 1 1V10"/><path d="M3.8 10.5h14.9l-1.6 7.5a1 1 0 0 1-1 .8H6.2a1 1 0 0 1-1-.8z"/></g>'),
+  /** Markdown: a page with an M. */
+  markdown: action('<g class="shape"><rect x="5" y="6" width="14" height="12" rx="1.2"/><path d="M8 15v-6l2.5 3 2.5-3v6"/><path d="M15.5 9.5v5.5M14 13.5l1.5 1.5 1.5-1.5"/></g>'),
+  /** TSV: a table. */
+  tsv: action('<g class="shape"><rect x="5" y="6" width="14" height="12" rx="1.2"/><path d="M5 10h14M5 14h14M10 6v12M15 6v12"/></g>'),
+  /** CSV file: a page with a down arrow. */
+  csv: action('<g class="shape"><path d="M7 4.5h6.5L17 8v11.5H7z"/><path d="M13.5 4.5V8H17"/><path d="M12 10.5v6M9.8 14.3l2.2 2.2 2.2-2.2"/></g>'),
+  /** Fetch more: rows with an arrow down. */
+  fetchMore: action('<g class="shape"><path d="M5.5 7h8M5.5 10.5h8M5.5 14h5"/><path d="M17 7v10M14.6 14.6 17 17l2.4-2.4"/></g>'),
+  /** Retrieve all: rows with a double arrow down. */
+  fetchAll: action('<g class="shape"><path d="M5.5 7h7M5.5 10.5h7M5.5 14h4"/><path d="M17 5.5v12M14.6 11.2 17 13.6l2.4-2.4M14.6 15.1 17 17.5l2.4-2.4"/></g>'),
   /** Edit: a pencil. */
   pencil: action('<g class="shape"><path d="m14.6 6.4 3 3L9.4 17.6 6 18l.4-3.4z"/><path d="m13.2 7.8 3 3"/></g>'),
   /** Delete: a trash can; the lid is its own group and swings open on hover. */
@@ -80,6 +101,8 @@ export const ACTION_ICONS = {
   refresh: action('<g class="shape"><path d="M17.5 10.5A6 6 0 1 0 18 13.5"/><path d="M18 6v4.5h-4.5"/></g>'),
   /** Folder tree: a folder with a branch. */
   folderTree: action('<g class="shape"><path d="M5.5 8.5V6a1 1 0 0 1 1-1h3l1.5 1.5H17a1 1 0 0 1 1 1v2"/><path d="M4.5 10.5h15l-1 8.5H5.5z"/><path d="M8.5 14h3M8.5 16.5h5"/></g>'),
+  /** Subfolders: a folder with two smaller folders branching below it. */
+  subtree: action('<g class="shape"><path d="M4.5 6.5a1 1 0 0 1 1-1h2.6l1.2 1.2H12a1 1 0 0 1 1 1V10H4.5z"/><path d="M7 10v7.5h3.5"/><path d="M7 13.5h3.5"/><path d="M10.5 12.3a.8.8 0 0 1 .8-.8h1.9l.9.9h4.3a.8.8 0 0 1 .8.8v2.3h-8.7z"/><path d="M10.5 16.3a.8.8 0 0 1 .8-.8h1.9l.9.9h4.3a.8.8 0 0 1 .8.8v2.3h-8.7z"/></g>'),
   /** New folder: a folder with a plus. */
   newFolder: action('<g class="shape"><path d="M4 7.5a1.5 1.5 0 0 1 1.5-1.5H9l1.5 1.5h7A1.5 1.5 0 0 1 19 9v8a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 4 17z"/><path d="M11.5 11v5M9 13.5h5"/></g>'),
   /** View: an eye. */

@@ -3,6 +3,7 @@
  * (render them). Both directions travel as the Wails event "relay", delivered to one window
  * by the Go `Relay` binding. Pure types and the tab registry; no DOM, no runtime.
  */
+import type { IfsConnectRequest, SqlConnectRequest } from './bridge';
 import type { ConnectionStatus, HostToWebview, WebviewToHost } from '../shared/protocol';
 import type { TerminalSettings } from '../shared/settings';
 
@@ -23,6 +24,8 @@ export type ToBroker =
   | { type: 'tab:reload'; tab: string; profile: TerminalSettings }
   /** at: where the tab was dropped (screen point), so the receiving window can splash there. */
   | { type: 'tab:move'; tab: string; window: string; at?: { x: number; y: number } }
+  /** A tool tab (IFS, SQL, viewer, Settings) moves to another window with everything it needs to carry on. */
+  | { type: 'tool:move'; window: string; state: ToolState; at?: { x: number; y: number } }
   | { type: 'tab:close'; tab: string }
   | { type: 'tab:trace'; tab: string; request: string }
   | { type: 'ui:answer'; request: string; ok: boolean };
@@ -42,7 +45,16 @@ export type ToWindow =
   /** Another window saved settings.json: reload it and refresh. */
   | { type: 'store:changed' }
   /** From another window (the Connections tree): bring this tab to the front. */
-  | { type: 'tab:activate'; tab: string };
+  | { type: 'tab:activate'; tab: string }
+  /** A tool tab handed to this window: rebuild it from its state. */
+  | { type: 'tool:opened'; state: ToolState; at?: { x: number; y: number } };
+
+/** What a tool tab is made of when it changes windows; the host-server sessions stay open throughout. */
+export type ToolState =
+  | { kind: 'ifs'; request: IfsConnectRequest; session: string; cwd: string; history: string[] }
+  | { kind: 'sql'; request: SqlConnectRequest; connection: string; script: string; filePath: string; dirty: boolean }
+  | { kind: 'ifsview'; sessionId: string; path: string; info: { size: number; modified: string }; draft?: string }
+  | { kind: 'settings'; select: number };
 
 /** What every window knows about every session, for the Connections tree. */
 export interface RegistryEntry {

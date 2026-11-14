@@ -62,6 +62,8 @@ export interface TerminalSettings {
   autoFit: boolean;
   /** With autoFit: stretch the screen to fill the window (text scaled sideways), as ACS does. */
   fillWindow: boolean;
+  /** A screen bigger than its box (a fixed font, a tiny window): shrink the drawing to fit, or show scroll bars. */
+  screenOverflow: 'shrink' | 'scroll';
   fontFamily: string;
   /** A font file imported through Settings > Font (loaded with @font-face). */
   fontFile: string;
@@ -93,6 +95,14 @@ export interface TerminalSettings {
   colorYellow: string;
   colorPink: string;
   colorBlue: string;
+/** Background behind text of that colour; '' = the screen background. */
+colorGreenBg: string;
+colorWhiteBg: string;
+colorRedBg: string;
+colorTurquoiseBg: string;
+colorYellowBg: string;
+colorPinkBg: string;
+colorBlueBg: string;
   colorBackground: string;
   colorCursor: string;
   colorOiaStatus: string;
@@ -152,6 +162,9 @@ export interface TerminalSettings {
   titleMaxLength: number;
   switchToNewTab: boolean;
   warnOnCloseMultiple: boolean;
+/** A colour stripe on the session's tab ('' = none) and a short mark (emoji or letters) before its title. */
+tabColor: string;
+tabIcon: string;
 
   // Preferences
   mouseWheelPaging: boolean;
@@ -208,6 +221,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
 
   autoFit: true,
   fillWindow: true,
+  screenOverflow: 'shrink',
   fontFamily: '',
   fontFile: '',
   fontSize: 14,
@@ -232,6 +246,13 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   colorYellow: '#f0e040',
   colorPink: '#ff70ff',
   colorBlue: '#6a9cff',
+colorGreenBg: '',
+colorWhiteBg: '',
+colorRedBg: '',
+colorTurquoiseBg: '',
+colorYellowBg: '',
+colorPinkBg: '',
+colorBlueBg: '',
   colorBackground: '#000000',
   colorCursor: '#f0f0f0',
   colorOiaStatus: '#8fb8ff',
@@ -283,6 +304,8 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   titleMaxLength: 25,
   switchToNewTab: true,
   warnOnCloseMultiple: false,
+tabColor: '',
+tabIcon: '',
 
   mouseWheelPaging: true,
   typeAhead: true,
@@ -298,7 +321,8 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
 export const SETTINGS_KEYS = Object.keys(SETTINGS_DEFAULTS) as Array<keyof TerminalSettings>;
 
 /** Keys of the colour mapping, for import/export. */
-export const COLOR_KEYS = SETTINGS_KEYS.filter((k) => k.startsWith('color')) as Array<keyof TerminalSettings>;
+/** The keys of the Colors page (Export / Import / Reset All); the blink colour belongs to the Display page. */
+export const COLOR_KEYS = SETTINGS_KEYS.filter((k) => k.startsWith('color') && k !== 'colorBlinkMapped') as Array<keyof TerminalSettings>;
 
 /** A saved session: only the values that differ from the defaults. */
 export type SessionOverrides = Partial<TerminalSettings> & { host: string };

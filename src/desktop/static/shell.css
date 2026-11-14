@@ -337,6 +337,27 @@ input {
   text-overflow: ellipsis;
 }
 
+/* Tab Setup: the connection's colour as a stripe along the top; its mark before the title. */
+.tab.coloured {
+  border-top-color: var(--tab-color);
+  box-shadow: inset 0 3px 0 -1px var(--tab-color);
+}
+
+.tab.coloured.active {
+  border-top-color: var(--tab-color);
+}
+
+.tab .mark {
+  flex: none;
+  max-width: 3.2em;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
 .tab .dot {
   flex: none;
   width: 8px;
@@ -698,6 +719,79 @@ input {
   display: block;
 }
 
+/* --- split view: a second pane right of the frames with one session tab of its own --- */
+#pane-split {
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--chrome-bg);
+  border-left: 1px solid var(--chrome-border);
+  border-right: 1px solid var(--chrome-border);
+}
+
+#pane-split[hidden],
+#pane2[hidden] {
+  display: none;
+}
+
+#pane2 {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 50%;
+  min-width: 240px;
+  max-width: 80%;
+  min-height: 0;
+}
+
+#pane2 .pane-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-height: 30px;
+  padding: 3px 4px 0;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+#pane2 .pane-frames {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+}
+
+/* The split key on a session tab shows on hover; on the pane's tab it is the way back. */
+.tab .split {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  opacity: 0;
+}
+
+.tab .split svg {
+  width: 15px;
+  height: 15px;
+}
+
+.tab:hover .split,
+.tab .split:focus-visible,
+.tab.in-pane .split {
+  opacity: 0.7;
+}
+
+.tab .split:hover {
+  background: var(--chrome-hover);
+  opacity: 1;
+}
+
 #empty {
   position: absolute;
   inset: 0;
@@ -938,22 +1032,66 @@ dialog.modal .buttons {
   margin-top: 14px;
 }
 
-dialog.modal button {
-  min-width: 80px;
-  padding: 5px 12px;
-  background: var(--vscode-button-secondaryBackground);
-  border: 1px solid var(--chrome-border);
-  border-radius: 3px;
+/* Every dialog: the title on the left, the ESC key on the right; keycaps along the bottom. */
+dialog.modal .head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding-right: 6px;
 }
 
-dialog.modal button.primary {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border-color: transparent;
+dialog.modal .head h2 {
+  margin: 0;
+}
+
+dialog.modal .buttons {
+  gap: 14px;
+  margin-top: 18px;
+  padding: 0 6px 6px 0;
 }
 
 /* --- keycap buttons: a raised key that drops onto its shadow on hover, letters lighting up one by one --- */
-dialog.modal button.keycap {
+:root {
+  --key-ink: #111111;
+  --esc-bg: #fee6e3;
+  --esc-hot: #e8242b;
+  --grey-bg: #ececec;
+  --grey-hot: #e0861a;
+  --green-bg: #dff5e6;
+  --green-hot: #1f9d4a;
+  --blue-bg: #dfeefc;
+  --blue-hot: #1f6fe0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --key-ink: #f2f2f2;
+    --esc-bg: #3a1c1a;
+    --esc-hot: #ff4d3d;
+    --grey-bg: #262626;
+    --grey-hot: #ffa030;
+    --green-bg: #15301f;
+    --green-hot: #3ad26f;
+    --blue-bg: #14263a;
+    --blue-hot: #4da3ff;
+  }
+}
+
+:root[data-theme="dark"] {
+  --key-ink: #f2f2f2;
+  --esc-bg: #3a1c1a;
+  --esc-hot: #ff4d3d;
+  --grey-bg: #262626;
+  --grey-hot: #ffa030;
+  --green-bg: #15301f;
+  --green-hot: #3ad26f;
+  --blue-bg: #14263a;
+  --blue-hot: #4da3ff;
+}
+
+button.keycap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -978,45 +1116,75 @@ dialog.modal button.keycap {
   transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
 }
 
-dialog.modal button.keycap.esc {
+button.keycap.esc,
+button.keycap.red {
   --key-bg: var(--esc-bg);
   --key-hot: var(--esc-hot);
 }
 
-dialog.modal button.keycap.grey {
+button.keycap.grey {
   --key-bg: var(--grey-bg);
   --key-hot: var(--grey-hot);
 }
 
-dialog.modal button.keycap.green {
+button.keycap.green {
   --key-bg: var(--green-bg);
   --key-hot: var(--green-hot);
 }
 
-dialog.modal button.keycap.blue {
+button.keycap.blue {
   --key-bg: var(--blue-bg);
   --key-hot: var(--blue-hot);
 }
 
-dialog.modal button.keycap:hover,
-dialog.modal button.keycap:focus-visible {
+/* A row key (list rows, All / None): the same key, smaller. */
+button.keycap.small {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  border-width: 1.5px;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0 0 var(--key-ink);
+}
+
+button.keycap:hover,
+button.keycap:focus-visible {
   outline: 0;
   transform: translate(4px, 4px);
   box-shadow: 2px 2px 0 0 var(--key-ink);
 }
 
-dialog.modal button.keycap:active {
+button.keycap.small:hover,
+button.keycap.small:focus-visible {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 0 var(--key-ink);
+}
+
+button.keycap:active,
+button.keycap.small:active {
   transform: translate(6px, 6px);
   box-shadow: 0 0 0 0 var(--key-ink);
 }
 
+button.keycap.small:active {
+  transform: translate(3px, 3px);
+}
+
+button.keycap:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+  box-shadow: 6px 6px 0 0 var(--key-ink);
+}
+
 /* Each letter is a span; the button sets its transition-delay so the word lights up left to right. */
-dialog.modal button.keycap span {
+button.keycap span {
   transition: color 0.16s ease, text-shadow 0.16s ease;
 }
 
-dialog.modal button.keycap:hover span,
-dialog.modal button.keycap:focus-visible span {
+button.keycap:hover span,
+button.keycap:focus-visible span {
   color: var(--key-hot);
   text-shadow: 0 0 7px var(--key-hot);
 }
@@ -1030,19 +1198,6 @@ dialog.modal.icon-list {
 
 dialog.modal.icon-list form:focus {
   outline: none;
-}
-
-dialog.modal.icon-list .head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 10px;
-  padding-right: 6px;
-}
-
-dialog.modal.icon-list .head h2 {
-  margin: 0;
 }
 
 dialog.modal.icon-list .top-actions {
@@ -1061,6 +1216,10 @@ dialog.modal.icon-list .list-rows {
 dialog.modal.icon-list .list-rows li {
   gap: 2px;
   padding: 2px 0;
+}
+
+dialog.modal.list-dialog .list-rows li button.keycap.small {
+  margin: 3px 0 3px 6px;
 }
 
 dialog.modal.icon-list .list-rows li .text {
@@ -1093,11 +1252,7 @@ dialog.modal.icon-list .list-rows li .text {
   overflow: visible;
 }
 
-/* A toggle that is on (folder tree, Edit, Wrap, Find): a tinted disc under the coloured shape; the ring stays the hover. */
-.icon-actions button.act.pressed {
-  background: color-mix(in srgb, var(--act-color) 18%, transparent);
-}
-
+/* A toggle that is on (folder tree, Edit, Wrap, Find): the shape takes the colour; no disc, the ring stays the hover. */
 .icon-actions button.act.pressed .shape {
   color: var(--act-color);
 }
@@ -1185,8 +1340,8 @@ dialog.modal.icon-list .list-rows li .text {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  dialog.modal button.keycap,
-  dialog.modal button.keycap span,
+  button.keycap,
+  button.keycap span,
   .icon-actions button.act .ring,
   .icon-actions button.act .shape,
   .icon-actions button.act .lid {
@@ -1223,6 +1378,63 @@ dialog.modal.icon-list .list-rows li .text {
   border-bottom: 1px solid var(--chrome-border);
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+/* The tool strip: IFS, SQL, viewers and Settings as tabs right of the quick actions; drag to reorder, out, or back. */
+#toolstrip {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  height: 26px;
+  margin-left: 10px;
+  padding-left: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  border-left: 1px solid transparent;
+}
+
+#toolstrip.has-tools {
+  border-left-color: var(--chrome-border);
+}
+
+#toolstrip .tab.tooltab {
+  flex: none;
+  max-width: 220px;
+  height: 22px;
+  box-sizing: border-box;
+  padding: 0 4px 0 6px;
+  gap: 5px;
+  font-size: 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 11px;
+  margin: 0;
+}
+
+#toolstrip .tab.tooltab.active {
+  background: var(--tab-active-bg);
+  border-color: var(--tab-accent);
+  box-shadow: inset 0 0 0 1px var(--tab-accent);
+  padding-bottom: 0;
+}
+
+#toolstrip .tab.tooltab .tool-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+#toolstrip .tab.tooltab .tool-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+#toolstrip .tab.tooltab .close {
+  width: 16px;
+  height: 16px;
+  line-height: 14px;
 }
 
 #toolbar .tool {

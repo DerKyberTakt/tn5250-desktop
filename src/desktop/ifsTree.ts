@@ -117,6 +117,45 @@ export class IfsTreeModel {
   }
 }
 
+/** What a path being typed needs completed: the folder listed and the part typed after its last slash. */
+export function splitTyped(typed: string): { dir: string; partial: string } {
+  const t = typed.replace(/\\/g, '/');
+  const i = t.lastIndexOf('/');
+  if (i < 0) return { dir: '/', partial: t };
+  return { dir: t.slice(0, i) || '/', partial: t.slice(i + 1) };
+}
+
+/** The names of `dir` that start with the typed part (case-insensitive), folders first; the longest prefix they share. */
+export function pathCandidates(names: { name: string; dir: boolean }[], partial: string, limit = 12): { names: { name: string; dir: boolean }[]; common: string } {
+  const p = partial.toLowerCase();
+  const hits = names.filter((n) => n.name.toLowerCase().startsWith(p)).sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
+  let common = hits[0]?.name ?? partial;
+  for (const h of hits) {
+    let k = 0;
+    while (k < common.length && k < h.name.length && common[k]!.toLowerCase() === h.name[k]!.toLowerCase()) k++;
+    common = common.slice(0, k);
+  }
+  if (common.length < partial.length) common = partial;
+  return { names: hits.slice(0, limit), common };
+}
+
+/** The tree rows that match a filter (name contains it), with every folder above a match kept so the way down shows. */
+export function filterTreeRows(rows: TreeRow[], filter: string): TreeRow[] {
+  const f = filter.trim().toLowerCase();
+  if (!f) return rows;
+  const keep = new Set<string>();
+  for (const r of rows) {
+    if (r.node.path !== '/' && r.node.name.toLowerCase().includes(f)) {
+      let p = r.node.path;
+      while (p) {
+        keep.add(p);
+        p = p === '/' ? '' : parentPath(p);
+      }
+    }
+  }
+  return rows.filter((r) => keep.has(r.node.path));
+}
+
 /** Whether moving `source` into `target` makes sense (not into itself, a descendant, or where it already is). */
 export function canMoveInto(source: string, target: string): boolean {
   if (source === '/' || target === source) return false;

@@ -150,7 +150,7 @@ describe('IFS viewer tab', () => {
     expect(status(tab)).toContain('· JSON');
   });
 
-  it('a CSV opens as a grid with a filter per column; Text shows the file; Edit switches to Text', async () => {
+  it('a CSV opens as a grid with a filter per column; Edit keeps the grid and a cell can be typed into', async () => {
     fakeHost({ bytes: new TextEncoder().encode('id,name\r\n1,"Acme, Inc."\r\n2,Zed\r\n'), ccsid: 1208 });
     const tab = new IfsViewTab(host, 'S1', '/x/list.csv', { size: 30, modified: '' });
     document.body.append(tab.frame);
@@ -171,8 +171,34 @@ describe('IFS viewer tab', () => {
     expect(tab.frame.querySelector('.csv-count')?.textContent).toBe('1 of 2 rows');
     expect(status(tab)).toContain('· CSV');
     button(tab, 'pencil').click();
-    expect(tab.frame.querySelector<HTMLElement>('.csv-grid')!.hidden).toBe(true);
+    // The grid stays, now editable; the text editor behind it is editable too.
+    const grid = tab.frame.querySelector<HTMLElement>('.csv-grid')!;
+    expect(grid.hidden).toBe(false);
+    expect(grid.classList.contains('editable')).toBe(true);
     expect(editable(tab)).toBe(true);
-    expect(text(tab)).toBe('id,name\n1,"Acme, Inc."\n2,Zed\n'); // the editor keeps lines, not line ends
+    const cell = tab.frame.querySelector<HTMLTableCellElement>('.csv-table tbody tr td:nth-child(2)')!;
+    expect(cell.tabIndex).toBe(0);
+    cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    const input = cell.querySelector<HTMLInputElement>('input.csv-cell')!;
+    expect(input.value).toBe('Acme, Inc.');
+    input.value = 'Acme Foods';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(cell.textContent).toBe('Acme Foods');
+    expect(cell.querySelector('input')).toBeNull();
+    // The file text follows (same line ends), the tab is dirty and Text mode shows the change.
+    expect(tab.isDirty).toBe(true);
+    expect(text(tab)).toBe('id,name\n1,Acme Foods\n2,Zed\n');
+    (tab.frame.querySelector('.ifsv-mode') as HTMLSelectElement).value = 'text';
+    tab.frame.querySelector('.ifsv-mode')!.dispatchEvent(new Event('change'));
+    expect(grid.hidden).toBe(true);
+    // Escape puts the old value back.
+    (tab.frame.querySelector('.ifsv-mode') as HTMLSelectElement).value = 'grid';
+    tab.frame.querySelector('.ifsv-mode')!.dispatchEvent(new Event('change'));
+    const zed = tab.frame.querySelector<HTMLTableCellElement>('.csv-table tbody tr:nth-child(2) td:nth-child(2)')!;
+    zed.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true }));
+    const zin = zed.querySelector<HTMLInputElement>('input.csv-cell')!;
+    zin.value = 'nope';
+    zin.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(zed.textContent).toBe('Zed');
   });
 });

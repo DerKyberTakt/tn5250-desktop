@@ -8,14 +8,13 @@
 <link rel="stylesheet" href="ghost.css">
 <link rel="stylesheet" href="ifs.css">
 <link rel="stylesheet" href="sql.css">
-<link rel="stylesheet" href="console.css">
 <title>TN5250 Terminal</title>
 </head>
 <body>
 <header id="titlebar" hidden></header>
 <nav id="menubar" role="menubar" aria-label="Main menu"></nav>
 <div id="tabbar" role="tablist" aria-label="Sessions"></div>
-<div id="toolbar" role="toolbar" aria-label="Quick actions"></div>
+<div id="toolbar" role="toolbar" aria-label="Quick actions"><div id="toolstrip" role="tablist" aria-label="Tools"></div></div>
 <div id="main">
   <aside id="sidebar" aria-label="Connections">
     <form id="quick">
@@ -38,6 +37,11 @@
       <h1>TN5250 Terminal</h1>
       <p>Connect to an IBM i: type a host in <b>Quick connect</b>, double-click a saved session, or add one with <b>+</b>.</p>
     </div>
+  </section>
+  <div id="pane-split" hidden title="Drag to resize"></div>
+  <section id="pane2" hidden aria-label="Split pane">
+    <div class="pane-tabs" role="tablist" aria-label="Split pane tab"></div>
+    <div class="pane-frames"></div>
   </section>
 </div>
 <section id="logpane" aria-label="Session log">

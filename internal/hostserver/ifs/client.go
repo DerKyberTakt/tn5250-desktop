@@ -44,6 +44,7 @@ const (
 	cpCCSIDs     uint16 = 0x000A
 	nameCCSID    uint16 = 1200
 	rcNoMoreFile uint16 = 0x12
+	rcNotFound   uint16 = 0x02
 	rcNoMoreData uint16 = 0x16
 )
 
@@ -266,7 +267,16 @@ func (cl *Client) List(dir string) ([]Entry, error) {
 	if dir == "/" {
 		pattern = "/*"
 	}
-	return cl.list(pattern, "list", dir)
+	es, err := cl.list(pattern, "list", dir)
+	// A folder with nothing in it answers the wildcard with "not found" (nothing matched);
+	// that is an empty listing when the folder itself is there.
+	var e *Error
+	if errors.As(err, &e) && e.Code == rcNotFound {
+		if st, serr := cl.statLocked(dir); serr == nil && st.Dir {
+			return []Entry{}, nil
+		}
+	}
+	return es, err
 }
 
 // ListPattern returns the entries of dir whose names match pattern (* and ? wildcards,
@@ -293,6 +303,10 @@ func (cl *Client) ListPattern(dir, pattern string) ([]Entry, error) {
 func (cl *Client) Stat(p string) (Entry, error) {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
+	return cl.statLocked(p)
+}
+
+func (cl *Client) statLocked(p string) (Entry, error) {
 	p = Clean(p)
 	es, err := cl.list(p, "stat", p)
 	if err != nil {

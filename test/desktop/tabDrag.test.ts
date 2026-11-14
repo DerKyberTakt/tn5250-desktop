@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DRAG_THRESHOLD, clampShift, detachOrigin, dragStarted, edgePoint, insertionIndex, nearBar, reorder, windowAt } from '../../src/desktop/tabDrag';
+import { DRAG_THRESHOLD, clampShift, detachOrigin, dragStarted, edgePoint, insertionIndex, nearBar, reorder, windowAt, reorderWithin } from '../../src/desktop/tabDrag';
 
 describe('tab drag helpers', () => {
   it('a press becomes a drag after the threshold', () => {
@@ -66,5 +66,15 @@ describe('tab drag helpers', () => {
     expect(nearBar(bar, 5)).toBe(true);
     expect(nearBar(bar, 109)).toBe(true);
     expect(nearBar(bar, 111)).toBe(false);
+  });
+});
+
+describe('reorderWithin', () => {
+  it('moves an item among the members of its own group and leaves the rest where they are', () => {
+    const tools = (t: string): boolean => t.startsWith('t');
+    // sessions s1 s2 and tools t1 t2 t3 interleaved: moving t3 first among the tools keeps the sessions' places.
+    expect(reorderWithin(['s1', 't1', 's2', 't2', 't3'], tools, 't3', 0)).toEqual(['s1', 't3', 's2', 't1', 't2']);
+    expect(reorderWithin(['s1', 't1', 's2', 't2', 't3'], tools, 't1', 2)).toEqual(['s1', 't2', 's2', 't3', 't1']);
+    expect(reorderWithin(['s1', 't1'], tools, 'zz', 0)).toEqual(['s1', 't1']);
   });
 });

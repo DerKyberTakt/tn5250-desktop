@@ -40,6 +40,8 @@ export type HostToSettingsData = {
   watermarkImageData?: string;
   /** Webview URL + family of the selected profile's imported font, for the preview. */
   fontFace?: { family: string; url: string };
+  /** Where the page runs: the footer link opens VS Code's settings, or the desktop app's settings file. */
+  hostKind?: 'vscode' | 'desktop';
 };
 
 export type SettingsToHost =

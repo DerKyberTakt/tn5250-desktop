@@ -1,9 +1,10 @@
 /**
- * One result tab of Run SQL Scripts: the grid of a SELECT (or of a CL command's lines),
- * Fetch more, row selection, and the copies (aligned text, Markdown, TSV, CSV file).
+ * One result tab of Run SQL Scripts: a tool row on top (copies, save, fetch), the grid of a
+ * SELECT (or of a CL command's lines), row selection and the status line under the grid.
  * ACS opens one such tab per statement that returns rows; this is that tab.
  */
 import { goApp, type SqlResult } from './bridge';
+import { actionButton, type ActionIconName, type ActionTone } from './icons';
 import { alignedTable, delimitedTable, isNumeric, markdownTable, outcomeText, plural, typeLabel, type Row } from './sqlText';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -16,6 +17,10 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
 export interface ResultHost {
   /** Fetches the next block of a cursor; undefined when the tab is busy with something else. */
   fetchMore(cursor: string, max: number): Promise<SqlResult | undefined>;
+  /** True once Stop was pressed; Retrieve all stops after the block in flight. */
+  stopRequested(): boolean;
+  /** Progress of Retrieve all for the foot ('' when done). */
+  progress(text: string): void;
   notify(text: string): void;
   /** The tab was clicked (bring it to the front) or its ✕ was clicked (close it). */
   activate(view: ResultView): void;
@@ -27,10 +32,15 @@ export type CopyKind = 'text' | 'markdown' | 'tsv';
 export class ResultView {
   readonly button: HTMLButtonElement;
   readonly pane: HTMLDivElement;
+  private readonly bar: HTMLDivElement;
   private readonly grid: HTMLDivElement;
   private readonly status: HTMLDivElement;
+  private readonly tools: Record<string, HTMLButtonElement> = {};
   /** Milliseconds spent in Fetch more, added to the status line. */
   private fetchMs = 0;
+  /** Why no more rows can come, once another statement took the cursor. */
+  private lost = '';
+  fetching = false;
   private readonly selected = new Set<number>();
   private anchor = -1;
 
@@ -58,15 +68,42 @@ export class ResultView {
 
     this.pane = el('div', 'sql-pane sql-results');
     this.pane.hidden = true;
+    this.bar = el('div', 'sql-result-bar icon-actions');
+    const tool = (key: string, icon: ActionIconName, label: string, tone: ActionTone, run: () => void): void => {
+      const b = actionButton(icon, label, tone);
+      b.classList.add(key);
+      b.addEventListener('click', run);
+      this.tools[key] = b;
+      this.bar.append(b);
+    };
+    tool('copy', 'copy', 'Copy the selected rows (or all) as an aligned text table, as it reads here', 'blue', () => void this.copy('text'));
+    tool('markdown', 'markdown', 'Copy the selected rows (or all) as a Markdown table', 'blue', () => void this.copy('markdown'));
+    tool('tsv', 'tsv', 'Copy the selected rows (or all) tab separated, for a spreadsheet', 'blue', () => void this.copy('tsv'));
+    tool('csv', 'csv', 'Save the selected rows (or all) to a .csv file', 'blue', () => void this.saveCsv());
+    this.bar.append(el('span', 'sep'));
+    tool('more', 'fetchMore', `Fetch the next ${this.fetchRows} rows`, 'green', () => void this.more());
+    tool('all', 'fetchAll', 'Retrieve all rows (Stop ends it)', 'green', () => void this.all());
     this.grid = el('div', 'sql-grid-wrap');
     this.status = el('div', 'sql-results-status');
     this.status.setAttribute('role', 'status');
-    this.pane.append(this.grid, this.status);
+    this.pane.append(this.bar, this.grid, this.status);
     this.render();
   }
 
   get rows(): Row[] {
     return this.result.rows ?? [];
+  }
+
+  /** More rows could still come from the host. */
+  get hasMore(): boolean {
+    return !!this.result.more && !this.lost;
+  }
+
+  /** Another statement took the session's cursor: this result keeps its rows, nothing more can come. */
+  cursorLost(): void {
+    if (!this.result.more || this.lost) return;
+    this.lost = 'More rows are no longer available: another statement ran. Run the query again for the rest.';
+    this.render();
   }
 
   /** The selected rows in order, or every row when none is selected. */
@@ -79,6 +116,7 @@ export class ResultView {
   private render(): void {
     const r = this.result;
     this.grid.replaceChildren();
+    this.updateTools();
     if (!r.columns) return;
     const table = el('table', 'sql-grid');
     const head = el('thead');
@@ -101,28 +139,20 @@ export class ResultView {
     });
     table.append(head, body);
     this.grid.append(table);
-
-    const tools = el('div', 'sql-more');
-    const button = (text: string, title: string, run: () => void): HTMLButtonElement => {
-      const b = el('button', undefined, text);
-      b.type = 'button';
-      b.title = title;
-      b.addEventListener('click', run);
-      tools.append(b);
-      return b;
-    };
-    if (r.more) button(`Fetch ${this.fetchRows} more rows`, 'Read the next block from the open cursor', () => void this.more());
-    button('Copy', 'Copy the selected rows (or all) as an aligned text table, as it reads here', () => void this.copy('text'));
-    button('Copy as Markdown', 'Copy the selected rows (or all) as a Markdown table', () => void this.copy('markdown'));
-    button('Copy as TSV', 'Copy the selected rows (or all) tab separated, for a spreadsheet', () => void this.copy('tsv'));
-    button('Save as CSV…', 'Write the selected rows (or all) to a .csv file', () => void this.saveCsv());
-    this.grid.append(tools);
     this.renderStatus();
+  }
+
+  private updateTools(): void {
+    const canFetch = this.hasMore && !this.fetching;
+    this.tools.more!.disabled = !canFetch;
+    this.tools.all!.disabled = !canFetch;
+    if (this.lost) this.tools.more!.title = this.tools.all!.title = this.lost;
   }
 
   private renderStatus(): void {
     const sel = this.selected.size ? ` ${plural(this.selected.size, 'row')} selected.` : '';
-    this.status.textContent = outcomeText(this.result, this.fetchMs) + sel;
+    const lost = this.lost ? ` ${this.lost}` : '';
+    this.status.textContent = outcomeText(this.result, this.fetchMs) + lost + sel;
   }
 
   /** Click selects a row, Shift+click a range from the last click, Ctrl+click adds or removes one. */
@@ -145,16 +175,48 @@ export class ResultView {
     this.renderStatus();
   }
 
-  async more(): Promise<void> {
+  /** One more block from the open cursor; false when nothing came. */
+  private async fetchBlock(): Promise<boolean> {
     const r = this.result;
-    if (!r.more || !r.cursor) return;
+    if (!this.hasMore || !r.cursor) return false;
     const next = await this.host.fetchMore(r.cursor, this.fetchRows);
-    if (!next) return;
+    if (!next) return false;
     r.rows = [...(r.rows ?? []), ...(next.rows ?? [])];
     r.more = next.more;
-    r.cursor = next.cursor;
+    r.cursor = next.cursor || r.cursor;
     this.fetchMs += next.elapsedMs;
-    this.render();
+    return true;
+  }
+
+  async more(): Promise<void> {
+    if (this.fetching) return;
+    this.fetching = true;
+    this.updateTools();
+    try {
+      await this.fetchBlock();
+    } finally {
+      this.fetching = false;
+      this.render();
+    }
+  }
+
+  /** Keeps fetching until the host says End of data, or Stop is pressed. */
+  async all(): Promise<void> {
+    if (this.fetching) return;
+    this.fetching = true;
+    this.updateTools();
+    try {
+      let first = true;
+      while (this.hasMore && (first || !this.host.stopRequested())) {
+        first = false;
+        if (!(await this.fetchBlock())) break;
+        this.host.progress(`Retrieving all rows of Result ${this.n}: ${plural(this.rows.length, 'row')} so far…`);
+      }
+    } finally {
+      this.fetching = false;
+      this.host.progress('');
+      this.render();
+    }
   }
 
   text(kind: CopyKind): string {
