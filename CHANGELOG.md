@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.3.2 - unreleased
+- The host code page now reaches the host: KBDTYPE, CODEPAGE and CHARSET are sent in the NEW-ENVIRON reply with or without a workstation ID (before, a connection without one left the virtual device on the system character set) (from the extension).
 - Fill the Window is off by default: the characters keep their proportions unless it is switched on.
 - Settings: the screen preview always fits and fills its box, whatever Font Scaling, Fill the Window and Fixed Font Size say (from the extension).
 - Host code pages 870 and 1153 (EBCDIC Latin-2: Czech, Slovak, Polish, Hungarian, Croatian, Romanian; 1153 with the euro sign) and 277, 278, 280, 284, 285, 297, 871, 875, 1025, 1026, as in the extension (its #16); 1153 sends CHARSET 1375 / KBDTYPE CSB.

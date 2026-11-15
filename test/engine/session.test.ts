@@ -14,7 +14,10 @@ describe('Session5250', () => {
     for (const ev of capture.events) {
       if (ev.dir === 'in') session.feed(hexToBytes(ev.hex));
     }
-    expect(sent.join('')).toBe(outboundHex(capture));
+    // The capture was recorded before the client sent its keyboard type without a device
+    // name: its NEW-ENVIRON reply is empty, ours carries KBDTYPE USB, CODEPAGE 37, CHARSET 697.
+    const nls37 = '034b4244545950450155534203434f444550414745013337034348415253455401363937';
+    expect(sent.join('')).toBe(outboundHex(capture).replace('fffa2700fff0', `fffa2700${nls37}fff0`));
     expect(updates).toBe(1);
     const snap = session.snapshot();
     expect(snap.rows).toBe(24);

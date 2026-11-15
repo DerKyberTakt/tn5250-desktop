@@ -33,7 +33,7 @@ export interface TelnetOptions {
   terminalType: string;
   /** Requested device name; empty lets the host assign one. */
   deviceName?: string;
-  /** Sent as the CODEPAGE user variable when a device name is requested. */
+  /** Sent as the CODEPAGE user variable, with KBDTYPE and CHARSET, in the NEW-ENVIRON reply. */
   codePage?: number;
   /** KBDTYPE override (3 letters); empty = the one for the code page. */
   keyboardType?: string;
@@ -156,11 +156,14 @@ export class TelnetSession {
   }
 
   private environmentReply(): number[] {
+    const out: number[] = [];
     const name = (this.options.deviceName ?? '').trim().toUpperCase();
-    if (!name) return [];
-    const out = [NE_USERVAR, ...ascii('DEVNAME'), NE_VALUE, ...ascii(name)];
-    // KBDTYPE, CODEPAGE and CHARSET belong together (RFC 4777); a code page the table
-    // does not know sends none of them and the host uses its system values.
+    if (name) out.push(NE_USERVAR, ...ascii('DEVNAME'), NE_VALUE, ...ascii(name));
+    // KBDTYPE, CODEPAGE and CHARSET belong together (RFC 4777 section 4: the last two
+    // only count beside a KBDTYPE) and go with or without a device name: the host gives
+    // the virtual device it creates (QPADEVnnnn too) that keyboard type and character set,
+    // which is what turns the job's CCSID into the right letters on the screen. A code page
+    // the table does not know sends none of them and the host uses its system values.
     const nls = this.options.codePage ? hostNls(this.options.codePage, this.options.keyboardType) : undefined;
     if (nls) {
       out.push(NE_USERVAR, ...ascii('KBDTYPE'), NE_VALUE, ...ascii(nls.kbdType));

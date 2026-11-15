@@ -62,6 +62,16 @@ describe('TelnetSession', () => {
     expect(text).toContain('CHARSET\u0001697');
   });
 
+  it('sends KBDTYPE, CODEPAGE and CHARSET without a device name too (the host names the device)', () => {
+    const h = harness({ terminalType: 'IBM-3179-2', codePage: 870 } as never);
+    h.telnet.feed(hexToBytes('fffa2701fff0'));
+    const text = Buffer.from(h.sent[0] as string, 'hex').toString('latin1');
+    expect(text).not.toContain('DEVNAME');
+    expect(text).toContain('KBDTYPE\u0001CSB');
+    expect(text).toContain('CODEPAGE\u0001870');
+    expect(text).toContain('CHARSET\u0001959');
+  });
+
   it('KBDTYPE and CHARSET follow the code page (IBM keyboard type table); a keyboard type override wins', () => {
     const latin = (h: ReturnType<typeof harness>): string => Buffer.from(h.sent[0] as string, 'hex').toString('latin1');
     const de = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 1141 } as never);
