@@ -13,7 +13,7 @@ import {
   type SessionOverrides,
   type TerminalSettings,
   type TitlePart, connectionChanges, isConnectionField, reloadPlan,} from '../shared/settings';
-import type { HostToSettings, OpenTabInfo, SettingsToHost } from '../shared/settingsProtocol';
+import type { AgentSettings, AgentStatus, HostToSettings, OpenTabInfo, SettingsToHost } from '../shared/settingsProtocol';
 import { buildDemoScreen } from '../engine/demoScreen';
 import { Renderer } from '../webview/renderer';
 
@@ -30,6 +30,13 @@ let capturing: KeyAction | undefined;
 const capture = new KeyCapture();
 /** The open terminal tabs, so the page can warn before a save that would reload one. */
 let openTabs: OpenTabInfo[] = [];
+/** The AI agent settings as edited, as saved, and what the host knows about the set-up (VS Code only; the desktop app sends none and the page hides its AI Agent entry). */
+let agent: AgentSettings | undefined;
+let agentSaved: AgentSettings | undefined;
+let agentStatus: AgentStatus | undefined;
+let agentDirty = false;
+let pendingAgentSave = false;
+let agentSaveSettle: ReturnType<typeof setTimeout> | undefined;
 /** The chord latched on the visual keyboard while Assign is active (clicks, or keys pressed once something is latched). */
 let vkChord: ClickedChord = { mods: new Set() };
 /** Rebuilds the visual keyboard and its key bar in place (set while the Keyboard page is shown). */
@@ -168,6 +175,16 @@ type FieldSpec = { showIf?: Key; hideIf?: Key; showWhen?: [Key, string[]]; locke
   | { kind: 'preview' }
 );
 
+
+/** Information bubbles of the AI Agent page (settings outside the profile: tn5250.agent.*). */
+const AGENT_HELP = {
+  enabled: 'Shows the Agent Sessions view in the side bar: the 5250 sessions an AI agent holds through tn5250-tui mcp (the console terminal\u2019s MCP server), each one watchable read-only in a terminal.',
+  binary: 'Path of tn5250-tui, the console terminal. Empty: found on PATH or in the installer\u2019s folder (%LOCALAPPDATA%\\Programs\\tn5250-tui on Windows; ~/.local/bin, /usr/local/bin, /usr/bin elsewhere).',
+  site: 'The tn5250-tui site the agent signs on with: its own user profile and host, added with Enroll below or with :sites in tn5250-tui. Set Up Claude Code writes this name into .mcp.json.',
+  readOnly: 'Starts the agent\u2019s server with --read-only: typed text that starts a command that changes things (DLT, CHG, CRT, SBMJOB, CALL, ...) is refused.',
+  enroll: 'Enroll writes one of your connections, with your sign-on user and password and bypass sign-on, as the agent\u2019s site into the console terminal\u2019s sites file; a modal names the file first, and the next start of tn5250-tui moves the password into the OS secret store. Remove deletes that site again.',
+  setup: 'Writes (or merges) the .mcp.json in the workspace root so Claude Code starts tn5250-tui mcp for the site above. Restart Claude Code in that folder afterwards.',
+};
 
 /** Information bubbles: what each setting does, with generic examples. */
 const HELP: Partial<Record<Key, string>> = {
@@ -586,6 +603,8 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
       },
     ],
   },
+  // Settings outside the profile (VS Code only); drawn by renderAgentPage, hidden when the host sends no agent data.
+  { id: 'agent', title: 'AI Agent', group: 'AI Agent', fields: [] },
 ];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -701,6 +720,7 @@ function renderNav(): HTMLElement {
   const tree = el('div', 'tree');
   let group = '';
   for (const p of PAGES) {
+    if (p.id === 'agent' && !agent) continue;
     if (p.group !== group) {
       group = p.group;
       tree.append(el('div', 'group', group));
@@ -1462,6 +1482,115 @@ function renderKeyboard(): HTMLElement {
   return box;
 }
 
+/** The AI Agent page: the tn5250.agent.* settings, the enrollment and the Claude Code set-up, with what the host found. */
+function renderAgentPage(): HTMLElement {
+  const box = el('div', 'agentpage');
+  const a = agent;
+  const st = agentStatus;
+  if (!a) return box;
+  const row = (label: string, help: string | undefined, control: HTMLElement): HTMLElement => {
+    const r = el('div', 'row');
+    const lab = el('label', undefined, label);
+    if (help) lab.append(infoBubble(help));
+    r.append(lab, control);
+    return r;
+  };
+  const note = (text: string, warn = false): HTMLElement => {
+    const r = el('div', 'row');
+    r.append(el('span'), el('span', warn ? 'static warn' : 'static', text));
+    return r;
+  };
+  const edited = (): void => {
+    agentDirty = true;
+    renderButtons();
+  };
+  const yesno = (key: 'enabled' | 'readOnly', label: string, help: string): HTMLElement => {
+    const wrap = el('span', 'radios');
+    for (const [v, text] of [
+      [true, 'Yes'],
+      [false, 'No'],
+    ] as Array<[boolean, string]>) {
+      const lab = el('label', 'radio');
+      const r = el('input');
+      r.type = 'radio';
+      r.name = `agent-${key}`;
+      r.checked = a[key] === v;
+      r.onchange = () => {
+        a[key] = v;
+        edited();
+      };
+      lab.append(r, document.createTextNode(text));
+      wrap.append(lab);
+    }
+    return row(label, help, wrap);
+  };
+  // The buttons run commands that read the saved settings, so unsaved edits are saved first.
+  const run = (command: 'setup' | 'enroll' | 'unenroll'): void => {
+    if (agentDirty) {
+      toast('Save the agent settings first.');
+      return;
+    }
+    post({ type: 'agentCommand', command });
+  };
+
+  box.append(
+    el(
+      'p',
+      'note',
+      'An AI agent such as Claude Code drives 5250 sessions through the MCP server of tn5250-tui, the console version of this terminal. Give the agent its own site (a user profile and a host), point Claude Code at it, and watch its sessions in the Agent Sessions view.',
+    ),
+  );
+  box.append(yesno('enabled', 'Agent Sessions view', AGENT_HELP.enabled));
+
+  const file = el('span', 'filerow');
+  const bin = el('input');
+  bin.type = 'text';
+  bin.value = a.binary;
+  bin.placeholder = 'tn5250-tui on PATH';
+  bin.oninput = () => {
+    a.binary = bin.value;
+    edited();
+  };
+  const browse = el('button', 'secondary', 'Browse\u2026');
+  browse.onclick = () => post({ type: 'browseAgentBinary' });
+  file.append(bin, browse);
+  box.append(row('Console terminal (tn5250-tui)', AGENT_HELP.binary, file));
+  if (st) box.append(note(st.binaryFound ? `Found: ${st.binaryFound}` : 'Not found on PATH or in the installer\u2019s folder. Install tn5250-tui (github.com/DerKyberTakt/tn5250-tui) or browse to it.', !st.binaryFound));
+
+  const site = el('input');
+  site.type = 'text';
+  site.value = a.site;
+  site.placeholder = 'agent';
+  site.oninput = () => {
+    a.site = site.value;
+    edited();
+  };
+  box.append(row('Site name', AGENT_HELP.site, site));
+  box.append(yesno('readOnly', 'Read-only server', AGENT_HELP.readOnly));
+
+  box.append(el('h4', 'heading', 'Enrollment'));
+  const siteName = (agentSaved?.site ?? a.site).trim() || 'agent';
+  if (st) box.append(note(st.enrolled ? `${st.enrolled} is enrolled as site "${siteName}" in ${st.sitesFile}.` : `No site "${siteName}" in ${st.sitesFile}.`));
+  const enroll = el('span', 'buttonrow');
+  const e1 = el('button', 'secondary', 'Enroll User for AI Agent\u2026');
+  e1.onclick = () => run('enroll');
+  const e2 = el('button', 'secondary danger', 'Remove Agent Enrollment');
+  e2.disabled = !st?.enrolled;
+  e2.onclick = () => run('unenroll');
+  enroll.append(e1, e2);
+  box.append(row('Agent\u2019s site', AGENT_HELP.enroll, enroll));
+
+  box.append(el('h4', 'heading', 'Claude Code'));
+  if (st) box.append(note(!st.mcpFile ? 'Open a folder first: .mcp.json goes into the workspace root.' : st.mcpConfigured ? `${st.mcpFile} starts the tn5250 server.` : `${st.mcpFile} does not start the tn5250 server yet.`));
+  const setup = el('button', 'secondary', 'Set Up Claude Code');
+  setup.disabled = !st?.mcpFile;
+  setup.onclick = () => run('setup');
+  const sw = el('span');
+  sw.append(setup);
+  box.append(row('Workspace .mcp.json', AGENT_HELP.setup, sw));
+  return box;
+}
+
 /** Titles of the open tabs that a save of the current edits would offer to reload. */
 function pendingReloads(): string[] {
   if (!openTabs.length) return [];
@@ -1476,6 +1605,27 @@ function renderButtons(): void {
   const bar = document.getElementById('buttons');
   if (!bar) return;
   bar.replaceChildren();
+  if (page === 'agent' && !searchQuery.trim() && agent) {
+    // The AI Agent page saves its own values (application-scoped settings, no profile).
+    const a = agent;
+    const save = el('button', 'primary', 'Save Agent Settings');
+    save.disabled = !agentDirty;
+    save.onclick = () => {
+      pendingAgentSave = true;
+      post({ type: 'saveAgent', values: { ...a, binary: a.binary.trim(), site: a.site.trim() || 'agent' } });
+    };
+    const cancel = el('button', 'secondary', 'Revert');
+    cancel.disabled = !agentDirty;
+    cancel.onclick = () => {
+      if (agentSaved) agent = { ...agentSaved };
+      agentDirty = false;
+      render();
+    };
+    const json = el('button', 'link', 'Open in VS Code Settings');
+    json.onclick = () => post({ type: 'openJson' });
+    bar.append(save, cancel, json);
+    return;
+  }
   const pending = pendingReloads();
   if (pending.length) {
     const warn = el('div', 'reload-warn');
@@ -1517,6 +1667,7 @@ function profileTitle(): string {
 function mainHeading(): string {
   if (searchQuery.trim()) return `${profileTitle()} › Search: ${searchQuery.trim()}`;
   const p = PAGES.find((x) => x.id === page) ?? PAGES[0]!;
+  if (p.id === 'agent') return 'AI Agent › Claude Code and the console terminal';
   return `${profileTitle()} › ${p.group} › ${p.title}`;
 }
 
@@ -1562,6 +1713,7 @@ function renderMain(main: HTMLElement): void {
     const p = PAGES.find((x) => x.id === page) ?? PAGES[0]!;
     main.append(el('h2', undefined, mainHeading()));
     if (p.id === 'keyboard') main.append(renderKeyboard());
+    else if (p.id === 'agent') main.append(renderAgentPage());
     else
       for (const f of p.fields) {
         const node = renderField(f);
@@ -1658,6 +1810,15 @@ function finishSave(): void {
   toast('Settings saved.');
 }
 
+/** The host answered Save Agent Settings (more than once while VS Code writes them): the page is clean again. */
+function finishAgentSave(): void {
+  agentSaveSettle = undefined;
+  pendingAgentSave = false;
+  agentDirty = false;
+  render();
+  toast('Agent settings saved.');
+}
+
 function select(index: number): void {
   selected = index;
   values = profileValues(index);
@@ -1680,6 +1841,14 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
     renderButtons();
     return;
   }
+  if (ev.data.type === 'agentBinary') {
+    if (agent) {
+      agent.binary = ev.data.path;
+      agentDirty = true;
+      render();
+    }
+    return;
+  }
   if (ev.data.type === 'kmp') {
     const count = Object.keys(ev.data.keymap).length;
     values.keymap = { ...values.keymap, ...ev.data.keymap };
@@ -1694,6 +1863,17 @@ window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
   sessions = ev.data.sessions;
   if (ev.data.hostKind) hostKind = ev.data.hostKind;
   if (ev.data.fonts) fonts = ev.data.fonts;
+  if (ev.data.agentStatus) agentStatus = ev.data.agentStatus;
+  if (ev.data.agent) {
+    agentSaved = { ...ev.data.agent };
+    // Unsaved edits on the AI Agent page survive a push (a config change elsewhere); a save takes the stored values.
+    if (!agentDirty || pendingAgentSave) agent = { ...ev.data.agent };
+  }
+  if (pendingAgentSave) {
+    if (agentSaveSettle) clearTimeout(agentSaveSettle);
+    agentSaveSettle = setTimeout(finishAgentSave, SAVE_SETTLE_MS);
+    return;
+  }
   watermarkImageData = ev.data.watermarkImageData;
   fontFace = ev.data.fontFace;
   applyFontFace();
