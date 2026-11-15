@@ -220,7 +220,7 @@ export const SETTINGS_DEFAULTS: TerminalSettings = {
   showStatusLine: true,
 
   autoFit: true,
-  fillWindow: true,
+  fillWindow: false,
   screenOverflow: 'shrink',
   fontFamily: '',
   fontFile: '',

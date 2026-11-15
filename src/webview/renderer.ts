@@ -206,7 +206,7 @@ export class Renderer {
     uiMode: 'classic',
     fontFamily: '',
     autoFit: true,
-    fillWindow: true,
+    fillWindow: false,
     screenOverflow: 'shrink',
     fontSize: 14,
     fontStyle: 'plain',

@@ -209,7 +209,7 @@ const HELP: Partial<Record<Key, string>> = {
   columnSeparators: 'How the 5250 column separator attribute (turquoise and yellow fields) is drawn: a dot at the base of each cell, a vertical line, or nothing.',
   showStatusLine: 'Show the operator information area under the screen: connection, X SYSTEM / X II, insert mode, message waiting, cursor position.',
   autoFit: 'On: the font scales so the whole screen fits the tab (zoom with Ctrl+wheel, Ctrl+0 resets). Off: the fixed font size below is used.',
-  fillWindow: 'On: the screen is stretched to fill the window, the characters scaled sideways to match, as ACS does. Off: the characters keep their proportions and the space left over stays empty.',
+  fillWindow: 'On: the screen is stretched to fill the window, the characters scaled sideways to match, as ACS does. Off (default): the characters keep their proportions and the space left over stays empty.',
   fontSize: 'Font size in pixels when Font Scaling is off.',
   screenOverflow: 'A screen bigger than its box (a fixed font size, a small window, or Ctrl+wheel zoomed out) is shrunk so the whole screen stays in view, or kept at size with scroll bars. Zoomed in (Ctrl+wheel, Ctrl and +) it always scrolls.',
   textRendering: 'Smooth = antialiased text. Crisp = cells snapped to whole pixels for sharper edges at small sizes.',
@@ -805,8 +805,11 @@ function updatePreview(): void {
   });
   r.setOptions({
     uiMode: v.uiMode,
+    // The preview shows colours, fonts and the watermark, not the size rules: it always fits and
+    // fills its box (which has the screen's shape), whatever Font Scaling, Fill the Window and
+    // Fixed Font Size say.
     autoFit: true,
-    fillWindow: v.fillWindow,
+    fillWindow: true,
     screenOverflow: v.screenOverflow,
     fontFamily: v.fontFamily,
     fontSize: v.fontSize,

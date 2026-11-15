@@ -1,6 +1,8 @@
 # Changelog
 
 ## 0.3.2 - unreleased
+- Fill the Window is off by default: the characters keep their proportions unless it is switched on.
+- Settings: the screen preview always fits and fills its box, whatever Font Scaling, Fill the Window and Fixed Font Size say (from the extension).
 - Host code pages 870 and 1153 (EBCDIC Latin-2: Czech, Slovak, Polish, Hungarian, Croatian, Romanian; 1153 with the euro sign) and 277, 278, 280, 284, 285, 297, 871, 875, 1025, 1026, as in the extension (its #16); 1153 sends CHARSET 1375 / KBDTYPE CSB.
 - Import from ACS: the inactivity timeout, Bypass signon (switched on, never off), the user ID from the Password Prompting field, the key click, the paste tab-character choice and the screen, status line, active field, rule line and column separator colors (Juan Concepcion, extension #17).
 - Settings: the screen preview keeps the shape of a screen and follows the page width; it had been squeezed into a 560 x 202 box.
