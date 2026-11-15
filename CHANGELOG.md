@@ -1,6 +1,9 @@
 # Changelog
 
 ## 0.3.2 - unreleased
+- Host code pages 870 and 1153 (EBCDIC Latin-2: Czech, Slovak, Polish, Hungarian, Croatian, Romanian; 1153 with the euro sign) and 277, 278, 280, 284, 285, 297, 871, 875, 1025, 1026, as in the extension (its #16); 1153 sends CHARSET 1375 / KBDTYPE CSB.
+- Import from ACS: the inactivity timeout, Bypass signon (switched on, never off), the user ID from the Password Prompting field, the key click, the paste tab-character choice and the screen, status line, active field, rule line and column separator colors (Juan Concepcion, extension #17).
+- Settings: the screen preview keeps the shape of a screen and follows the page width; it had been squeezed into a 560 x 202 box.
 - Run SQL Scripts tells SQL, CL commands and Qshell lines apart from the text, so `DSPLIBL OUTPUT(*PRINT);` and `ls -l /home` run without a `CL:` / `QSH:` prefix (the prefixes still work and always win): SQL keywords are SQL; a CL verb with CL parameters (`WRKACTJOB SBS(QINTER)`, `LIB/CMD`) is CL; a path, a known shell command, `VAR=value` or a pipeline is Qshell; `CALL PGM(X)` / `CALL X PARM(...)` is CL and `CALL SCHEMA.PROC(...)` SQL; what is left is SQL. CL lines continue over a trailing `+`, shell lines over a trailing `\`. Same rules as tn5250-tui's `:sql` tab (`src/desktop/runKind.ts`).
 - Run SQL Scripts: the output of a QSH: line is read back in the CCSID the host tagged the file with. A job whose CCSID is EBCDIC gets an EBCDIC file from the shell redirection, and the rows showed its raw bytes (lines of @ and %). Untagged output is sniffed.
 - Engine: a Write To Display whose control character asks to null the modified fields and reset the tags (CC1 X'C0') now nulls them: the tags were reset first, so nothing was ever nulled.

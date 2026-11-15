@@ -646,8 +646,12 @@ h4.heading {
 
 .preview {
   margin: 16px 0;
-  width: 560px;
-  height: 202px;
+  /* The shape of an 80 x 24 screen (cells about 0.6 em wide, lines 1.2 em tall): the renderer
+     fits the font to the box, so a box with the screen's shape is the one that keeps the text
+     readable. It follows the page width up to a size where the font is comfortable. */
+  width: 100%;
+  max-width: 760px;
+  aspect-ratio: 5 / 3;
   border: 1px solid var(--vscode-panel-border, #444);
   border-radius: 4px;
   overflow: hidden;

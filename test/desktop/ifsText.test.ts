@@ -54,7 +54,8 @@ describe('IFS text codec', () => {
     const ccsids = ENCODINGS.map((e) => e.ccsid);
     // Unicode and Latin first, then the EBCDIC pages the engine has, then the other browser pages.
     expect(ccsids.slice(0, 8)).toEqual([1208, 1200, 1202, 13488, 1232, 1234, 819, 1252]);
-    expect(ccsids.slice(8, 21)).toEqual([37, 273, 500, 1140, 1141, 1142, 1143, 1144, 1145, 1146, 1147, 1148, 1149]);
+    expect(ccsids.slice(8, 33)).toEqual([37, 273, 277, 278, 280, 284, 285, 297, 500, 870, 871, 875, 1025, 1026, 1140, 1141, 1142, 1143, 1144, 1145, 1146, 1147, 1148, 1149, 1153]);
+    expect(ENCODINGS.find((e) => e.ccsid === 870)?.label).toBe('EBCDIC 870 (Latin-2: Czech, Slovak, Polish, Hungarian ...)');
     expect(ccsids).toEqual(expect.arrayContaining([923, 1250, 1251, 943, 1386, 970]));
     expect(ENCODINGS.find((e) => e.ccsid === 943)?.readOnly).toBe(true);
     expect(ENCODINGS.find((e) => e.ccsid === 1251)?.readOnly).toBeUndefined();

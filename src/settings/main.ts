@@ -294,7 +294,18 @@ const YESNO = (key: Key, label: string, note?: string): FieldSpec => ({ kind: 'b
 const CODEPAGES: Array<[string, string]> = [
   ['37', '037 United States'],
   ['273', '273 Germany / Austria'],
+  ['277', '277 Denmark / Norway'],
+  ['278', '278 Finland / Sweden'],
+  ['280', '280 Italy'],
+  ['284', '284 Spain / Latin America'],
+  ['285', '285 United Kingdom'],
+  ['297', '297 France'],
   ['500', '500 International'],
+  ['870', '870 Latin-2: Czech, Slovak, Polish, Hungarian, Croatian, Romanian ...'],
+  ['871', '871 Iceland'],
+  ['875', '875 Greece'],
+  ['1025', '1025 Cyrillic'],
+  ['1026', '1026 Turkey'],
   ['1140', '1140 United States (euro)'],
   ['1141', '1141 Germany (euro)'],
   ['1142', '1142 Denmark / Norway (euro)'],
@@ -305,6 +316,7 @@ const CODEPAGES: Array<[string, string]> = [
   ['1147', '1147 France (euro)'],
   ['1148', '1148 International (euro)'],
   ['1149', '1149 Iceland (euro)'],
+  ['1153', '1153 Latin-2 (euro)'],
 ];
 
 const whenEnhanced = (v: TerminalSettings): string | undefined => (v.uiMode === 'enhanced' ? 'Not used in the Enhanced screen style.' : undefined);
@@ -743,12 +755,26 @@ function colorInput(key: Key): HTMLElement {
 }
 
 let previewRenderer: Renderer | undefined;
+
+/** The width of a full-size 80-column screen the preview stands for, in CSS px: watermark paddings and offsets scale by preview width / this. */
+const FULL_SCREEN_WIDTH = 1120;
+
+/** The box the preview canvas fills (its CSS size; the fallback is the old fixed preview). */
+function previewBox(canvas: HTMLCanvasElement): { w: number; h: number } {
+  const box = canvas.parentElement;
+  const w = box?.clientWidth || 560;
+  const h = box?.clientHeight || Math.round((w * 3) / 5);
+  return { w, h };
+}
+
 function updatePreview(): void {
   const canvas = document.getElementById('preview') as HTMLCanvasElement | null;
   if (!canvas) return;
   previewRenderer ??= new Renderer(canvas);
   const r = previewRenderer;
   const v = values;
+  const { w, h } = previewBox(canvas);
+  const k = w / FULL_SCREEN_WIDTH;
   r.setTheme({
     background: v.colorBackground,
     cursor: v.colorCursor,
@@ -797,11 +823,11 @@ function updatePreview(): void {
     watermarkText: v.watermarkText,
     watermarkOpacity: v.watermarkOpacity,
     watermarkPosition: v.watermarkPosition,
-    watermarkPadding: Math.round(v.watermarkPadding / 2),
+    watermarkPadding: Math.round(v.watermarkPadding * k),
     watermarkX: v.watermarkX,
     watermarkY: v.watermarkY,
-    watermarkOffsetX: Math.round(v.watermarkOffsetX / 2),
-    watermarkOffsetY: Math.round(v.watermarkOffsetY / 2),
+    watermarkOffsetX: Math.round(v.watermarkOffsetX * k),
+    watermarkOffsetY: Math.round(v.watermarkOffsetY * k),
     underlineUrls: v.hotspotsUrl,
     keyButtons: v.hotspots3d || v.uiMode === 'enhanced',
     demoMode: v.demoMode,
@@ -816,9 +842,15 @@ function updatePreview(): void {
     { start: 24 * 80 - 4 * 80 + 40, length: 10, bypass: false },
   ];
   demo.cursor = { row: 20, col: 20 };
-  // 80 columns at ~7 px per cell fills the 560 px preview; keep rows readable.
-  r.resize(560, 24 * 8.4);
+  // The box has the screen's shape (settings.css .preview), so the fitted font is readable.
+  r.resize(w, h);
   r.setScreen(demo);
+}
+
+/** Redraws the preview when its box changes width (the panel resized); nothing in a test DOM. */
+function followPreviewSize(box: HTMLElement): void {
+  if (typeof ResizeObserver === 'undefined') return;
+  new ResizeObserver(() => updatePreview()).observe(box);
 }
 
 /** A field row; a locked one (lockedWhen) is greyed out, its controls disabled and a red * carries the reason. */
@@ -857,11 +889,12 @@ function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
       if (values.watermarkPosition === 'custom') {
         // A custom position is a percentage of the screen: the drag moves the sliders.
         const pct = (d: number, size: number): number => (d / size) * 100;
-        values.watermarkX = Math.max(0, Math.min(100, Math.round((drag.px + pct(e.clientX - drag.x, c.clientWidth || 560)) * 2) / 2));
-        values.watermarkY = Math.max(0, Math.min(100, Math.round((drag.py + pct(e.clientY - drag.y, c.clientHeight || 200)) * 2) / 2));
+        const { w, h } = previewBox(c);
+        values.watermarkX = Math.max(0, Math.min(100, Math.round((drag.px + pct(e.clientX - drag.x, w)) * 2) / 2));
+        values.watermarkY = Math.max(0, Math.min(100, Math.round((drag.py + pct(e.clientY - drag.y, h)) * 2) / 2));
       } else {
-        // The preview is 560 px wide for an 80-column screen; scale to full-size pixels.
-        const scale = 2;
+        // The preview stands for a full-size 80-column screen; scale the drag to its pixels.
+        const scale = FULL_SCREEN_WIDTH / previewBox(c).w;
         values.watermarkOffsetX = Math.round(drag.ox + (e.clientX - drag.x) * scale);
         values.watermarkOffsetY = Math.round(drag.oy + (e.clientY - drag.y) * scale);
       }
@@ -873,6 +906,7 @@ function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
       drag = undefined;
       render();
     });
+    followPreviewSize(box);
     queueMicrotask(updatePreview);
     return box;
   }
@@ -881,6 +915,7 @@ function renderFieldInner(f: FieldSpec): HTMLElement | undefined {
     const c = el('canvas');
     c.id = 'preview';
     box.append(c);
+    followPreviewSize(box);
     queueMicrotask(updatePreview);
     return box;
   }

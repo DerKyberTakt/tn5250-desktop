@@ -9,7 +9,8 @@
  * (GCSGID 695) and the euro keyboard types CRTDEVDSP lists for them (USE, AGE, DME, FNE, ITE,
  * SPE, UKE, FAE, ICE); 1148 keeps INB, IBM lists no euro keyboard for International. Several
  * countries share a code page (500, 277, 278, 284, 297 ...): the first keyboard IBM lists
- * is the default, the Keyboard type setting overrides it.
+ * is the default, the Keyboard type setting overrides it. 1153 (Latin-2 with the euro,
+ * GCSGID 1375) keeps the Czech keyboard of 870 the same way 1148 keeps INB.
  */
 export interface HostNls {
   charset: string;
@@ -45,6 +46,7 @@ const NLS: Record<number, HostNls> = {
   1147: { charset: '695', kbdType: 'FAE' },
   1148: { charset: '695', kbdType: 'INB' },
   1149: { charset: '695', kbdType: 'ICE' },
+  1153: { charset: '1375', kbdType: 'CSB' },
 };
 
 /**

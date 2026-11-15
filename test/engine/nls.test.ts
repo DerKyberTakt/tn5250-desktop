@@ -9,6 +9,8 @@ describe('NEW-ENVIRON keyboard type and character set by code page', () => {
     expect(hostNls(1141)).toEqual({ charset: '695', kbdType: 'AGE' }); // euro keyboard type, CRTDEVDSP KBDTYPE
     expect(hostNls(1140)).toEqual({ charset: '695', kbdType: 'USE' });
     expect(hostNls(1148)).toEqual({ charset: '695', kbdType: 'INB' });
+    expect(hostNls(870)).toEqual({ charset: '959', kbdType: 'CSB' });
+    expect(hostNls(1153)).toEqual({ charset: '1375', kbdType: 'CSB' });
   });
 
   it('an unknown code page sends nothing, so the host keeps its defaults', () => {

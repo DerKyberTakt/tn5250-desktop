@@ -9,12 +9,12 @@ import type { ColumnSeparators, ScreenSize, SessionOverrides, TerminalSettings, 
  * that starts with a `[Host On-Demand Session File]` line, followed by sections such
  * as [Terminal] with `key=value` lines. Only 5250 display sessions are imported, with
  * the values that have a matching emulator setting: the connection (host, port, TLS,
- * screen size, code page, workstation name, user profile), its behavior (auto-connect,
- * auto-reconnect, keep-alive, connection timeout, type-ahead, alarm), the display
- * (rule line, column separators, status line, cursor, font fit and style, watermark,
- * the field colors the profile remaps), paste and hotspot options, the mouse wheel and
- * the keyboard map stored in the profile. Everything else keeps the emulator's Defaults.
- * Passwords are never read.
+ * screen size, code page, workstation name, user profile, bypass signon), its behavior
+ * (auto-connect, auto-reconnect, keep-alive, connection and inactivity timeouts,
+ * type-ahead, alarm, key click), the display (rule line, column separators, status line, cursor,
+ * font fit and style, watermark, the colors the profile remaps), paste and hotspot
+ * options, the mouse wheel and the keyboard map stored in the profile. Everything else
+ * keeps the emulator's Defaults. Passwords are never read.
  */
 
 export type HodImport =
@@ -57,6 +57,46 @@ const FIELD_COLORS: Record<string, [FieldColor, string]> = {
   fpk: ['colorPink', 'pink'],
   fbl: ['colorBlue', 'blue'],
 };
+
+type ScreenColor =
+  | 'colorBackground'
+  | 'colorOiaStatus'
+  | 'colorOiaInfo'
+  | 'colorOiaAttention'
+  | 'colorOiaError'
+  | 'colorOiaBackground'
+  | 'colorRuleLine'
+  | 'colorColumnSeparator';
+
+/**
+ * [ColorRemap] keys of the other colors ACS and the emulator share, and the half of the
+ * value each one is in: the screen and status line backgrounds keep their color in the
+ * background half, the status line indicators, crosshair ruler and column separators in
+ * the text half.
+ */
+const SCREEN_COLORS: Record<string, [ScreenColor, 'text' | 'background']> = {
+  sbg: ['colorBackground', 'background'],
+  osi: ['colorOiaStatus', 'text'],
+  oii: ['colorOiaInfo', 'text'],
+  oai: ['colorOiaAttention', 'text'],
+  oei: ['colorOiaError', 'text'],
+  oob: ['colorOiaBackground', 'background'],
+  crc: ['colorRuleLine', 'text'],
+  ccs: ['colorColumnSeparator', 'text'],
+};
+
+/** Password Prompting choices under which ACS takes the user ID from its own settings, not from the profile. */
+const USER_FROM_ACS = ['1_useacssetting', '2_shared', '5_kerberos'];
+
+/** ACS "Tab character processing" choices for paste (pasteTabOptions) and the emulator's. */
+const PASTE_TAB_MODES: Record<string, TerminalSettings['pasteTabMode']> = {
+  '1': 'tabStop', // tab stops every n columns
+  '2': 'spaces', // replace each tab with n spaces
+  '3': 'nextField', // a tab moves to the next field
+};
+
+/** The longest Inactivity Timeout the emulator takes, in minutes (a week). */
+const MAX_INACTIVITY_MINUTES = 10080;
 
 const hex = (rgb: bigint): string => `#${rgb.toString(16).padStart(6, '0')}`;
 
@@ -157,13 +197,23 @@ export function importHod(text: string, fileName: string): HodImport {
   const device = get('workstationid');
   if (device) session.deviceName = device;
 
-  const user = get('userid');
-  if (user) session.signonUser = user;
+  // User ID of the "IBM i signon information": the profile keeps it only when Password
+  // Prompting uses the session's own user name; otherwise ACS takes it from its settings.
+  const user = get('acspasswordpromptusername');
+  if (user && !USER_FROM_ACS.includes(get('acspasswordprompt').toLowerCase())) session.signonUser = user;
 
   const flag = (key: string): boolean | undefined => {
     const v = get(key).toLowerCase();
     return v === 'true' ? true : v === 'false' ? false : undefined;
   };
+
+  // Bypass signon (encrypted or clear text password in ACS). The profile never holds the
+  // password, so it has to be saved here before the emulator can sign on. Only switched
+  // on: a profile without it leaves the emulator's own choice alone.
+  if (flag('ssoenabled') && /^ssobypasssignon/i.test(get('ssotype'))) {
+    session.autoSignon = true;
+    notes.push(session.signonUser ? 'bypass signon: set the password with Set Password' : 'bypass signon: set the user ID, then the password with Set Password');
+  }
   const autoConnect = flag('autoconnect');
   if (autoConnect !== undefined) session.autoConnect = autoConnect;
   const autoReconnect = flag('autoreconnect');
@@ -173,12 +223,27 @@ export function importHod(text: string, fileName: string): HodImport {
   // Connection Timeout (seconds) in ACS; 0 means no limit there and here.
   const connectTimeout = get('connectiontimeout');
   if (/^\d{1,4}$/.test(connectTimeout)) session.connectTimeoutSeconds = Number(connectTimeout);
+  // Inactivity Timeout: ACS writes it in minutes and again in milliseconds (`timeout`);
+  // 0 means none there and here.
+  const idleMinutes = get('panelonlytcpipinactivitytimeout');
+  const idleMs = get('timeout');
+  const idle = /^\d{1,5}$/.test(idleMinutes)
+    ? Number(idleMinutes)
+    : /^\d{1,9}$/.test(idleMs) && Number(idleMs) % 60000 === 0
+      ? Number(idleMs) / 60000
+      : undefined;
+  if (idle !== undefined && idle <= MAX_INACTIVITY_MINUTES) session.inactivityTimeoutMinutes = idle;
   const typeAheadOff = flag('disable_session_type_ahead');
   if (typeAheadOff !== undefined) session.typeAhead = !typeAheadOff;
   const mute = flag('soundmute');
   const alarm = flag('soundalarm');
   if (mute) session.alarm = false;
   else if (alarm !== undefined) session.alarm = alarm;
+  // Clicker: "normal" clicks on every key typed, as the emulator's key click does; "error",
+  // the ACS default, only sounds when a key or a paste is refused, so no click here.
+  const clicker = get('soundclicker').toLowerCase();
+  if (clicker === 'normal' && !mute) session.keyClick = true;
+  else if (mute || clicker === 'off' || clicker === 'error') session.keyClick = false;
 
   // Display.
   const ruleLine = flag('ruleline');
@@ -225,6 +290,8 @@ export function importHod(text: string, fileName: string): HodImport {
   if (moveCursor !== undefined) session.pasteMoveCursorToEnd = moveCursor;
   if (/^\d{1,2}$/.test(get('pastetabspaces'))) session.pasteTabSpaces = Number(get('pastetabspaces'));
   if (/^\d{1,2}$/.test(get('pastetabcolumns'))) session.pasteTabColumns = Number(get('pastetabcolumns'));
+  const tabMode = PASTE_TAB_MODES[get('pastetaboptions')];
+  if (tabMode) session.pasteTabMode = tabMode;
 
   // Hotspots.
   for (const [key, setting] of Object.entries(HOTSPOTS)) {
@@ -247,14 +314,30 @@ export function importHod(text: string, fileName: string): HodImport {
   const keymap = importKmp(text).keymap;
   if (Object.keys(keymap).length) session.keymap = keymap;
 
+  // Screen background, status line, crosshair ruler and column separators: one color each.
+  const remap = ini.get('colorremap');
+  for (const [key, [setting, half]] of Object.entries(SCREEN_COLORS)) {
+    const pair = hodColorPair(remap?.get(key) ?? '');
+    if (pair) session[setting] = pair[half];
+  }
+
+  // Active field: the emulator tints its background (Classic mode), as ACS does with
+  // "Highlight active field" on; the text keeps its field color here.
+  const active = hodColorPair(remap?.get('actf') ?? '');
+  if (active && remap?.get('actfieldhilite')?.toLowerCase() === 'true') {
+    session.colorActiveField = active.background;
+    notes.push(`active field shown without its ${active.text} text`);
+  }
+
   // The emulator has one color per field color and no block behind it. When ACS draws a
   // field color as dark text on a colored block (a production system in amber, say), the
-  // block color becomes the text color, so the remapped look still stands out.
-  const remap = ini.get('colorremap');
+  // block color becomes the text color, so the remapped look still stands out. A block in
+  // the screen background color is no block at all.
+  const screen = session.colorBackground ?? '#000000';
   for (const [key, [setting, label]] of Object.entries(FIELD_COLORS)) {
     const pair = hodColorPair(remap?.get(key) ?? '');
     if (!pair) continue;
-    if (pair.background === '#000000') {
+    if (pair.background === '#000000' || pair.background === screen) {
       session[setting] = pair.text;
     } else if (pair.text === '#000000') {
       session[setting] = pair.background;

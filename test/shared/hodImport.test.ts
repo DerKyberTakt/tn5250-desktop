@@ -71,6 +71,7 @@ describe('importHod', () => {
         autoReconnect: true,
         keepAlive: false,
         connectTimeoutSeconds: 0,
+        inactivityTimeoutMinutes: 0,
         columnSeparators: 'dot',
         colorGreen: '#cc9900',
       },
@@ -144,6 +145,32 @@ describe('importHod', () => {
     for (const key of ['columnSeparators', 'ruleLineStyle', 'mouseWheelPaging']) expect(r.session).not.toHaveProperty(key);
   });
 
+  it('reads the tab character choice for paste: 1 tab stops, 2 spaces, 3 next field', () => {
+    const modes = ['1', '2', '3'].map((v) => {
+      const r = importHod(hod(['sessionType=2', 'host=h', `pasteTabOptions=${v}`]), 'Tabs.hod');
+      return r.ok ? r.session.pasteTabMode : undefined;
+    });
+    expect(modes).toEqual(['tabStop', 'spaces', 'nextField']);
+    for (const v of ['0', '4', 'spaces']) {
+      const r = importHod(hod(['sessionType=2', 'host=h', `pasteTabOptions=${v}`]), 'Tabs.hod');
+      if (!r.ok) throw new Error(r.reason);
+      expect(r.session).not.toHaveProperty('pasteTabMode');
+    }
+  });
+
+  it('turns the key click on only for the normal clicker: off, errors only and muted leave it off', () => {
+    const click = (terminal: string[]): boolean | undefined => {
+      const r = importHod(hod(['sessionType=2', 'host=h', ...terminal]), 'Click.hod');
+      if (!r.ok) throw new Error(r.reason);
+      return r.session.keyClick;
+    };
+    expect(click(['soundClicker=normal'])).toBe(true);
+    expect(click(['soundClicker=off'])).toBe(false);
+    expect(click(['soundClicker=normal', 'soundMute=true'])).toBe(false);
+    expect(click(['soundClicker=error'])).toBe(false);
+    expect(click([])).toBeUndefined();
+  });
+
   it('takes the watermark only when the profile shows one', () => {
     const shown = importHod(hod(['sessionType=2', 'host=h', 'Watermark=true', 'haveTextAsWatermark=true', 'WatermarkText=PROD', 'WatermarkOpacity=0.3', 'watermarkPosition=tile']), 'W.hod');
     if (!shown.ok) throw new Error(shown.reason);
@@ -183,6 +210,94 @@ describe('importHod', () => {
     expect(r.notes).toEqual(['white shown without its #0000ff block']);
   });
 
+  it('carries the screen background, status line, crosshair ruler and column separator colors', () => {
+    const remap = [
+      '[ColorRemap]',
+      'sBG=20587255718477824', // 0x00492400_00000000: the color is in the background half
+      'oSI=32896', // 0x00000000_00008080: the color is in the text half
+      'oII=16776960',
+      'oAI=16711935',
+      'oEI=16711680',
+      'oOB=280375465082880', // 0x0000FF00_00000000
+      'cRC=10526720',
+      'cCS=255',
+    ];
+    const r = importHod(hod(['sessionType=2', 'host=h'], remap), 'Screen.hod');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.session).toMatchObject({
+      colorBackground: '#492400',
+      colorOiaStatus: '#008080',
+      colorOiaInfo: '#ffff00',
+      colorOiaAttention: '#ff00ff',
+      colorOiaError: '#ff0000',
+      colorOiaBackground: '#00ff00',
+      colorRuleLine: '#a0a000',
+      colorColumnSeparator: '#0000ff',
+    });
+    expect(r.notes).toEqual([]);
+  });
+
+  it('tints the active field only when ACS highlights it, and notes the text color left out', () => {
+    // 0x00FFA200_00000080: dark blue text on orange.
+    const on = importHod(hod(['sessionType=2', 'host=h'], ['[ColorRemap]', 'actF=71954239944917120', 'actFieldHilite=true']), 'Active.hod');
+    if (!on.ok) throw new Error(on.reason);
+    expect(on.session.colorActiveField).toBe('#ffa200');
+    expect(on.notes).toEqual(['active field shown without its #000080 text']);
+    const off = importHod(hod(['sessionType=2', 'host=h'], ['[ColorRemap]', 'actF=71954239944917120', 'actFieldHilite=false']), 'Active.hod');
+    if (!off.ok) throw new Error(off.reason);
+    expect(off.session).not.toHaveProperty('colorActiveField');
+    expect(off.notes).toEqual([]);
+  });
+
+  it('treats a field color block in the screen background color as no block', () => {
+    // White text on brown (0x00492400_00FFFFFF) on a brown screen.
+    const r = importHod(hod(['sessionType=2', 'host=h'], ['[ColorRemap]', 'sBG=20587255718477824', 'fWT=20587255735255039']), 'Brown.hod');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.session).toMatchObject({ colorBackground: '#492400', colorWhite: '#ffffff' });
+    expect(r.notes).toEqual([]);
+  });
+
+  it('reads the inactivity timeout in minutes, or from the milliseconds ACS also writes', () => {
+    const both = importHod(hod(['sessionType=2', 'host=h', 'timeout=600000', 'panelOnlyTCPIPInactivityTimeout=10']), 'Idle.hod');
+    expect(both.ok && both.session.inactivityTimeoutMinutes).toBe(10);
+    const msOnly = importHod(hod(['sessionType=2', 'host=h', 'timeout=900000']), 'Idle.hod');
+    expect(msOnly.ok && msOnly.session.inactivityTimeoutMinutes).toBe(15);
+    const notWholeMinutes = importHod(hod(['sessionType=2', 'host=h', 'timeout=90000']), 'Idle.hod');
+    const overAWeek = importHod(hod(['sessionType=2', 'host=h', 'panelOnlyTCPIPInactivityTimeout=20000']), 'Idle.hod');
+    for (const r of [notWholeMinutes, overAWeek]) {
+      if (!r.ok) throw new Error(r.reason);
+      expect(r.session).not.toHaveProperty('inactivityTimeoutMinutes');
+    }
+  });
+
+  it('takes the user ID only when Password Prompting uses the session user name', () => {
+    const own = importHod(hod(['sessionType=2', 'host=h', 'acsPasswordPrompt=3_session', 'acsPasswordPromptUsername=demouser', 'userID=']), 'User.hod');
+    expect(own.ok && own.session.signonUser).toBe('demouser');
+    for (const mode of ['1_useAcsSetting', '2_shared', '5_kerberos']) {
+      const r = importHod(hod(['sessionType=2', 'host=h', `acsPasswordPrompt=${mode}`, 'acsPasswordPromptUsername=olduser']), 'User.hod');
+      if (!r.ok) throw new Error(r.reason);
+      expect(r.session).not.toHaveProperty('signonUser');
+    }
+  });
+
+  it('switches bypass signon on when ACS has it, with a note about the password', () => {
+    const terminal = ['sessionType=2', 'host=h', 'ssoEnabled=true', 'ssoType=ssoBypassSignonEncrypted', 'ssoBypassSignonPassword=', 'acsPasswordPrompt=3_session', 'acsPasswordPromptUsername=DEMOUSER'];
+    const r = importHod(hod(terminal), 'Bypass.hod');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.session).toMatchObject({ autoSignon: true, signonUser: 'DEMOUSER' });
+    expect(r.notes).toEqual(['bypass signon: set the password with Set Password']);
+    expect(JSON.stringify(r.session)).not.toMatch(/password/i);
+
+    const noUser = importHod(hod(['sessionType=2', 'host=h', 'ssoEnabled=true', 'ssoType=ssoBypassSignonClearText', 'acsPasswordPrompt=1_useAcsSetting']), 'Bypass.hod');
+    if (!noUser.ok) throw new Error(noUser.reason);
+    expect(noUser.session.autoSignon).toBe(true);
+    expect(noUser.notes).toEqual(['bypass signon: set the user ID, then the password with Set Password']);
+
+    const off = importHod(hod(['sessionType=2', 'host=h', 'ssoEnabled=true', 'ssoType=ssoTypeNone']), 'Off.hod');
+    if (!off.ok) throw new Error(off.reason);
+    expect(off.session).not.toHaveProperty('autoSignon');
+  });
+
   it('writes an IPv4 address with leading zeros the way ACS reads it, with a note', () => {
     const r = importHod(hod(['sessionType=2', 'host=10.020.3.4']), 'Backup.hod');
     if (!r.ok) throw new Error(r.reason);
@@ -195,7 +310,7 @@ describe('importHod', () => {
     expect(r.ok && r.session.name).toBe('Pub400 - Release');
   });
 
-  it('leaves out certificate checking, bypass sign-on and passwords', () => {
+  it('leaves out certificate checking and passwords, and bypass signon when ACS has it off', () => {
     const r = importHod(fixture, 'Pub400.hod');
     if (!r.ok) throw new Error(r.reason);
     for (const key of ['verifyCertificate', 'autoSignon', 'tlsPinnedCertificate']) expect(r.session).not.toHaveProperty(key);

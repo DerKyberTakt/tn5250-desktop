@@ -41,7 +41,12 @@ portBackup1=23
 portBackup2=23
 workstationID=DEV*=
 userPassword=
-userID=DEMOUSER
+userID=
+acsPasswordPrompt=3_session
+acsPasswordPromptUsername=DEMOUSER
+ssoEnabled=false
+ssoType=ssoTypeNone
+panelOnlyTCPIPInactivityTimeout=0
 host=pub400.com
 screenSize=5
 connectionTimeout=0

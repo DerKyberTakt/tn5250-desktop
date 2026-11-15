@@ -65,7 +65,18 @@ const BROWSER_PAGES: Encoding[] = [
 const EBCDIC_LABELS: Record<number, string> = {
   37: 'EBCDIC 37 (US, Canada)',
   273: 'EBCDIC 273 (Germany, Austria)',
+  277: 'EBCDIC 277 (Denmark, Norway)',
+  278: 'EBCDIC 278 (Finland, Sweden)',
+  280: 'EBCDIC 280 (Italy)',
+  284: 'EBCDIC 284 (Spain, Latin America)',
+  285: 'EBCDIC 285 (UK)',
+  297: 'EBCDIC 297 (France)',
   500: 'EBCDIC 500 (International)',
+  870: 'EBCDIC 870 (Latin-2: Czech, Slovak, Polish, Hungarian ...)',
+  871: 'EBCDIC 871 (Iceland)',
+  875: 'EBCDIC 875 (Greece)',
+  1025: 'EBCDIC 1025 (Cyrillic)',
+  1026: 'EBCDIC 1026 (Turkey)',
   1140: 'EBCDIC 1140 (US, euro)',
   1141: 'EBCDIC 1141 (Germany, euro)',
   1142: 'EBCDIC 1142 (Denmark, Norway, euro)',
@@ -76,6 +87,7 @@ const EBCDIC_LABELS: Record<number, string> = {
   1147: 'EBCDIC 1147 (France, euro)',
   1148: 'EBCDIC 1148 (International, euro)',
   1149: 'EBCDIC 1149 (Iceland, euro)',
+  1153: 'EBCDIC 1153 (Latin-2, euro)',
 };
 
 /** Every encoding the viewer offers: Unicode and Latin first, then the EBCDIC pages the engine knows, then the other browser pages. */

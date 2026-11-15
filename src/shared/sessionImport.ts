@@ -46,7 +46,7 @@ export interface MergeOptions {
 /**
  * Merges imported connections into the saved list. One that is already saved replaces the
  * saved entry in place: every value the import brings wins, and what only the emulator
- * has (a trusted certificate, demo mode, bypass sign-on ...) stays, as does the saved name.
+ * has (a trusted certificate, demo mode ...) stays, as does the saved name.
  * With `updateSaved: false` it is skipped instead, so nothing already saved changes.
  * A new one is appended; a name already used by a connection to another host gets " (2)",
  * " (3)" ... so every name stays unique. The list given is never changed.
