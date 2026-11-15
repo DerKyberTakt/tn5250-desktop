@@ -1,17 +1,23 @@
 /**
  * Splits the text of a Run SQL Scripts editor into runnable statements, the way ACS
- * does: statements end at a semicolon outside quotes and comments; a line starting
- * with `CL:` is a CL command (ending at its semicolon or line end); a line starting
- * with `QSH:` is a Qshell / PASE command line (to the end of the line: a shell line
- * may itself contain semicolons); `--` and block comments are skipped; statement
- * boundaries keep their offsets so "run selected" and "run from cursor" can pick by
- * position.
+ * does: statements end at a semicolon outside quotes and comments; a line that reads
+ * like a CL command (`DSPLIBL OUTPUT(*PRINT)`, or prefixed `CL:`) is one (ending at its
+ * semicolon or line end, continued over a line ending in `+`); a line that reads like a
+ * shell command (`ls -l /home`, or prefixed `QSH:`) is a Qshell / PASE command line (to
+ * the end of the line, so it may itself contain semicolons; continued over a line
+ * ending in `\`); `--` and block comments are skipped; statement boundaries keep their
+ * offsets so "run selected" and "run from cursor" can pick by position. The kind of a
+ * line comes from `classify` in runKind.ts.
  */
+
+import { classify } from './runKind';
 
 export interface Statement {
   kind: 'sql' | 'cl' | 'qsh';
   /** The statement without its terminating semicolon (CL: / QSH: without the prefix). */
   text: string;
+  /** What decided the kind ("CL verb DSPLIBL", "prefix QSH:", ...). */
+  why: string;
   /** Offsets into the editor text: first character of the statement and the one after it. */
   start: number;
   end: number;
@@ -45,20 +51,32 @@ export function splitStatements(source: string): Statement[] {
       continue;
     }
     const start = i;
-    if (/^qsh:/i.test(source.slice(i, i + 4))) {
-      // QSH: command line, to the end of the line.
-      const j = endOfLine(source, i);
-      const text = source.slice(i + 4, j).replace(/\r$/, '').trim();
-      if (text) out.push({ kind: 'qsh', text, start, end: j, line: lineAt(start) });
+    const firstLine = source.slice(i, endOfLine(source, i)).replace(/\r?\n$/, '');
+    const probe = classify(firstLine.replace(/\s*[+\\]\s*$/, '').replace(/\s*;\s*$/, ''));
+    if (probe.kind === 'qsh') {
+      // A shell command line, to the end of the line; `\` continues it.
+      let j = endOfLine(source, i);
+      while (/\\\s*$/.test(source.slice(i, j).replace(/\r?\n$/, '')) && j < n) j = endOfLine(source, j);
+      const text = joinContinued(source.slice(i, j), '\\');
+      const { text: body, why } = classify(text);
+      if (body) out.push({ kind: 'qsh', text: body, why, start, end: j, line: lineAt(start) });
       i = j;
       continue;
     }
-    if (/^cl:/i.test(source.slice(i, i + 3))) {
-      // CL: command, up to a semicolon or the end of the line.
-      let j = i + 3;
-      while (j < n && source[j] !== ';' && source[j] !== '\n') j++;
-      const text = source.slice(i + 3, j).replace(/\r$/, '').trim();
-      if (text) out.push({ kind: 'cl', text, start, end: j, line: lineAt(start) });
+    if (probe.kind === 'cl') {
+      // A CL command, up to a semicolon or the end of the line; `+` continues it.
+      let j = i;
+      for (;;) {
+        while (j < n && source[j] !== ';' && source[j] !== '\n') j++;
+        if (j < n && source[j] === '\n' && /\+\s*$/.test(source.slice(i, j).split('\n').pop() ?? '')) {
+          j++;
+          continue;
+        }
+        break;
+      }
+      const text = joinContinued(source.slice(i, j), '+');
+      const { text: body, why } = classify(text);
+      if (body) out.push({ kind: 'cl', text: body, why, start, end: j, line: lineAt(start) });
       i = j;
       continue;
     }
@@ -84,11 +102,27 @@ export function splitStatements(source: string): Statement[] {
       }
       j++;
     }
-    const text = source.slice(i, j).trim();
-    if (text) out.push({ kind: 'sql', text, start, end: j, line: lineAt(start) });
+    const raw = source.slice(i, j).trim();
+    if (raw) {
+      const { kind, text, why } = classify(raw);
+      out.push({ kind, text, why, start, end: j, line: lineAt(start) });
+    }
     i = j;
   }
   return out;
+}
+
+/** Folds continuation lines (`+` for CL, `\` for a shell line) into one line. */
+function joinContinued(text: string, mark: '+' | '\\'): string {
+  const lines = text.replace(/\r/g, '').split('\n');
+  return lines
+    .map((l, k) => {
+      let t = l.replace(/\s+$/, '');
+      if (k < lines.length - 1 && t.endsWith(mark)) t = t.slice(0, -1).replace(/\s+$/, '');
+      return k > 0 ? t.replace(/^\s+/, '') : t;
+    })
+    .join(' ')
+    .trim();
 }
 
 function endOfLine(s: string, from: number): number {

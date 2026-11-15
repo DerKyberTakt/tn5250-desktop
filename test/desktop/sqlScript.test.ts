@@ -29,6 +29,19 @@ describe('splitStatements', () => {
     expect(script.slice(s[0]!.start, s[0]!.end)).toBe("SELECT * FROM MYLIB.CUST WHERE REP = 'A;B' AND NOTE <> 'it''s;'");
   });
 
+  it('tells CL and Qshell lines without a prefix, with continuations', () => {
+    const s = splitStatements(['DSPLIBL OUTPUT(*PRINT);', 'CHGCURLIB +', '   CURLIB(QGPL)', 'ls -l /tmp \\', '  /home', "SELECT 1 FROM sysibm.sysdummy1;", 'CALL PGM(QGPL/HELLO)', "CALL QSYS2.QCMDEXC('DSPLIBL');"].join('\n'));
+    expect(s.map((x) => [x.kind, x.text, x.why])).toEqual([
+      ['cl', 'DSPLIBL OUTPUT(*PRINT)', 'CL verb DSPLIBL'],
+      ['cl', 'CHGCURLIB CURLIB(QGPL)', 'CL verb CHGCURLIB'],
+      ['qsh', 'ls -l /tmp /home', 'shell command ls'],
+      ['sql', 'SELECT 1 FROM sysibm.sysdummy1', 'SQL keyword SELECT'],
+      ['cl', 'CALL PGM(QGPL/HELLO)', 'CL CALL'],
+      ['sql', "CALL QSYS2.QCMDEXC('DSPLIBL')", 'SQL CALL'],
+    ]);
+    expect(s.map((x) => x.line)).toEqual([1, 2, 4, 6, 7, 8]);
+  });
+
   it('handles an unterminated last statement, double quotes and empty input', () => {
     expect(splitStatements('SELECT 1 FROM "MY;TABLE"').map((x) => x.text)).toEqual(['SELECT 1 FROM "MY;TABLE"']);
     expect(splitStatements('  ;; -- nothing\n')).toEqual([]);
