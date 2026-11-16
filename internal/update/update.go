@@ -44,6 +44,7 @@ var ErrNoRelease = errors.New("no release published yet")
 // Client fetches release information and assets.
 type Client struct {
 	Base    string // "https://github.com"
+	Raw     string // where tagged files are read from; "" = RawBase
 	Repo    string
 	HTTP    *http.Client
 	Allowed func(u *url.URL) bool // every request and redirect target must pass

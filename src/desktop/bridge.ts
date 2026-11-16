@@ -90,6 +90,15 @@ export interface UpdateInfo {
   page: string;
   mode: 'installer' | 'portable' | 'appimage' | 'bundle' | 'manual';
   reason?: string;
+  /** CHANGELOG.md sections between current and latest, newest first; missing when the file could not be read. */
+  notes?: ReleaseNotes[];
+}
+
+/** One release's section of CHANGELOG.md. */
+export interface ReleaseNotes {
+  version: string;
+  date?: string;
+  items: string[];
 }
 
 export interface FileFilter {

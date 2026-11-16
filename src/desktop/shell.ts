@@ -4,7 +4,7 @@ import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
 import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
-import { checkListDialog, choiceDialog, confirmDialog, formDialog, iconListDialog, listDialog, messageDialog, promptDialog } from './dialogs';
+import { checkListDialog, choiceDialog, confirmDialog, formDialog, iconListDialog, listDialog, messageDialog, promptDialog, updateDialog } from './dialogs';
 import { ICONS, type IconName } from './icons';
 import { placeAround, play, reducedMotion, snapshot } from './flip';
 import { IfsTab, type IfsHost } from './ifsTab';
@@ -224,18 +224,31 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       return;
     }
     const latest = versionOf(info.latest);
+    const onLink = (url: string): void => void goApp().OpenURL(url);
     if (info.mode === 'manual') {
-      const open = await confirmDialog(`Version ${latest} is available`, `You have ${info.current}. ${info.reason ?? ''}`, 'Open release page');
-      if (open) void goApp().OpenURL(info.page);
+      const open = await updateDialog(`Version ${latest} is available`, {
+        current: info.current,
+        latest,
+        notes: info.notes ?? [],
+        page: info.page,
+        note: info.reason ?? 'Download the update from the release page.',
+        okLabel: 'Open release page',
+        onLink,
+      });
+      if (open) onLink(info.page);
       return;
     }
     const sessions = this.entries.filter((e) => e.kind === 'terminal' && e.tab.connected).length;
     const warning = sessions ? ` ${sessions} open session${sessions > 1 ? 's' : ''} will be disconnected.` : '';
-    const ok = await confirmDialog(
-      `Version ${latest} is available`,
-      `You have ${info.current}. ${APP_NAME} downloads the update from GitHub, checks it against the release's SHA256SUMS and restarts.${warning} What's new: ${info.page}`,
-      'Update now',
-    );
+    const ok = await updateDialog(`Version ${latest} is available`, {
+      current: info.current,
+      latest,
+      notes: info.notes ?? [],
+      page: info.page,
+      note: `${APP_NAME} downloads the update from GitHub, checks it against the release's SHA256SUMS and restarts.${warning}`,
+      okLabel: 'Update now',
+      onLink,
+    });
     if (!ok) return;
     this.updating = true;
     let off: (() => void) | undefined;

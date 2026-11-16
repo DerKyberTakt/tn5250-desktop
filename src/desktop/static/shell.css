@@ -896,6 +896,90 @@ dialog.modal .buttons {
   margin-top: 14px;
 }
 
+/* --- the update dialog: Version / Change log / Link / Note rows, the notes in a scrolling box --- */
+dialog.modal.update {
+  max-width: 680px;
+  width: min(680px, calc(100vw - 48px));
+}
+
+.update-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 10px 16px;
+  align-items: baseline;
+}
+
+.update-label {
+  font-weight: 600;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.update-versions {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 15px;
+}
+
+.update-arrow {
+  opacity: 0.6;
+}
+
+.update-latest {
+  font-weight: 600;
+  color: var(--blue-hot);
+}
+
+.update-notes {
+  max-height: min(320px, 45vh);
+  overflow: auto;
+  padding: 8px 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.update-notes h3 {
+  margin: 4px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.update-notes h3 + ul {
+  margin-top: 0;
+}
+
+.update-notes ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+
+.update-notes li {
+  margin: 2px 0;
+}
+
+.update-notes code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgb(127 127 127 / 18%);
+  font-family: Consolas, 'Cascadia Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.update-link {
+  color: var(--blue-hot);
+  text-decoration: underline;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.update-note {
+  opacity: 0.85;
+}
+
 /* Every dialog: the title on the left, the ESC key on the right; keycaps along the bottom. */
 dialog.modal .head {
   display: flex;

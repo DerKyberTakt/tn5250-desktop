@@ -153,6 +153,94 @@ export function confirmDialog(title: string, message: string, okLabel = 'OK'): P
   });
 }
 
+/** What the update dialog shows: the versions, the notes between them, the page and the note under the keys. */
+export interface UpdateDialogOptions {
+  current: string;
+  latest: string;
+  /** CHANGELOG.md sections between current and latest, newest first; empty = point at the page. */
+  notes: { version: string; date?: string; items: string[] }[];
+  /** The release page; clicked, it goes to onLink. */
+  page: string;
+  /** What pressing the primary key does (download, verify, restart; sessions that drop), or why it cannot. */
+  note: string;
+  /** The primary key's label: "Update now", or "Open release page" when this copy cannot update itself. */
+  okLabel: string;
+  onLink: (url: string) => void;
+}
+
+/** Inline `code` spans of a changelog line become <code>; everything else is text. */
+function noteLine(text: string): HTMLLIElement {
+  const li = el('li');
+  const parts = text.split('`');
+  parts.forEach((part, i) => {
+    if (!part) return;
+    li.append(i % 2 ? el('code', undefined, part) : document.createTextNode(part));
+  });
+  return li;
+}
+
+/**
+ * The "new version" dialog: a table of Version (current → latest), Change log (the
+ * releases between them, each with its date and bullets, in a scrolling box), Link (the
+ * release page) and Note. Resolves true when the primary key is pressed.
+ */
+export function updateDialog(title: string, o: UpdateDialogOptions): Promise<boolean> {
+  return new Promise((resolve) => {
+    const dialog = el('dialog', 'modal update');
+    const form = el('form');
+    form.method = 'dialog';
+    form.append(head(title, dialog));
+    const grid = el('div', 'update-grid');
+    const row = (label: string, body: HTMLElement): void => {
+      grid.append(el('div', 'update-label', label), body);
+    };
+    const versions = el('div', 'update-versions');
+    versions.append(el('span', 'update-current', o.current), el('span', 'update-arrow', '→'), el('span', 'update-latest', o.latest));
+    row('Version', versions);
+    const notes = el('div', 'update-notes');
+    if (o.notes.length) {
+      for (const r of o.notes) {
+        notes.append(el('h3', undefined, r.date ? `${r.version} · ${r.date}` : r.version));
+        const ul = el('ul');
+        for (const item of r.items) ul.append(noteLine(item));
+        notes.append(ul);
+      }
+    } else {
+      notes.append(el('p', 'note', 'The change log could not be read; the release page has it.'));
+    }
+    row('Change log', notes);
+    const link = el('a', 'update-link', o.page);
+    link.href = o.page;
+    link.title = 'Open the release page in your browser';
+    link.onclick = (ev) => {
+      ev.preventDefault();
+      o.onLink(o.page);
+    };
+    const linkBox = el('div');
+    linkBox.append(link);
+    row('Link', linkBox);
+    row('Note', el('div', 'update-note', o.note));
+    form.append(grid);
+    const buttons = el('div', 'buttons');
+    let ok = false;
+    const okKey = submitKey(o.okLabel);
+    okKey.value = 'ok';
+    buttons.append(keyButton('Cancel', 'grey', () => dialog.close(), 'cancel'), okKey);
+    form.append(buttons);
+    form.onsubmit = () => {
+      ok = true;
+    };
+    dialog.append(form);
+    document.body.append(dialog);
+    dialog.onclose = () => {
+      dialog.remove();
+      resolve(ok || dialog.returnValue === 'ok');
+    };
+    dialog.showModal();
+    okKey.focus();
+  });
+}
+
 export function messageDialog(title: string, lines: string[]): Promise<void> {
   return new Promise((resolve) => {
     const dialog = el('dialog', 'modal');

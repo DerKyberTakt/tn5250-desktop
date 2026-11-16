@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { choiceDialog, confirmDialog, escButton, iconListDialog, keyButton, messageDialog, promptDialog, type IconAction } from '../../src/desktop/dialogs';
+import { choiceDialog, confirmDialog, escButton, iconListDialog, keyButton, messageDialog, promptDialog, updateDialog, type IconAction } from '../../src/desktop/dialogs';
 
 // jsdom has no showModal(): the dialogs only need open/close and the close event.
 beforeEach(() => {
@@ -132,5 +132,54 @@ describe('the plain dialogs share the keycap frame', () => {
     expect(keys()).toEqual(['keycap grey cancel|Cancel', 'keycap green primary|OK']);
     (modal().querySelector('button.esc') as HTMLButtonElement).click();
     expect(await p).toBeUndefined();
+  });
+});
+
+describe('updateDialog', () => {
+  const open = (notes: { version: string; date?: string; items: string[] }[], okLabel = 'Update now') => {
+    const links: string[] = [];
+    const p = updateDialog('Version 0.3.2 is available', {
+      current: '0.3.1.1',
+      latest: '0.3.2',
+      notes,
+      page: 'https://example.com/releases/tag/v0.3.2',
+      note: 'Downloads, verifies and restarts. 2 open sessions will be disconnected.',
+      okLabel,
+      onLink: (u) => links.push(u),
+    });
+    const d = document.querySelector('dialog.modal.update') as HTMLDialogElement;
+    return { p, d, links };
+  };
+
+  it('lays out Version, Change log, Link and Note rows with the releases between the versions', async () => {
+    const { p, d, links } = open([
+      { version: '0.3.2', date: '2026-11-16', items: ['Find on screen: `Ctrl+F` opens a find bar.', 'Second.'] },
+      { version: '0.3.1.1', date: '2026-11-13', items: ['macOS updates itself.'] },
+    ]);
+    expect([...d.querySelectorAll('.update-label')].map((e) => e.textContent)).toEqual(['Version', 'Change log', 'Link', 'Note']);
+    expect(d.querySelector('.update-versions')!.textContent).toBe('0.3.1.1→0.3.2');
+    expect([...d.querySelectorAll('.update-notes h3')].map((e) => e.textContent)).toEqual(['0.3.2 · 2026-11-16', '0.3.1.1 · 2026-11-13']);
+    expect(d.querySelectorAll('.update-notes li')).toHaveLength(3);
+    expect(d.querySelector('.update-notes li code')!.textContent).toBe('Ctrl+F');
+    expect(d.querySelector('.update-note')!.textContent).toContain('2 open sessions');
+    const link = d.querySelector('a.update-link') as HTMLAnchorElement;
+    expect(link.textContent).toBe('https://example.com/releases/tag/v0.3.2');
+    link.click();
+    expect(links).toEqual(['https://example.com/releases/tag/v0.3.2']);
+    const ok = d.querySelector('button.primary') as HTMLButtonElement;
+    expect(ok.textContent).toBe('Update now');
+    expect(ok.className).toContain('green');
+    d.returnValue = 'ok';
+    d.close();
+    expect(await p).toBe(true);
+    expect(document.querySelector('dialog.modal.update')).toBeNull();
+  });
+
+  it('without notes points at the release page, and Cancel resolves false', async () => {
+    const { p, d } = open([], 'Open release page');
+    expect(d.querySelector('.update-notes')!.textContent).toContain('release page has it');
+    expect(d.querySelector('button.primary')!.textContent).toBe('Open release page');
+    (d.querySelector('button.cancel') as HTMLButtonElement).click();
+    expect(await p).toBe(false);
   });
 });

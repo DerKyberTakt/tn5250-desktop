@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.3 - unreleased
+- Check for Updates shows what the update holds: the dialog lists the version you have and the new one, the change log of every release between them (read from the repository's CHANGELOG.md at the new tag), the release page as a link and, under Note, what Update now does (download from GitHub, check against SHA256SUMS, restart, which sessions drop) or why this copy has to be updated by hand. The change log is read from raw.githubusercontent.com, the same host family as the downloads; when it cannot be read the dialog points at the page.
+
 ## 0.3.2 - 2026-11-16
 - Find on screen (from the extension, Juan Concepcion): Ctrl+F opens a find bar at the top right of the terminal; every match on the current screen is highlighted and the current one selected, Enter / Shift+Enter (or F3 / Shift+F3) step through them, Alt+C toggles Match Case, Page Up / Page Down roll the host, Escape closes; each new screen is searched again; nondisplay fields are never matched; also on the right-click menu.
 - The host code page now reaches the host: KBDTYPE, CODEPAGE and CHARSET are sent in the NEW-ENVIRON reply with or without a workstation ID (before, a connection without one left the virtual device on the system character set) (from the extension).

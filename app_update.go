@@ -38,6 +38,9 @@ type UpdateInfo struct {
 	// "manual" (download from the page).
 	Mode   string `json:"mode"`
 	Reason string `json:"reason,omitempty"` // why Mode is "manual"
+	// Notes are the CHANGELOG.md sections between Current and Latest (newest first),
+	// read from the repository at Latest; nil when the file could not be read.
+	Notes []update.Release `json:"notes,omitempty"`
 }
 
 // UpdateCheck asks GitHub for the latest release.
@@ -57,6 +60,13 @@ func (a *App) UpdateCheck() (UpdateInfo, error) {
 	info.Latest = tag
 	info.Page = c.ReleasePage(tag)
 	info.Available = update.Compare(tag, appVersion) > 0
+	if info.Available {
+		// The notes are a courtesy: a missing or unreadable file leaves the dialog
+		// pointing at the release page.
+		if text, err := c.Changelog(ctx, tag); err == nil {
+			info.Notes = update.NotesSince(text, appVersion, tag)
+		}
+	}
 	return info, nil
 }
 
