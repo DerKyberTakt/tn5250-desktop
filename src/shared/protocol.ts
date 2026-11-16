@@ -158,7 +158,9 @@ export type HostToWebview =
   /** Toolbar / menu Copy: copy the selection (the whole screen when nothing is selected), like Ctrl+C. */
   | { type: 'copySelection' }
   /** The host made this terminal the active one: take keyboard focus. */
-  | { type: 'focus' };
+  | { type: 'focus' }
+  /** TN5250: Find on Screen: open the find bar, as the Find key does. */
+  | { type: 'find' };
 
 export type WebviewToHost =
   | { type: 'ready' }

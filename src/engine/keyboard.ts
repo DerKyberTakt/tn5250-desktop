@@ -325,6 +325,7 @@ export class Keyboard {
       case 'printScreen':
       case 'copy':
       case 'paste':
+      case 'find':
       case 'rule':
         break; // handled by the UI
       default: {

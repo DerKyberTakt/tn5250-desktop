@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decoratedFieldCells, expandTabs, fieldRanges, hotspotAt, isSignonScreen, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, wordAt, doubleClickRange } from '../../src/shared/screenText';
+import { decoratedFieldCells, expandTabs, fieldRanges, hotspotAt, isSignonScreen, markedFieldRanges, keyLabelsIn, urlAt, urlsIn, visibleRows, wordAt, doubleClickRange } from '../../src/shared/screenText';
 import { SETTINGS_DEFAULTS, buildTitle, copySessionAt, diffSettings, resolveSettings } from '../../src/shared/settings';
 
 describe('fieldRanges', () => {
@@ -112,6 +112,23 @@ describe('doubleClickRange', () => {
     expect(doubleClickRange(line, 9, field)).toEqual({ start: 5, end: 24 });
     expect(doubleClickRange(line, 4)).toBeUndefined();
     expect(doubleClickRange(line, 40)).toBeUndefined();
+  });
+});
+
+describe('visibleRows', () => {
+  const nul = String.fromCharCode(0);
+
+  it('turns nulls into spaces and keeps every row the full width', () => {
+    const r = visibleRows({ rows: 2, cols: 4, text: `AB${nul}CDE`, attrs: new Array<number>(8).fill(0) });
+    expect(r).toEqual(['AB C', 'DE  ']);
+  });
+
+  it('blanks the cells after a nondisplay attribute up to the next attribute, across rows', () => {
+    // Nondisplay attribute at cell 3, hidden text in cells 4-7 (wrapping onto row 1), normal again at cell 8.
+    const attrs = new Array<number>(12).fill(0);
+    attrs[3] = 0x27;
+    attrs[8] = 0x20;
+    expect(visibleRows({ rows: 2, cols: 6, text: 'Pw: SECR OK ', attrs })).toEqual(['Pw:   ', '   OK ']);
   });
 });
 

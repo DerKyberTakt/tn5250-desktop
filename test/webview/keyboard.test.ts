@@ -52,6 +52,7 @@ describe('isPassThrough', () => {
   it('gives the terminal its own keys and mapped chords in both hosts', () => {
     for (const host of ['vscode', 'desktop'] as const) {
       expect(isPassThrough(k('c', 'KeyC', { ctrl: true }), ACS_KEYMAP, host)).toBe(false);
+      expect(isPassThrough(k('f', 'KeyF', { ctrl: true }), ACS_KEYMAP, host)).toBe(false);
       expect(isPassThrough(k('ArrowUp', 'ArrowUp', { ctrl: true }), ACS_KEYMAP, host)).toBe(false);
       expect(isPassThrough(k('ArrowLeft', 'ArrowLeft', { alt: true }), ACS_KEYMAP, host)).toBe(false);
       expect(isPassThrough(k('Home', 'Home', { ctrl: true }), ACS_KEYMAP, host)).toBe(false);

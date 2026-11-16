@@ -100,6 +100,29 @@ export function rowText(s: Pick<ScreenSnapshot, 'cols' | 'text'>, row: number): 
   return s.text.slice(row * s.cols, (row + 1) * s.cols).split(NULL).join(' ');
 }
 
+/**
+ * Every row as it is seen on the screen: nulls, and the cells after a nondisplay attribute
+ * up to the next attribute, are spaces, the same rule Copy follows, so nothing hidden can
+ * be found or copied. Each row is the full width of the screen, so a position in the
+ * string is the column on the screen.
+ */
+export function visibleRows(s: Pick<ScreenSnapshot, 'rows' | 'cols' | 'text' | 'attrs'>): string[] {
+  const rows: string[] = [];
+  let hidden = decodeAttribute(ATTR_NORMAL).nondisplay;
+  for (let row = 0; row < s.rows; row++) {
+    let line = '';
+    for (let col = 0; col < s.cols; col++) {
+      const idx = row * s.cols + col;
+      const a = s.attrs[idx] ?? 0;
+      if (isAttribute(a)) hidden = decodeAttribute(a).nondisplay;
+      const ch = s.text.charAt(idx);
+      line += ch === '' || ch === NULL || hidden ? ' ' : ch;
+    }
+    rows.push(line);
+  }
+  return rows;
+}
+
 /** The run of non-blank characters under a column. */
 export function wordAt(line: string, col: number): { text: string; start: number } {
   let a = col;

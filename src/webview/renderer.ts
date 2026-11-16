@@ -1,6 +1,7 @@
 import { ATTR_NORMAL, decodeAttribute, isAttribute, type Color } from '../engine/attributes';
 import type { ScreenSnapshot, SnapshotScrollBar, SnapshotWindow } from '../shared/protocol';
-import { decoratedFieldCells, detectSubfiles, fieldRanges, keyLabelsIn, markedFieldRanges, rowText, urlsIn, type FieldRange, type SubfileArea } from '../shared/screenText';
+import { decoratedFieldCells, detectSubfiles, fieldRanges, keyLabelsIn, markedFieldRanges, rowText, urlsIn, visibleRows, type FieldRange, type SubfileArea } from '../shared/screenText';
+import type { FindMatch } from '../shared/screenFind';
 import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
 import { highlightScreen, Tok } from '../shared/sourceHighlight';
 import { fitFont, shrinkScale } from './fit';
@@ -262,6 +263,9 @@ export class Renderer {
   private thumbPreview: { addr: number; pos: number } | undefined;
   /** Extra canvas width right of the text (synthetic scroll bar). */
   private gutter = 0;
+  /** Find on screen: the matches drawn over the text, and the translucent fill they get. */
+  private findMatches: readonly FindMatch[] = [];
+  private findFill = '';
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -437,6 +441,19 @@ export class Renderer {
 
   rowText(row: number): string {
     return this.screen ? rowText(this.screen, row) : '';
+  }
+
+  /** The screen's rows as they are seen (nulls and nondisplay cells blank), for find on screen. */
+  visibleRows(): string[] | undefined {
+    return this.screen ? visibleRows(this.screen) : undefined;
+  }
+
+  /** Shows the find on screen matches, a translucent fill over each; an empty list takes them off. */
+  setFindMatches(matches: readonly FindMatch[], fill: string): void {
+    if (matches.length === 0 && this.findMatches.length === 0) return;
+    this.findMatches = matches;
+    this.findFill = fill;
+    this.draw();
   }
 
   /** Plain text of the screen (nulls as spaces), for copying. */
@@ -627,6 +644,13 @@ export class Renderer {
     if (this.options.underlineUrls) this.drawUrlUnderlines();
     this.drawWatermark(w, h);
     if (this.options.demoMode) this.drawDemo(w, h);
+
+    // Find on screen: a fill over every match. VS Code's find highlight is never opaque, so
+    // the text shows through, on reverse image fields too.
+    if (this.findMatches.length > 0 && this.findFill) {
+      ctx.fillStyle = this.findFill;
+      for (const m of this.findMatches) ctx.fillRect(this.x(m.col), this.y(m.row), m.length * this.cellW, this.cellH);
+    }
 
     // Selection rectangle (Classic mode; Enhanced draws its box under the text).
     if (this.selection && !enhanced) {
@@ -1194,6 +1218,11 @@ export class Renderer {
 
   get hasSelection(): boolean {
     return this.selection !== undefined;
+  }
+
+  /** The selected cells (inclusive), or undefined when nothing is selected. */
+  get selectionBounds(): { row1: number; col1: number; row2: number; col2: number } | undefined {
+    return this.selection && { ...this.selection };
   }
 
   /** Text inside the selection rectangle (whole screen when nothing is selected), nondisplay cells masked. */

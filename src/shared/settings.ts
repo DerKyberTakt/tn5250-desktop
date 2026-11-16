@@ -579,6 +579,7 @@ export const KEY_ACTION_GROUPS: Array<{ title: string; actions: Array<[KeyAction
       ['eraseField', 'Erase Field'],
       ['copy', 'Copy'],
       ['paste', 'Paste'],
+      ['find', 'Find on Screen'],
     ],
   },
   {

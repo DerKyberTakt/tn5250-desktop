@@ -1,10 +1,11 @@
-import type { ConnectionStatus, HostToWebview, OiaState, TerminalConfig, WebviewToHost } from '../shared/protocol';
+import type { ConnectionStatus, HostToWebview, KeyEventInfo, OiaState, TerminalConfig, WebviewToHost } from '../shared/protocol';
 import { DEFAULT_OIA } from '../shared/protocol';
 import { classifyKey, keyName, type Keymap } from '../shared/keymap';
 import { doubleClickRange, fieldRanges, hotspotAt, urlAt } from '../shared/screenText';
 import { SETTINGS_DEFAULTS, effectiveKeymap } from '../shared/settings';
 import { isBareModifier, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
 import { ConnectionOverlay } from './connectionOverlay';
+import { FindBar } from './findBar';
 import { dragUnits } from './gui';
 import { Renderer, type ScrollBarTarget } from './renderer';
 
@@ -26,6 +27,16 @@ const renderer = new Renderer(canvas);
 const overlay = new ConnectionOverlay(viewport, {
   reconnect: () => post({ type: 'reconnect' }),
   cancel: () => post({ type: 'cancelReconnect' }),
+});
+const findBar = new FindBar(terminal, {
+  rows: () => renderer.visibleRows(),
+  show: (matches, current) => {
+    renderer.setFindMatches(matches, findFill());
+    const m = matches[current];
+    if (m) renderer.selectRange(m.row, m.col, m.col + m.length - 1);
+  },
+  clear: () => renderer.setFindMatches([], ''),
+  focusScreen: () => terminal.focus(),
 });
 let config: TerminalConfig = { settings: SETTINGS_DEFAULTS, keyOverlay: false, host: 'vscode' };
 let oia: OiaState = DEFAULT_OIA;
@@ -219,6 +230,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
       lastScreen = { rows: msg.screen.rows, cols: msg.screen.cols, fields: msg.screen.fields };
       hostMouseEvents = msg.screen.gui?.mouseEvents ?? [];
       renderer.setScreen(msg.screen);
+      findBar.refresh();
       renderOia();
       break;
     case 'oia':
@@ -239,7 +251,9 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
       beep(880, 0.15);
       break;
     case 'paste':
-      pasteText(msg.text);
+      // Asked for from the find bar's box: the text goes there, not to the screen.
+      if (findBar.contains(document.activeElement)) findBar.insertText(msg.text);
+      else pasteText(msg.text);
       break;
     case 'copySelection':
       copySelection();
@@ -247,12 +261,18 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
     case 'focus':
       terminal.focus();
       break;
+    case 'find':
+      openFind();
+      break;
   }
 });
 
 // Focus arriving at this frame (a tab switch, Alt+Tab back to the window) goes to the
-// terminal, so typing works at once instead of after a click.
-window.addEventListener('focus', () => terminal.focus());
+// terminal, so typing works at once instead of after a click; the find bar's box keeps it
+// when it had it (or was just opened from the Command Palette).
+window.addEventListener('focus', () => {
+  if (!findBar.contains(document.activeElement)) terminal.focus();
+});
 
 /**
  * The box the screen has to fit in. Measured from the border box minus the CSS padding,
@@ -343,6 +363,15 @@ window.addEventListener(
   'keydown',
   (e) => {
     const info = toKeyEventInfo(e);
+    // Keys typed in the find bar belong to it: its own keys and the clipboard keys are
+    // handled here, everything else does what it does in any text box.
+    if (findBar.contains(e.target)) {
+      if (findBar.handleKey(e) || findBarKey(info)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
     if (info.shift && !info.ctrl && !info.alt && !info.meta && /^Arrow(Up|Down|Left|Right)$/.test(info.key)) {
       e.preventDefault();
       e.stopPropagation();
@@ -386,14 +415,15 @@ window.addEventListener(
     }
     if (config.keyOverlay) post({ type: 'key', event: info });
     const result = classifyKey(info, keymap);
-    // Copy, paste and the rule line are the terminal's own keys (the keymap decides which):
-    // they work while disconnected too.
-    if (result.kind === 'action' && (result.action === 'copy' || result.action === 'paste' || result.action === 'rule')) {
+    // Copy, paste, find and the rule line are the terminal's own keys (the keymap decides
+    // which): they work while disconnected too.
+    if (result.kind === 'action' && (result.action === 'copy' || result.action === 'paste' || result.action === 'find' || result.action === 'rule')) {
       logKey(`${keyName(info)}  -> ${result.action}`);
       if (result.action === 'copy') copySelection();
       // Paste: the keydown is cancelled above, so the browser never fires its own paste event;
       // the host reads the clipboard and answers with a 'paste' message.
       else if (result.action === 'paste') post({ type: 'paste' });
+      else if (result.action === 'find') openFind();
       else toggleRuleLine();
       return;
     }
@@ -656,8 +686,60 @@ function pasteText(text: string): void {
   });
 }
 
+/** Fill over find matches: the VS Code theme's find highlight, or the Dark+ one (the desktop app has no theme). */
+function findFill(): string {
+  return getComputedStyle(document.documentElement).getPropertyValue('--vscode-editor-findMatchHighlightBackground').trim() || 'rgba(234, 92, 0, 0.33)';
+}
+
+/** Opens find on screen; text selected on one row becomes the text to find. */
+function openFind(): void {
+  const r = renderer.selectionBounds;
+  const seed = r && r.row1 === r.row2 ? renderer.selectedText().trim() : '';
+  findBar.open(seed || undefined, r && seed ? { row: r.row1, col: r.col1 } : undefined);
+}
+
+/**
+ * Clipboard keys, the Find key and the roll keys pressed in the find bar. VS Code sees keys
+ * pressed in this page too, and the shadow bindings in package.json silence Ctrl+C, Ctrl+V and
+ * Ctrl+X there, so the box copies and pastes through the host clipboard, as the screen does.
+ * Page Up and Page Down roll the screen, so the search follows a listing page after page.
+ * True when the key was used.
+ */
+function findBarKey(info: KeyEventInfo): boolean {
+  if ((info.ctrl || info.meta) && !info.alt && !info.shift && info.key.toLowerCase() === 'x') {
+    const text = findBar.selectedText();
+    if (text) {
+      post({ type: 'copy', text });
+      findBar.deleteSelection();
+    }
+    return true;
+  }
+  const result = classifyKey(info, keymap);
+  if (result.kind !== 'action') return false;
+  if (result.action === 'copy') {
+    const text = findBar.selectedText();
+    if (text) post({ type: 'copy', text });
+    return true;
+  }
+  if (result.action === 'paste') {
+    post({ type: 'paste' });
+    return true;
+  }
+  if (result.action === 'find') {
+    findBar.open();
+    return true;
+  }
+  if ((result.action === 'pageUp' || result.action === 'pageDown') && !overlay.visible) {
+    post({ type: 'action', action: result.action });
+    return true;
+  }
+  return false;
+}
+
 // Paste from a context menu or the host's Edit > Paste.
 document.addEventListener('paste', (e) => {
+  // Into the find bar's box: the browser pastes it there.
+  if (findBar.contains(e.target)) return;
   const text = e.clipboardData?.getData('text/plain');
   if (!text) return;
   e.preventDefault();
@@ -667,14 +749,15 @@ document.addEventListener('paste', (e) => {
 // Copy from the host's Edit > Copy (VS Code routes Cmd+C / Ctrl+C in a webview this way too):
 // the selection, or the whole screen, as the Copy key does.
 document.addEventListener('copy', (e) => {
-  if (!lastScreen || !e.clipboardData) return;
+  if (findBar.contains(e.target) || !lastScreen || !e.clipboardData) return;
   e.clipboardData.setData('text/plain', renderer.selectedText(config.settings.copyTrimTrailing));
   e.preventDefault();
   if (!config.settings.copyKeepSelection) renderer.clearSelection();
 });
 
-// Right-click menu on the screen: Copy (the selection, or the screen), Paste, Select All,
-// the three things ACS offers there. Escape, a click elsewhere or losing focus closes it.
+// Right-click menu on the screen: Copy (the selection, or the screen), Paste, Select All
+// (the three things ACS offers there) and Find. Escape, a click elsewhere or losing focus
+// closes it.
 const contextMenu = document.createElement('div');
 contextMenu.id = 'ctx-menu';
 contextMenu.hidden = true;
@@ -693,8 +776,9 @@ function showContextMenu(x: number, y: number): void {
     b.disabled = !enabled;
     b.addEventListener('click', () => {
       hideContextMenu();
-      run();
+      // Focus first: Find moves the keyboard on to its box.
       terminal.focus();
+      run();
     });
     contextMenu.append(b);
   };
@@ -702,6 +786,7 @@ function showContextMenu(x: number, y: number): void {
   item(renderer.hasSelection ? 'Copy' : 'Copy Screen', live, () => copySelection());
   item('Paste', live, () => post({ type: 'paste' }));
   item('Select All', live, () => renderer.selectAll());
+  item('Find', live, () => openFind());
   contextMenu.hidden = false;
   contextMenu.style.left = `${Math.max(0, Math.min(x, window.innerWidth - contextMenu.offsetWidth - 4))}px`;
   contextMenu.style.top = `${Math.max(0, Math.min(y, window.innerHeight - contextMenu.offsetHeight - 4))}px`;

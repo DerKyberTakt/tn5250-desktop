@@ -46,6 +46,7 @@ describe('MacroRecorder', () => {
     const r = new MacroRecorder();
     for (const ch of 'wrkactjob') r.text(ch);
     r.key('copy');
+    r.key('find');
     r.key('enter');
     r.text('5');
     r.key('tab');

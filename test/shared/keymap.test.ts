@@ -74,6 +74,11 @@ describe('ACS keymap', () => {
     expect(Object.values(ACS_KEYMAP)).not.toContain('dup');
   });
 
+  it('binds Find on Screen to Ctrl+F, and to Cmd+F on macOS', () => {
+    expect(resolveAction(k('f', 'KeyF', { ctrl: true }), ACS_KEYMAP)).toBe('find');
+    expect(resolveAction(k('f', 'KeyF', { meta: true }), ACS_KEYMAP)).toBe('find');
+  });
+
   it('classifies text keys', () => {
     expect(isTextKey(k('a', 'KeyA'))).toBe(true);
     expect(isTextKey(k('5', 'Numpad5'))).toBe(true);

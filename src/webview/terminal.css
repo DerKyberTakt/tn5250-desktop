@@ -172,7 +172,83 @@ body.pointer-crosshair #screen {
   cursor: crosshair !important;
 }
 
-/* Right-click menu on the screen: Copy / Paste / Select All. */
+/* Find on screen: the bar at the top right, like VS Code's find widget. */
+#find-bar {
+  position: absolute;
+  top: 0;
+  right: 18px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--vscode-editorWidget-background, #252526);
+  color: var(--vscode-editorWidget-foreground, #cccccc);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgb(0 0 0 / 36%));
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: 13px;
+}
+
+#find-bar[hidden] {
+  display: none;
+}
+
+#find-bar input {
+  width: 180px;
+  padding: 3px 6px;
+  color: var(--vscode-input-foreground, #cccccc);
+  background: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  font: inherit;
+  outline: none;
+}
+
+#find-bar input:focus {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+#find-bar.no-results input {
+  border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+#find-bar .count {
+  min-width: 70px;
+  padding: 0 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#find-bar.no-results .count {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+#find-bar button {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font: inherit;
+  cursor: pointer;
+}
+
+#find-bar button:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgb(90 93 94 / 31%));
+}
+
+#find-bar button.toggle.on {
+  color: var(--vscode-inputOption-activeForeground, #ffffff);
+  background: var(--vscode-inputOption-activeBackground, rgb(36 137 219 / 51%));
+  border-color: var(--vscode-inputOption-activeBorder, #007acc);
+}
+
+/* Right-click menu on the screen: Copy / Paste / Select All / Find. */
 #ctx-menu {
   position: fixed;
   z-index: 20;
