@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { explainToolError } from '../../src/desktop/toolErrors';
+import { connectionLost, explainToolError } from '../../src/desktop/toolErrors';
 
 const host = 'pub400.com';
 
@@ -47,5 +47,18 @@ describe('explainToolError', () => {
     expect(e.kind).toBe('other');
     expect(e.message).toBe('SQL0204 NOSUCHTABLE in NOSUCHLIB type *FILE not found.');
     expect(e.hint).toBeUndefined();
+  });
+});
+
+describe('connectionLost', () => {
+  it('is what the Go side says once it dropped the session, or a stale connection id', () => {
+    expect(connectionLost('connection lost: remote command server: EOF')).toBe(true);
+    expect(connectionLost('Connection lost: write tcp: wsasend: forcibly closed')).toBe(true);
+    expect(connectionLost('the connection is closed; connect again')).toBe(true);
+  });
+  it('is not an SQL or sign-on error', () => {
+    expect(connectionLost('SQL0204: NOPE in QGPL type *FILE not found.')).toBe(false);
+    expect(connectionLost('sign-on refused: the password is not correct')).toBe(false);
+    expect(connectionLost('')).toBe(false);
   });
 });

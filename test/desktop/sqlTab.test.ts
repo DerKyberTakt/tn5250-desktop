@@ -284,3 +284,68 @@ describe('outcomeText', () => {
     expect((panes[2]!.querySelector('button.more') as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+describe('Run SQL Scripts: a lost connection offers a reconnect', () => {
+  let fake: ReturnType<typeof fakeHost>;
+  beforeEach(() => {
+    document.body.replaceChildren();
+    fake = fakeHost();
+    // jsdom has no showModal(): the dialogs only need open/close and the close event.
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      this.removeAttribute('open');
+      this.dispatchEvent(new Event('close'));
+    };
+  });
+
+  const dialog = (): HTMLDialogElement | null => document.querySelector('dialog.modal');
+
+  it('Reconnect signs on again and runs the statement once more', async () => {
+    const tab = await openTab();
+    expect(fake.app.SqlConnect).toHaveBeenCalledTimes(1);
+    let dead = true;
+    fake.app.SqlRun.mockImplementation((_id: string, stmt: string) => {
+      if (dead) {
+        dead = false;
+        return Promise.reject(new Error('connection lost: database server: read tcp: wsarecv: An existing connection was forcibly closed by the remote host.'));
+      }
+      return Promise.resolve({ kind: 'count', more: false, updateCount: 3, messages: [], elapsedMs: 24 } as SqlResult);
+    });
+    tab.setScript('DELETE FROM QGPL.T1;');
+    const run = tab.runAll();
+    await tick();
+    const d = dialog();
+    expect(d).not.toBeNull();
+    expect(d!.querySelector('h2')!.textContent).toBe('Disconnected from pub400.com');
+    expect(d!.querySelector('button.primary')!.textContent).toBe('Reconnect');
+    expect(outputLines(tab).some((l) => l.includes('The connection to pub400.com was lost'))).toBe(true);
+    d!.returnValue = 'ok';
+    d!.close();
+    await run;
+    expect(fake.app.SqlConnect).toHaveBeenCalledTimes(2);
+    expect(fake.app.SqlRun).toHaveBeenCalledTimes(2);
+    expect(outputLines(tab).some((l) => l === 'Reconnected to pub400.com.')).toBe(true);
+    expect(outputLines(tab).some((l) => l === '✓ 3 rows affected in 24 ms.')).toBe(true);
+    expect(job(tab)).toContain('database server');
+  });
+
+  it('Cancel leaves the tab disconnected and the statement failed; the next Run signs on again', async () => {
+    const tab = await openTab();
+    fake.app.SqlRun.mockImplementationOnce(() => Promise.reject(new Error('the connection is closed; connect again')));
+    tab.setScript('SELECT * FROM QSYS2.SYSTABLES;');
+    const run = tab.runAll();
+    await tick();
+    const d = dialog();
+    expect(d).not.toBeNull();
+    (d!.querySelector('button.cancel') as HTMLButtonElement).click();
+    await run;
+    expect(fake.app.SqlConnect).toHaveBeenCalledTimes(1);
+    expect(outputLines(tab).some((l) => /Failed:/.test(l))).toBe(true);
+    expect(job(tab)).toBe('disconnected');
+    await tab.runAll();
+    expect(fake.app.SqlConnect).toHaveBeenCalledTimes(2);
+    expect(job(tab)).toContain('database server');
+  });
+});

@@ -24,6 +24,15 @@ const AUTHORITY_IDS = /\b(CPF2207|CPF9802|CPF9820|CPF4236|CPF2189|CPF2204|CPD003
 const NOT_FOUND_IDS = /\b(CPF2204|SQL0204)\b/i;
 
 /**
+ * Whether a tool error means the host-server session is gone (the Go side says
+ * "connection lost" once it has dropped the session; a stale id says it is closed).
+ * The answer then is to sign on again, not to read the message.
+ */
+export function connectionLost(raw: string): boolean {
+  return /^connection lost\b|\bthe connection is closed\b/i.test(raw.trim());
+}
+
+/**
  * Turns a raw error from a host-server tool into what the user can act on: whether
  * the host servers are reachable, whether the sign-on was refused (and by what),
  * whether it is an authority problem, or whether QSH is missing, with the message id

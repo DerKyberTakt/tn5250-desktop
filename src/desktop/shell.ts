@@ -122,6 +122,9 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
   private readonly frames = byId<HTMLElement>('frames');
   private readonly pane2 = byId<HTMLElement>('pane2');
   private readonly paneSplit = byId<HTMLDivElement>('pane-split');
+  /** The split pane's tab, in the tab row above the pane (not in the pane: the tabs sit side by side). */
+  private readonly paneTabs = byId<HTMLDivElement>('pane-tabs');
+  private readonly tabrow = byId<HTMLDivElement>('tabrow');
   private readonly empty = byId<HTMLDivElement>('empty');
   private readonly sidebar = byId<HTMLElement>('sidebar');
   private toolbarItems: Array<{ button: HTMLButtonElement; enabled?: () => boolean; pressed?: () => boolean }> = [];
@@ -163,6 +166,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     this.bindSidebar();
     this.statusText.addEventListener('click', () => this.toggleLog());
     this.paneSplit.addEventListener('mousedown', (e) => this.startPaneResize(e));
+    new ResizeObserver(() => this.syncPaneTabs()).observe(this.pane2);
     byId<HTMLButtonElement>('log-close').addEventListener('click', () => this.toggleLog(false));
     this.renderSessions();
     window.addEventListener('message', (ev) => this.onFrameMessage(ev));
@@ -554,9 +558,10 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
    * returned callback remembers a working typed password and forgets a refused saved one.
    */
   private async signonFor(title: string, note: string): Promise<{ request: SqlConnectRequest; onSignon: (error?: unknown) => void } | undefined> {
-    const t = this.activeTerminal();
     const defaults = this.store.readDefaults();
-    const base = t?.profile ?? this.pickedSession() ?? this.store.resolvedSessions()[0] ?? defaults;
+    const picked = await this.pickSignon(title, note);
+    if (picked === undefined) return undefined;
+    const base = picked === 'other' ? { ...defaults, host: '', signonUser: '' } : picked;
     let host = base.host || this.store.ifsLast?.host || '';
     let user = base.signonUser.trim() || (this.store.ifsLast?.host === host ? this.store.ifsLast.user : '');
     let password = host && user ? await this.credentials.find(user, host, sameName(base, host)) : '';
@@ -602,6 +607,35 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       if (!typed && /sign-on refused/i.test(errorText(error))) void this.credentials.remove(user, host, sameName(base, host));
     };
     return { request, onSignon };
+  }
+
+  /**
+   * Which sign-on a host-server tool uses: the active tab's session first, then the other
+   * connected tabs, the session picked in the panel and the saved ones, or Other host for
+   * a host and user typed by hand. The tool used to take the active tab's sign-on without
+   * saying so, which was hard to tell from the tab itself.
+   */
+  private async pickSignon(title: string, note: string): Promise<TerminalSettings | 'other' | undefined> {
+    const choices: Array<{ label: string; profile: TerminalSettings }> = [];
+    const seen = new Set<string>();
+    const add = (profile: TerminalSettings | undefined, tag: string): void => {
+      if (!profile?.host) return;
+      const key = `${profile.host}|${profile.signonUser.trim()}`.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      const user = profile.signonUser.trim().toUpperCase() || 'user asked';
+      choices.push({ label: `${profile.name || profile.host} · ${user}@${profile.host}${tag ? ` (${tag})` : ''}`, profile });
+    };
+    const active = this.activeTerminal();
+    add(active?.profile, active?.connected ? 'this tab' : 'this tab, disconnected');
+    for (const t of this.terminals()) if (t.connected) add(t.profile, 'connected');
+    add(this.pickedSession(), 'selected');
+    for (const s of this.store.resolvedSessions()) add(s, '');
+    if (!choices.length) return 'other';
+    const r = await listDialog(title, `${note} Sign on with:`, choices.map((c) => c.label), ['Use'], ['Other host…'], '');
+    if (!r) return undefined;
+    if (r.row < 0) return 'other';
+    return choices[r.row]?.profile ?? 'other';
   }
 
   private openDemo(): void {
@@ -680,14 +714,15 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     if (this.split === entry) return;
     if (this.split) this.unsplit(false);
     this.split = entry;
-    const tabs = this.pane2.querySelector('.pane-tabs') as HTMLElement;
     const frames = this.pane2.querySelector('.pane-frames') as HTMLElement;
-    tabs.append(entry.button);
+    this.paneTabs.append(entry.button);
     frames.append(entry.tab.frame);
     entry.button.classList.add('in-pane');
     entry.tab.frame.classList.add('active');
     this.pane2.hidden = false;
     this.paneSplit.hidden = false;
+    this.paneTabs.hidden = false;
+    this.syncPaneTabs();
     if (this.active === entry) {
       const other = this.entries.find((e) => e !== entry);
       if (other) this.activate(other);
@@ -710,12 +745,20 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     this.frames.append(entry.tab.frame);
     this.pane2.hidden = true;
     this.paneSplit.hidden = true;
+    this.paneTabs.hidden = true;
     this.renderTabButton(entry);
     if (bringToFront) this.activate(entry);
     else {
       entry.tab.frame.classList.toggle('active', entry === this.active);
       this.refresh();
     }
+  }
+
+  /** The pane's tab is as wide as the pane plus the divider, so the tab stands above its pane. */
+  private syncPaneTabs(): void {
+    if (this.pane2.hidden) return;
+    const w = this.pane2.getBoundingClientRect().width + this.paneSplit.getBoundingClientRect().width;
+    this.paneTabs.style.width = `${Math.round(w)}px`;
   }
 
   private startPaneResize(e: MouseEvent): void {
@@ -864,6 +907,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       this.split = undefined;
       this.pane2.hidden = true;
       this.paneSplit.hidden = true;
+      this.paneTabs.hidden = true;
     }
     this.entries.splice(i, 1);
     if (handedOver && (entry.kind === 'ifs' || entry.kind === 'sql')) entry.tab.dispose({ keepSession: true });
@@ -923,6 +967,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     const windows = new Set(this.registry.map((t) => t.window)).add(this.windowName);
     const sessions = this.entries.filter((e) => e.kind === 'terminal' && e !== this.split).length;
     this.tabbar.hidden = sessions === 0 || (sessions < 2 && windows.size < 2 && !this.split);
+    this.tabrow.hidden = this.tabbar.hidden && this.paneTabs.hidden;
     this.toolstrip.classList.toggle('has-tools', sessions < this.entries.length);
     const t = this.activeTerminal();
     const title = this.active ? `${this.active.tab.title} - ${APP_NAME}` : APP_NAME;

@@ -170,6 +170,11 @@ func (a *App) SqlClose(id string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.closeLocked()
+}
+
+// closeLocked closes every host-server connection of the session. The caller holds s.mu.
+func (s *sqlSession) closeLocked() {
 	_ = s.cmd.Close()
 	if s.files != nil {
 		_ = s.files.Close()
@@ -263,7 +268,8 @@ func (a *App) SqlRun(id string, statement string, maxRows int) (SqlResult, error
 		s.dropDB(err)
 	}
 	if sqlviacl.Classify(stmt) == sqlviacl.Query {
-		return s.query(stmt, maxRows, start)
+		out, err := s.query(stmt, maxRows, start)
+		return out, a.sqlFail(id, s, err)
 	}
 	cmd, err := sqlviacl.RunSQL(stmt, s.naming)
 	if err != nil {
@@ -271,7 +277,7 @@ func (a *App) SqlRun(id string, statement string, maxRows int) (SqlResult, error
 	}
 	res, err := s.cmd.Run(cmd)
 	if err != nil {
-		return SqlResult{}, err
+		return SqlResult{}, a.sqlFail(id, s, err)
 	}
 	out := SqlResult{Kind: "none", Messages: messagesOf(res), ElapsedMs: elapsed(start)}
 	if res.Failed() {
@@ -295,7 +301,8 @@ func (a *App) SqlFetch(id string, cursor string, maxRows int) (SqlResult, error)
 		maxRows = defaultPageRows
 	}
 	if cursor == dbCursor {
-		return s.fetchDB(time.Now())
+		out, err := s.fetchDB(time.Now())
+		return out, a.sqlFail(id, s, err)
 	}
 	table, offsetText, ok := strings.Cut(cursor, ":")
 	offset, _ := strconv.Atoi(offsetText)
@@ -317,7 +324,7 @@ func (a *App) CmdRun(id string, command string) (SqlResult, error) {
 	start := time.Now()
 	res, err := s.cmd.Run(command)
 	if err != nil {
-		return SqlResult{}, err
+		return SqlResult{}, a.sqlFail(id, s, err)
 	}
 	out := SqlResult{Kind: "none", Messages: messagesOf(res), ElapsedMs: elapsed(start)}
 	if res.Failed() {
@@ -445,7 +452,7 @@ func (a *App) QshRun(id string, command string) (SqlResult, error) {
 	stmf := s.tempFile("txt")
 	res, err := s.cmd.Run(sqlviacl.QshCommand(command, stmf))
 	if err != nil {
-		return SqlResult{}, err
+		return SqlResult{}, a.sqlFail(id, s, err)
 	}
 	out := SqlResult{Kind: "none", Messages: messagesOf(res), ElapsedMs: elapsed(start)}
 	if data, ccsid, readErr := s.readAndRemove(stmf); readErr == nil {

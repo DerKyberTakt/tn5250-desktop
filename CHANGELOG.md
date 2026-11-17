@@ -1,6 +1,9 @@
 # Changelog
 
 ## 0.3.3 - unreleased
+- Split view: the pane's tab sits in the tab row, right of the session tabs and above its pane, so the two sessions stand side by side under one tool bar; it had been a second tab row under the tool bar, where the tools' content is.
+- Run SQL Scripts and the IFS browser ask which sign-on to use before they open: the active tab's session, the other connected tabs, the session selected in the panel and the saved ones are listed as user@host, with Other host for a host and user typed by hand. They used to take the active tab's sign-on without saying so.
+- Run SQL Scripts: a lost host-server connection (the server job ended, the network dropped, an idle socket closed) is told from an ordinary error. The tab says it was disconnected and asks to reconnect; Reconnect signs on again and runs the statement once more. Before, every statement after the drop failed with a message about a closed connection and the only way on was a new tab.
 - Check for Updates shows what the update holds: the dialog lists the version you have and the new one, the change log of every release between them (read from the repository's CHANGELOG.md at the new tag), the release page as a link and, under Note, what Update now does (download from GitHub, check against SHA256SUMS, restart, which sessions drop) or why this copy has to be updated by hand. The change log is read from raw.githubusercontent.com, the same host family as the downloads; when it cannot be read the dialog points at the page.
 
 ## 0.3.2 - 2026-11-16

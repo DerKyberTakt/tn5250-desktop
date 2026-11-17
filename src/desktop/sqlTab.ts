@@ -5,7 +5,7 @@ import { ResultView, type ResultHost } from './sqlResult';
 import { actionButton, type ActionIconName, type ActionTone } from './icons';
 import { splitStatements, statementLabel, statementsIn, type Statement } from './sqlScript';
 import { isOutputLines, outcomeText } from './sqlText';
-import { explainToolError } from './toolErrors';
+import { connectionLost, explainToolError } from './toolErrors';
 
 export { outcomeText } from './sqlText';
 
@@ -238,6 +238,31 @@ export class SqlTab {
     }
   }
 
+  /** The session is gone: the tab says so and forgets the connection id (the Go side has dropped it). */
+  private lostConnection(raw: string): void {
+    this.connection = '';
+    this.connEl.textContent = `${this.request.user.toUpperCase()}@${this.request.host} · disconnected`;
+    this.jobEl.textContent = 'disconnected';
+    for (const v of this.results) v.cursorLost();
+    this.outputLine('error', `The connection to ${this.request.host} was lost: ${raw.replace(/^connection lost:\s*/i, '')}`);
+    this.showOutput();
+    this.host.log(`[SQL ${this.request.host}] connection lost: ${raw}`);
+  }
+
+  /** Asks, then signs on again; true when the tab has a connection again. */
+  private async offerReconnect(): Promise<boolean> {
+    const again = await confirmDialog(
+      `Disconnected from ${this.request.host}`,
+      `The host-server connection was lost (the server job ended, or the network dropped). Reconnect as ${this.request.user.toUpperCase()} and run the statement again?`,
+      'Reconnect',
+    );
+    if (!again) return false;
+    if (!(await this.connect())) return false;
+    this.setBusy(true);
+    this.outputLine('info', `Reconnected to ${this.request.host}.`);
+    return true;
+  }
+
   /** Tells the user which path the session took: the database server, or the fallback and why. */
   private async showTransport(): Promise<void> {
     let info: SqlConnInfo;
@@ -312,21 +337,37 @@ export class SqlTab {
         const entry = this.beginStatement(i + 1, list.length, s);
         // The session holds one open cursor: an SQL statement takes it from the earlier results.
         if (s.kind === 'sql') for (const v of this.results) v.cursorLost();
-        let r: SqlResult;
-        try {
-          r =
-            s.kind === 'cl'
-              ? await goApp().CmdRun(this.connection, s.text)
-              : s.kind === 'qsh'
-                ? await goApp().QshRun(this.connection, s.text)
-                : await goApp().SqlRun(this.connection, s.text, FETCH_ROWS);
-        } catch (err) {
-          const why = explainToolError(s.kind === 'cl' ? 'CL' : s.kind === 'qsh' ? 'QSH' : 'SQL', this.request.host, errorText(err));
-          this.endStatement();
-          this.setOutcome(entry, 'error', `Failed: ${why.message}${why.hint ? ` ${why.hint}` : ''}`);
-          this.setLast('error', `Failed: ${why.message}`, s);
-          failed = true;
-          if (i < list.length - 1 && !(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue'))) break;
+        let r: SqlResult | undefined;
+        let retried = false;
+        let stop = false;
+        while (r === undefined) {
+          try {
+            r =
+              s.kind === 'cl'
+                ? await goApp().CmdRun(this.connection, s.text)
+                : s.kind === 'qsh'
+                  ? await goApp().QshRun(this.connection, s.text)
+                  : await goApp().SqlRun(this.connection, s.text, FETCH_ROWS);
+          } catch (err) {
+            const raw = errorText(err);
+            // The host-server session is gone (its job ended, the network dropped): offer
+            // to sign on again and run this statement once more, instead of a dead tab.
+            if (!retried && connectionLost(raw)) {
+              retried = true;
+              this.lostConnection(raw);
+              if (await this.offerReconnect()) continue;
+            }
+            const why = explainToolError(s.kind === 'cl' ? 'CL' : s.kind === 'qsh' ? 'QSH' : 'SQL', this.request.host, raw);
+            this.endStatement();
+            this.setOutcome(entry, 'error', `Failed: ${why.message}${why.hint ? ` ${why.hint}` : ''}`);
+            this.setLast('error', `Failed: ${why.message}`, s);
+            failed = true;
+            stop = !this.connection || (i < list.length - 1 && !(await confirmDialog('Statement failed', 'Continue with the next statement?', 'Continue')));
+            break;
+          }
+        }
+        if (r === undefined) {
+          if (stop) break;
           continue;
         }
         this.endStatement();
