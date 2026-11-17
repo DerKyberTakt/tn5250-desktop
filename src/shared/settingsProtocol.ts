@@ -97,4 +97,6 @@ export type SettingsToHost =
   | { type: 'saveAgent'; values: AgentSettings }
   /** AI Agent page buttons: the host runs the matching tn5250.agent.* command and pushes the new status. */
   | { type: 'agentCommand'; command: 'setup' | 'enroll' | 'unenroll' }
-  | { type: 'browseAgentBinary' };
+  | { type: 'browseAgentBinary' }
+  /** AI Agent page: Install tn5250-tui (the host downloads the latest release into its storage and pushes the new status). */
+  | { type: 'installAgentBinary' };

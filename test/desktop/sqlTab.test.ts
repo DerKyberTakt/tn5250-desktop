@@ -306,7 +306,7 @@ describe('Run SQL Scripts: a lost connection offers a reconnect', () => {
     const tab = await openTab();
     expect(fake.app.SqlConnect).toHaveBeenCalledTimes(1);
     let dead = true;
-    fake.app.SqlRun.mockImplementation((_id: string, stmt: string) => {
+    fake.app.SqlRun.mockImplementation(() => {
       if (dead) {
         dead = false;
         return Promise.reject(new Error('connection lost: database server: read tcp: wsarecv: An existing connection was forcibly closed by the remote host.'));

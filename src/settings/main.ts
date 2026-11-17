@@ -179,7 +179,7 @@ type FieldSpec = { showIf?: Key; hideIf?: Key; showWhen?: [Key, string[]]; locke
 /** Information bubbles of the AI Agent page (settings outside the profile: tn5250.agent.*). */
 const AGENT_HELP = {
   enabled: 'Shows the Agent Sessions view in the side bar: the 5250 sessions an AI agent holds through tn5250-tui mcp (the console terminal\u2019s MCP server), each one watchable read-only in a terminal.',
-  binary: 'Path of tn5250-tui, the console terminal. Empty: found on PATH or in the installer\u2019s folder (%LOCALAPPDATA%\\Programs\\tn5250-tui on Windows; ~/.local/bin, /usr/local/bin, /usr/bin elsewhere).',
+  binary: 'Path of tn5250-tui, the console terminal. Empty: the copy Install put into this extension\u2019s storage, else PATH, else the installer\u2019s folder (%LOCALAPPDATA%\\Programs\\tn5250-tui on Windows; ~/.local/bin, /usr/local/bin, /usr/bin elsewhere). Install downloads the latest release from GitHub and checks it against the release\u2019s SHA256SUMS.',
   site: 'The tn5250-tui site the agent signs on with: its own user profile and host, added with Enroll below or with :sites in tn5250-tui. Set Up Claude Code writes this name into .mcp.json.',
   readOnly: 'Starts the agent\u2019s server with --read-only: typed text that starts a command that changes things (DLT, CHG, CRT, SBMJOB, CALL, ...) is refused.',
   enroll: 'Enroll writes one of your connections, with your sign-on user and password and bypass sign-on, as the agent\u2019s site into the console terminal\u2019s sites file; a modal names the file first, and the next start of tn5250-tui moves the password into the OS secret store. Remove deletes that site again.',
@@ -1553,9 +1553,12 @@ function renderAgentPage(): HTMLElement {
   };
   const browse = el('button', 'secondary', 'Browse\u2026');
   browse.onclick = () => post({ type: 'browseAgentBinary' });
-  file.append(bin, browse);
+  const install = el('button', 'secondary', st?.binaryFound ? 'Update\u2026' : 'Install\u2026');
+  install.title = 'Download the latest tn5250-tui release from GitHub (checked against its SHA256SUMS) into this extension\u2019s storage';
+  install.onclick = () => post({ type: 'installAgentBinary' });
+  file.append(bin, browse, install);
   box.append(row('Console terminal (tn5250-tui)', AGENT_HELP.binary, file));
-  if (st) box.append(note(st.binaryFound ? `Found: ${st.binaryFound}` : 'Not found on PATH or in the installer\u2019s folder. Install tn5250-tui (github.com/DerKyberTakt/tn5250-tui) or browse to it.', !st.binaryFound));
+  if (st) box.append(note(st.binaryFound ? `Found: ${st.binaryFound}` : 'Not found. Install downloads the latest release from GitHub into this extension\u2019s storage (no PATH needed); or browse to a copy.', !st.binaryFound));
 
   const site = el('input');
   site.type = 'text';
