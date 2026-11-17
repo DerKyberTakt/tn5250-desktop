@@ -1145,6 +1145,25 @@ button.keycap span {
   transition: color 0.16s ease, text-shadow 0.16s ease;
 }
 
+/*
+ * The key drops down and to the right under the pointer on hover. A pointer resting on the
+ * key's top or left edge was then outside it, the hover ended, the key sprang back under the
+ * pointer, and the two states flickered without end. A transparent hit area reaching 8 px
+ * up and left of the key (more than the 6 px it travels) keeps the pointer on the key.
+ */
+button.keycap {
+  position: relative;
+}
+
+button.keycap::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  right: 0;
+  bottom: 0;
+}
+
 button.keycap:hover span,
 button.keycap:focus-visible span {
   color: var(--key-hot);

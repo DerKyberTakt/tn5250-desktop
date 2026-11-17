@@ -123,6 +123,31 @@
   box-shadow: 0 0 0 0 var(--key-ink);
 }
 
+/* The same hit area as shell.css gives the dialog keycaps: the key moves under the pointer on
+   hover, and a pointer on its top or left edge must not fall off it (an endless flicker). */
+.buttons button,
+.keyboard td.assign button,
+.keyboard button.secondary,
+.vk-bar button,
+.filerow button,
+.row button.secondary {
+  position: relative;
+}
+
+.buttons button::after,
+.keyboard td.assign button::after,
+.keyboard button.secondary::after,
+.vk-bar button::after,
+.filerow button::after,
+.row button.secondary::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: 0;
+  bottom: 0;
+}
+
 .buttons button:disabled,
 .vk-bar button:disabled {
   opacity: 0.45;
