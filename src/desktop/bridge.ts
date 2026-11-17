@@ -298,17 +298,55 @@ export function wailsRuntime(): WailsRuntime {
 let brokerReady = false;
 const brokerQueue: unknown[] = [];
 
+/** Several relay messages carried by one Go call; onRelay hands them out one by one, in order. */
+interface RelayBatch {
+  type: 'relay:batch';
+  msgs: unknown[];
+}
+
+const isBatch = (m: unknown): m is RelayBatch => typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'relay:batch' && Array.isArray((m as { msgs?: unknown }).msgs);
+
+const outbound = new Map<string, unknown[]>();
+let flushScheduled = false;
+let chain: Promise<void> = Promise.resolve();
+
 /**
  * Sends a relay message to one window (src/desktop/relay.ts). Messages for the broker wait
  * until its page has said it listens (broker:ready, or a registry reply to window:hello):
  * an event delivered to a page that has not loaded is lost.
+ *
+ * Order is kept. Every Go binding call runs on a goroutine of its own, so two calls made
+ * back to back can reach the other window in either order: the two screens of one host
+ * chunk (the menu, then its command field) arrived swapped now and then, and the tab
+ * painted the older one last. Messages queued within one tick travel in a single call,
+ * and the next call waits for the previous one to be delivered.
  */
 export function relay(to: string, msg: unknown): Promise<void> {
   if (to === 'broker' && !brokerReady) {
     brokerQueue.push(msg);
     return Promise.resolve();
   }
-  return goApp().Relay(to, 'relay', msg);
+  const q = outbound.get(to);
+  if (q) q.push(msg);
+  else outbound.set(to, [msg]);
+  if (!flushScheduled) {
+    flushScheduled = true;
+    queueMicrotask(flushRelay);
+  }
+  return chain;
+}
+
+function flushRelay(): void {
+  flushScheduled = false;
+  const batches = [...outbound.entries()];
+  outbound.clear();
+  chain = chain
+    .then(async () => {
+      for (const [to, msgs] of batches) {
+        await goApp().Relay(to, 'relay', msgs.length === 1 ? msgs[0] : ({ type: 'relay:batch', msgs } satisfies RelayBatch));
+      }
+    })
+    .catch(() => undefined);
 }
 
 /** Sends at once, queue or not (the window:hello handshake). */
@@ -323,9 +361,12 @@ export function brokerIsReady(): void {
   for (const msg of brokerQueue.splice(0)) void goApp().Relay('broker', 'relay', msg).catch(() => undefined);
 }
 
-/** Relay messages addressed to this window. */
+/** Relay messages addressed to this window, one at a time and in the order they were sent. */
 export function onRelay(callback: (msg: unknown) => void): () => void {
-  return wailsRuntime().EventsOn('relay', callback);
+  return wailsRuntime().EventsOn('relay', (m) => {
+    if (isBatch(m)) for (const x of m.msgs) callback(x);
+    else callback(m);
+  });
 }
 
 /** The command line a second launch of the exe was started with (forwarded by the host). */

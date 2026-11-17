@@ -19,3 +19,6 @@ tn5250-trace-*.json
 # local traces and stack dumps for debugging
 debug/
 
+
+# saved session traces (any name): never committed
+*[Tt]race*.json
