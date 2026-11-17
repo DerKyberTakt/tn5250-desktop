@@ -2,6 +2,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { brokerIsReady, onRelay, relay } from '../../src/desktop/bridge';
 
+// The real Wails runtime starts a polling timer at import under a DOM; it fired after this short
+// file's jsdom was torn down ('window is not defined' as an unhandled error on CI). Nothing here
+// needs it: the tests install window.go and window.runtime fakes.
+vi.mock('@wailsio/runtime', () => ({ Application: {}, Browser: {}, Call: { ByName: vi.fn() }, Events: { On: vi.fn() }, Window: {} }));
+
 /** A Go Relay whose calls resolve only when the test says so. */
 function fakeRelay() {
   const calls: Array<{ to: string; msg: unknown; resolve: () => void }> = [];
