@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.3 - unreleased
+## 0.3.3 - 2026-11-17
 - Fixed: now and then a screen came up with the cursor at the top left and no command line until a key was pressed (seen on menus after F3). The host sends such a screen as two records in one chunk, the menu and then the command field; the engine's two updates travelled to the tab window as two separate Go calls, which run concurrently and could arrive swapped, so the tab painted the older screen last. Relay messages queued in one tick now travel in one call and the next call waits for the previous one.
 - Split view: the pane's tab sits in the tab row, right of the session tabs and above its pane, so the two sessions stand side by side under one tool bar; it had been a second tab row under the tool bar, where the tools' content is.
 - Run SQL Scripts and the IFS browser ask which sign-on to use before they open: the active tab's session, the other connected tabs, the session selected in the panel and the saved ones are listed as user@host, with Other host for a host and user typed by hand. They used to take the active tab's sign-on without saying so.
