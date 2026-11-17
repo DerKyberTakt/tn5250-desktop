@@ -166,6 +166,7 @@ function applyConfig(): void {
   });
   renderer.setOptions({
     uiMode: st.uiMode,
+    textWindows: st.enhancedTextWindows,
     autoFit: st.autoFit,
     fillWindow: st.fillWindow,
     screenOverflow: st.screenOverflow,

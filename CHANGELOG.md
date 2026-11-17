@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.3.4 - unreleased
+- Enhanced screen style: windows the host draws with border characters get the same rounded frame and shadow as GUI windows. IBM i sends a DDS WINDOW as plain text when its WDWBORDER names border characters or a display attribute (many vendor screens do), so such windows showed as bars of reverse-image characters while others got a frame. The border layout of a character display (attribute, border character, attribute on each side between a top and a bottom row) is recognised on every screen; a title or footer written over the border becomes the frame's label. New setting Frame text windows on the Enhanced UI page, on by default.
 - Run SQL Scripts runs PASE command lines: `PASE: …`, a path under /QOpenSys, or a line that starts with an open-source package tool (git, python3, bash, node, npm, yum, curl, jq, …) goes through QP2SHELL as /QOpenSys/usr/bin/sh with /QOpenSys/pkgs/bin on PATH, as in an SSH session; its output comes back as rows and a non-zero exit status is reported as an error. Qshell lines (`QSH:`, ls, cat, openssl, …) run as before. A server job whose CCSID is 65535, which PASE refuses, is given CCSID 37 on the first PASE line.
 
 ## 0.3.3 - 2026-11-17

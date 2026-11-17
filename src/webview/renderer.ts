@@ -4,6 +4,7 @@ import { decoratedFieldCells, detectSubfiles, fieldRanges, keyLabelsIn, markedFi
 import type { FindMatch } from '../shared/screenFind';
 import type { ColumnSeparators, CursorStyle, WatermarkPosition } from '../shared/settings';
 import { highlightScreen, Tok } from '../shared/sourceHighlight';
+import { inferTextWindows } from '../shared/textWindows';
 import { fitFont, shrinkScale } from './fit';
 import { placeWatermark, tileWatermark } from './watermark';
 import { scrollBarGeometry, scrollBarHit, type Rect, type ScrollBarGeometry, type ScrollHit } from './gui';
@@ -46,16 +47,17 @@ function selectionWidgetCells(s: ScreenSnapshot): Uint8Array<ArrayBuffer> {
   return mask;
 }
 
-/** Cells of every GUI window border: the top and bottom rows and the three columns at each side. */
-function windowBorderCells(s: ScreenSnapshot): Uint8Array<ArrayBuffer> {
+/** Cells of every window border: the top and bottom rows and the three columns at each side. */
+function windowBorderCells(s: ScreenSnapshot, windows: SnapshotWindow[]): Uint8Array<ArrayBuffer> {
   const mask = new Uint8Array(s.rows * s.cols);
-  for (const w of s.gui?.windows ?? []) {
+  for (const w of windows) {
     for (let r = 0; r < w.rows; r++) {
       const base = (w.row + r) * s.cols + w.col;
-      if (r === 0 || r === w.rows - 1) mask.fill(1, base, base + w.cols);
+      const end = Math.min(base + w.cols, (w.row + r + 1) * s.cols); // a window flush with the right edge has no trailing attribute
+      if (r === 0 || r === w.rows - 1) mask.fill(1, base, end);
       else {
-        mask.fill(1, base, base + Math.min(3, w.cols));
-        mask.fill(1, base + Math.max(0, w.cols - 3), base + w.cols);
+        mask.fill(1, base, Math.min(end, base + 3));
+        mask.fill(1, Math.max(base, base + w.cols - 3), end);
       }
     }
   }
@@ -182,6 +184,8 @@ export interface RendererOptions {
   keyButtons: boolean;
   /** Draw a scroll bar beside every subfile (More... / Bottom), not only host-defined ones. */
   subfileScrollBar: boolean;
+  /** Enhanced mode: frame windows the host drew with border characters like its GUI windows. */
+  textWindows: boolean;
   demoMode: boolean;
   demoLabel: string;
   demoColor: string;
@@ -233,6 +237,7 @@ export class Renderer {
     underlineUrls: true,
     keyButtons: false,
     subfileScrollBar: false,
+    textWindows: true,
     demoMode: false,
     demoLabel: 'DEMO',
     demoColor: '#ff9f1c',
@@ -253,7 +258,9 @@ export class Renderer {
   private ruleCell: { row: number; col: number } | undefined;
   /** Subfiles found for the synthetic scroll bar (only when the option is on). */
   private subfiles: SubfileArea[] = [];
-  /** 1 where a cell is part of a GUI window border (enhanced mode draws a frame instead of the characters). */
+  /** Windows framed in enhanced mode: the host's GUI windows and, with the option on, windows drawn with border characters. */
+  private frameWindows: SnapshotWindow[] = [];
+  /** 1 where a cell is part of a window border (enhanced mode draws a frame instead of the characters). */
   private windowBorderMask = new Uint8Array(0);
   /** 1 where a selection field's indicator or push button bracket sits (enhanced mode draws widgets there). */
   private selectionMask = new Uint8Array(0);
@@ -307,7 +314,7 @@ export class Renderer {
     this.boxRanges = markedFieldRanges(screen);
     this.syntax = highlightScreen(screen);
     this.subfiles = this.options.subfileScrollBar && !screen.gui?.scrollBars.length ? detectSubfiles(screen) : [];
-    this.windowBorderMask = windowBorderCells(screen);
+    this.refreshWindows();
     this.selectionMask = selectionWidgetCells(screen);
     this.thumbPreview = undefined;
     if (resized) this.layout();
@@ -406,8 +413,22 @@ export class Renderer {
 
   setOptions(options: Partial<RendererOptions>): void {
     this.options = { ...this.options, ...options };
+    this.refreshWindows();
     this.layout();
     this.draw();
+  }
+
+  /** The windows to frame and the border cells they hide, for the current screen and options. */
+  private refreshWindows(): void {
+    const s = this.screen;
+    if (!s) {
+      this.frameWindows = [];
+      this.windowBorderMask = new Uint8Array(0);
+      return;
+    }
+    const inferred = this.options.uiMode === 'enhanced' && this.options.textWindows ? inferTextWindows(s) : [];
+    this.frameWindows = [...(s.gui?.windows ?? []), ...inferred];
+    this.windowBorderMask = windowBorderCells(s, this.frameWindows);
   }
 
   setWatermarkImage(dataUrl: string): void {
@@ -864,11 +885,10 @@ export class Renderer {
    * top edge, in place of the border characters the host sent for a character display.
    */
   private drawWindowFrames(): void {
-    const s = this.screen;
-    if (!s?.gui) return;
+    if (!this.screen || !this.frameWindows.length) return;
     const ctx = this.ctx;
     const e = this.theme.enhanced;
-    for (const w of s.gui.windows) {
+    for (const w of this.frameWindows) {
       // The frame runs through the middle of the border cells: the corner characters sit
       // in column 1 of the rectangle (column 0 is the attribute), the text starts at column 3.
       const x = this.x(w.col + 1) + this.cellW / 2;

@@ -125,6 +125,8 @@ colorBlueBg: string;
   enhancedActiveField: string;
   enhancedCornerRadius: number;
   enhancedTextGlow: boolean;
+  /** Enhanced mode frames windows the host drew with border characters (DDS WINDOW with WDWBORDER characters or attributes) like its GUI windows. */
+  enhancedTextWindows: boolean;
   /** Glow radius in pixels (0 = off). */
   enhancedGlowStrength: number;
   enhancedGlowColor: string;
@@ -273,6 +275,7 @@ colorBlueBg: '',
   enhancedActiveField: '#7aa2ff',
   enhancedCornerRadius: 4,
   enhancedTextGlow: true,
+  enhancedTextWindows: true,
   enhancedGlowStrength: 3,
   enhancedGlowColor: '#00d060',
   enhancedSelectionStart: '#4a6fa5',
