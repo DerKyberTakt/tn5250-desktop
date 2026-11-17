@@ -5,7 +5,7 @@ describe('bypass sign-on gate (one attempt per user and host at a time, none aft
   afterEach(() => vi.useRealTimers());
 
   it('keys by upper-case user and lower-case host', () => {
-    expect(SignonGate.key(' wardk ', 'MyHost.Example ')).toBe('WARDK@myhost.example');
+    expect(SignonGate.key(' jsmith ', 'MyHost.Example ')).toBe('JSMITH@myhost.example');
   });
 
   it('the first caller tries, the others wait for its result: success lets them go', async () => {
