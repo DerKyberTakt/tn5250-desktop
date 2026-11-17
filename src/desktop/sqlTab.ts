@@ -347,7 +347,9 @@ export class SqlTab {
                 ? await goApp().CmdRun(this.connection, s.text)
                 : s.kind === 'qsh'
                   ? await goApp().QshRun(this.connection, s.text)
-                  : await goApp().SqlRun(this.connection, s.text, FETCH_ROWS);
+                  : s.kind === 'pase'
+                    ? await goApp().PaseRun(this.connection, s.text)
+                    : await goApp().SqlRun(this.connection, s.text, FETCH_ROWS);
           } catch (err) {
             const raw = errorText(err);
             // The host-server session is gone (its job ended, the network dropped): offer
@@ -357,7 +359,7 @@ export class SqlTab {
               this.lostConnection(raw);
               if (await this.offerReconnect()) continue;
             }
-            const why = explainToolError(s.kind === 'cl' ? 'CL' : s.kind === 'qsh' ? 'QSH' : 'SQL', this.request.host, raw);
+            const why = explainToolError(s.kind === 'cl' ? 'CL' : s.kind === 'qsh' || s.kind === 'pase' ? 'QSH' : 'SQL', this.request.host, raw);
             this.endStatement();
             this.setOutcome(entry, 'error', `Failed: ${why.message}${why.hint ? ` ${why.hint}` : ''}`);
             this.setLast('error', `Failed: ${why.message}`, s);

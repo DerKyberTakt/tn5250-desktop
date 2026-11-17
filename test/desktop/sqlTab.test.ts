@@ -35,6 +35,8 @@ function fakeHost() {
     }),
     SqlFetch: vi.fn(async (): Promise<SqlResult> => ({ kind: 'rows', columns, rows: rows(3, 3), more: false, updateCount: 0, messages: [], elapsedMs: 8 })),
     CmdRun: vi.fn(async (): Promise<SqlResult> => ({ kind: 'rows', columns: [{ name: 'OUTPUT', type: 'VARCHAR', length: 378, scale: 0, nullable: false }], rows: [['QSYS'], ['QGPL']], more: false, updateCount: 0, messages: [{ id: '', code: 0, severity: 0, text: 'Output: spooled file QPDSPLIB, 2 lines.' }], elapsedMs: 30 })),
+    QshRun: vi.fn(async (_id: string, _command: string): Promise<SqlResult> => ({ kind: 'rows', columns: [{ name: 'output', type: 'VARCHAR', length: 0, scale: 0, nullable: false }], rows: [['a.txt']], more: false, updateCount: 0, messages: [], elapsedMs: 9 })),
+    PaseRun: vi.fn(async (_id: string, _command: string): Promise<SqlResult> => ({ kind: 'rows', columns: [{ name: 'output', type: 'VARCHAR', length: 0, scale: 0, nullable: false }], rows: [['On branch main']], more: false, updateCount: 0, messages: [], elapsedMs: 41 })),
     ClipboardSet: vi.fn(async () => undefined),
     SaveTextFile: vi.fn(async () => true),
   };
@@ -347,5 +349,23 @@ describe('Run SQL Scripts: a lost connection offers a reconnect', () => {
     await tab.runAll();
     expect(fake.app.SqlConnect).toHaveBeenCalledTimes(2);
     expect(job(tab)).toContain('database server');
+  });
+});
+
+describe('Run SQL Scripts: PASE lines', () => {
+  let fake: ReturnType<typeof fakeHost>;
+  beforeEach(() => {
+    document.body.replaceChildren();
+    fake = fakeHost();
+  });
+
+  it('a git line and a PASE: line go to PaseRun; a plain ls stays on QshRun', async () => {
+    const tab = await openTab();
+    tab.setScript('git -C /home/jsmith/app status\nPASE: bash -c "echo hi"\nls -l /home');
+    await tab.runAll();
+    expect(fake.app.PaseRun).toHaveBeenCalledTimes(2);
+    expect(fake.app.PaseRun.mock.calls.map((c) => c[1])).toEqual(['git -C /home/jsmith/app status', 'bash -c "echo hi"']);
+    expect(fake.app.QshRun).toHaveBeenCalledTimes(1);
+    expect([...tab.frame.querySelectorAll('.sql-out-lines')].map((e) => e.textContent)).toEqual(['On branch main', 'On branch main', 'a.txt']);
   });
 });

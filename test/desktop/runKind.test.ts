@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { classify } from '../../src/desktop/runKind';
 
 describe('classify', () => {
-  const cases: Array<[string, 'sql' | 'cl' | 'qsh', string]> = [
+  const cases: Array<[string, 'sql' | 'cl' | 'qsh' | 'pase', string]> = [
     ['select * from qiws.qcustcdt', 'sql', 'select * from qiws.qcustcdt'],
     ['  SELECT 1 FROM sysibm.sysdummy1;', 'sql', 'SELECT 1 FROM sysibm.sysdummy1;'],
     ['-- a comment\nselect 1', 'sql', '-- a comment\nselect 1'],
@@ -27,7 +27,7 @@ describe('classify', () => {
     ['DLYJOB 5', 'cl', 'DLYJOB 5'],
     ["QSH CMD('ls')", 'cl', "QSH CMD('ls')"],
     ['ls -l /home', 'qsh', 'ls -l /home'],
-    ['/QOpenSys/pkgs/bin/python3 --version', 'qsh', '/QOpenSys/pkgs/bin/python3 --version'],
+    ['/QOpenSys/pkgs/bin/python3 --version', 'pase', '/QOpenSys/pkgs/bin/python3 --version'],
     ['./run.sh', 'qsh', './run.sh'],
     ['PATH=/QOpenSys/pkgs/bin:$PATH', 'qsh', 'PATH=/QOpenSys/pkgs/bin:$PATH'],
     ['db2 "select 1 from sysibm.sysdummy1"', 'qsh', 'db2 "select 1 from sysibm.sysdummy1"'],
@@ -59,5 +59,21 @@ describe('classify', () => {
     expect(classify('ls').why).toBe('shell command ls');
     expect(classify('CL: x').why).toBe('prefix CL:');
     expect(classify('a | b').why).toBe('pipeline');
+  });
+});
+
+describe('classify: PASE', () => {
+  it('a PASE: prefix, a /QOpenSys path or an open-source package tool runs as PASE', () => {
+    expect(classify('PASE: bash -c "echo hi"')).toEqual({ kind: 'pase', text: 'bash -c "echo hi"', why: 'prefix PASE:' });
+    expect(classify('/QOpenSys/pkgs/bin/python3 --version').kind).toBe('pase');
+    expect(classify('git -C /home/jsmith/app status').kind).toBe('pase');
+    expect(classify('python3 -m json.tool /tmp/x.json').why).toBe('PASE command python3');
+    expect(classify('yum list installed').kind).toBe('pase');
+  });
+  it('core utilities stay Qshell, and QSH: still wins', () => {
+    expect(classify('ls -l /home').kind).toBe('qsh');
+    expect(classify('openssl version').kind).toBe('qsh');
+    expect(classify('QSH: git status').kind).toBe('qsh');
+    expect(classify('/usr/bin/ls').kind).toBe('qsh');
   });
 });

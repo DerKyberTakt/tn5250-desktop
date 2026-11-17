@@ -203,6 +203,8 @@ interface GoApp {
   CmdRun(id: string, command: string): Promise<SqlResult>;
   /** Qshell command; output lines come back as rows of one column. */
   QshRun(id: string, command: string): Promise<SqlResult>;
+  /** PASE command (/QOpenSys/usr/bin/sh through QP2SHELL, open-source packages on PATH); output lines as rows. */
+  PaseRun(id: string, command: string): Promise<SqlResult>;
   SettingsLoad(): Promise<string>;
   SettingsSave(text: string): Promise<void>;
   SettingsFilePath(): Promise<string>;

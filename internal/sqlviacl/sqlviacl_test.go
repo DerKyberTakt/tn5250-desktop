@@ -164,3 +164,26 @@ func TestQshAndLines(t *testing.T) {
 		t.Fatal("command error ids")
 	}
 }
+
+func TestPaseCommandAndExit(t *testing.T) {
+	cmd := PaseCommand("git -C /home/jsmith/app status", "/tmp/tn5250-p.txt")
+	want := "CALL PGM(QP2SHELL) PARM('/QOpenSys/usr/bin/sh' '-c' 'PATH=/QOpenSys/pkgs/bin:/QOpenSys/usr/bin:/usr/bin:$PATH; export PATH; { git -C /home/jsmith/app status ; } > /tmp/tn5250-p.txt 2>&1; echo \"tn5250-exit=$?\" >> /tmp/tn5250-p.txt')"
+	if cmd != want {
+		t.Fatalf("got  %s\nwant %s", cmd, want)
+	}
+	if c := PaseCommand("echo 'it''s'", "/tmp/x"); !strings.Contains(c, "echo ''it''''s''") {
+		t.Fatalf("quoting: %s", c)
+	}
+	rows := Lines([]byte("On branch main\nnothing to commit\ntn5250-exit=0\n"))
+	rest, exit := PaseExit(rows)
+	if len(rest) != 2 || exit != "0" {
+		t.Fatalf("rest %d exit %q", len(rest), exit)
+	}
+	rest, exit = PaseExit(Lines([]byte("fatal: not a git repository\ntn5250-exit=128\n")))
+	if len(rest) != 1 || exit != "128" {
+		t.Fatalf("rest %d exit %q", len(rest), exit)
+	}
+	if _, exit := PaseExit(Lines([]byte("no status line\n"))); exit != "" {
+		t.Fatalf("exit %q", exit)
+	}
+}

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.4 - unreleased
+- Run SQL Scripts runs PASE command lines: `PASE: …`, a path under /QOpenSys, or a line that starts with an open-source package tool (git, python3, bash, node, npm, yum, curl, jq, …) goes through QP2SHELL as /QOpenSys/usr/bin/sh with /QOpenSys/pkgs/bin on PATH, as in an SSH session; its output comes back as rows and a non-zero exit status is reported as an error. Qshell lines (`QSH:`, ls, cat, openssl, …) run as before. A server job whose CCSID is 65535, which PASE refuses, is given CCSID 37 on the first PASE line.
+
 ## 0.3.3 - 2026-11-17
 - Fixed: a keycap button flickered without end when the pointer rested on its top or left edge (the key drops under the pointer on hover, slid out from under it, sprang back, and so on). The key's hit area now reaches a little past those edges, so the pointer stays on it while it moves.
 - Fixed: now and then a screen came up with the cursor at the top left and no command line until a key was pressed (seen on menus after F3). The host sends such a screen as two records in one chunk, the menu and then the command field; the engine's two updates travelled to the tab window as two separate Go calls, which run concurrently and could arrive swapped, so the tab painted the older screen last. Relay messages queued in one tick now travel in one call and the next call waits for the previous one.

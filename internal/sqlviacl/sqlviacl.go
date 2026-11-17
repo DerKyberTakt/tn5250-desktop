@@ -254,6 +254,31 @@ func QshCommand(line, stmf string) string {
 	return "QSH CMD(" + Quote(strings.TrimSpace(line)+" > "+stmf+" 2>&1") + ")"
 }
 
+// PaseExitPrefix starts the last line a PASE run writes: the command's exit status.
+const PaseExitPrefix = "tn5250-exit="
+
+// PasePath is put in front of PATH for a PASE line: the open-source packages first, then the
+// core PASE utilities, so `git`, `python3`, `bash` and the like are found as in an SSH session.
+const PasePath = "/QOpenSys/pkgs/bin:/QOpenSys/usr/bin:/usr/bin"
+
+// PaseCommand runs a PASE command line through QP2SHELL in the job: /QOpenSys/usr/bin/sh -c,
+// output and errors to stmf, then the exit status as a last line (QP2SHELL itself does not
+// fail when the command does).
+func PaseCommand(line, stmf string) string {
+	script := "PATH=" + PasePath + ":$PATH; export PATH; { " + strings.TrimSpace(line) + " ; } > " + stmf + " 2>&1; echo \"" + PaseExitPrefix + "$?\" >> " + stmf
+	return "CALL PGM(QP2SHELL) PARM('/QOpenSys/usr/bin/sh' '-c' " + Quote(script) + ")"
+}
+
+// PaseExit splits the exit-status line off the rows of a PASE run: the remaining rows and
+// the status ("" when the line is missing, which means the shell never ran).
+func PaseExit(rows [][]*string) ([][]*string, string) {
+	n := len(rows)
+	if n == 0 || len(rows[n-1]) == 0 || rows[n-1][0] == nil || !strings.HasPrefix(*rows[n-1][0], PaseExitPrefix) {
+		return rows, ""
+	}
+	return rows[:n-1], strings.TrimSpace(strings.TrimPrefix(*rows[n-1][0], PaseExitPrefix))
+}
+
 // StreamText returns the text of a stream file as UTF-8. A file tagged with an EBCDIC
 // CCSID (what QSH gives a file created by a redirection in a job whose CCSID is EBCDIC)
 // is decoded with code page 37 and its record separators (NL X'15', LF X'25') become

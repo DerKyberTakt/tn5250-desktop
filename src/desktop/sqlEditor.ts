@@ -123,7 +123,7 @@ function commandLineDecorations(view: EditorView): DecorationSet {
   for (const { from, to } of view.visibleRanges) {
     for (let pos = from; pos <= to; ) {
       const line = view.state.doc.lineAt(pos);
-      const m = /^(\s*)(CL|QSH):/i.exec(line.text);
+      const m = /^(\s*)(CL|QSH|PASE):/i.exec(line.text);
       if (m) {
         b.add(line.from, line.from, clLine);
         b.add(line.from + m[1]!.length, line.from + m[0].length, clPrefix);
@@ -184,7 +184,7 @@ export function highlightedSql(text: string): DocumentFragment {
 }
 
 /** A CL or QSH command line coloured by its mode, for the Output pane. */
-export function highlightedCommand(text: string, kind: 'cl' | 'qsh'): DocumentFragment {
+export function highlightedCommand(text: string, kind: 'cl' | 'qsh' | 'pase'): DocumentFragment {
   return highlighted(text, kind === 'cl' ? clLanguage : shellLanguage);
 }
 

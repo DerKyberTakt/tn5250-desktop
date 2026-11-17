@@ -3,7 +3,7 @@
  * database server, a CL command for the remote command server, or a Qshell / PASE
  * command line. The rules mirror the console terminal's (tn5250-tui `runscript.Classify`):
  *
- * - an explicit `SQL:`, `CL:` or `QSH:` (`SH:`) prefix always wins and is stripped;
+ * - an explicit `SQL:`, `CL:`, `QSH:` (`SH:`) or `PASE:` prefix always wins and is stripped;
  * - an SQL keyword (SELECT, WITH, INSERT, CREATE, SET, ...) is SQL;
  * - CALL is CL as `CALL PGM(...)`, `CALL NAME`, `CALL LIB/NAME PARM(...)`, else SQL;
  * - a path, a `VAR=value`, a known shell command name or a pipeline is Qshell;
@@ -13,7 +13,7 @@
  * A misclassified line goes to the wrong interpreter and comes back as an error.
  */
 
-export type RunKind = 'sql' | 'cl' | 'qsh';
+export type RunKind = 'sql' | 'cl' | 'qsh' | 'pase';
 
 export interface Classified {
   kind: RunKind;
@@ -23,7 +23,7 @@ export interface Classified {
   why: string;
 }
 
-const PREFIX = /^\s*(SQL|CL|QSH|SH)\s*:\s*/i;
+const PREFIX = /^\s*(SQL|CL|QSH|SH|PASE)\s*:\s*/i;
 const COMMENTS = /^(\s|--[^\n]*(\n|$)|\/\*[\s\S]*?\*\/)+/;
 const FIRST_WORD = /^([A-Za-z0-9_$#@./~-]+)/;
 const CL_SHAPE = /^([A-Z0-9$#@_]{1,10}\/)?[A-Z][A-Z0-9$#@_]{1,9}$/i;
@@ -51,6 +51,18 @@ const SHELL_COMMANDS = new Set([
   'rpm', 'pip', 'pip3',
 ]);
 
+/**
+ * Tools that live in /QOpenSys/pkgs/bin (the open-source packages) or need the PASE shell:
+ * Qshell's PATH does not reach them, so a line that starts with one runs as PASE
+ * (/QOpenSys/usr/bin/sh through QP2SHELL, with the packages on PATH). The core PASE
+ * utilities in /QOpenSys/usr/bin (openssl, tr, printf, gzip ...) run under Qshell as well.
+ */
+const PASE_ONLY = new Set([
+  'bash', 'zsh', 'git', 'python', 'python3', 'pip', 'pip3', 'node', 'npm', 'npx', 'yum', 'rpm', 'curl', 'wget', 'jq',
+  'gcc', 'g++', 'make', 'cmake', 'perl', 'ruby', 'php', 'vim', 'nano', 'rsync', 'tmux', 'go', 'cargo', 'rustc', 'sudo',
+  'htop', 'tree', 'ncdu', 'bat', 'rg', 'fd',
+]);
+
 function looksLikeSqlTail(rest: string): boolean {
   const u = ` ${rest.toUpperCase()} `;
   for (const w of [' FROM ', ' WHERE ', ' JOIN ', ' SELECT ', ' VALUES ', ' INTO ']) if (u.includes(w)) return true;
@@ -64,6 +76,7 @@ export function classify(input: string): Classified {
     const p = m[1]!.toUpperCase();
     if (p === 'CL') return { kind: 'cl', text: rest, why: 'prefix CL:' };
     if (p === 'QSH' || p === 'SH') return { kind: 'qsh', text: rest, why: 'prefix QSH:' };
+    if (p === 'PASE') return { kind: 'pase', text: rest, why: 'prefix PASE:' };
     return { kind: 'sql', text: rest, why: 'prefix SQL:' };
   }
   const text = input.trim();
@@ -76,9 +89,11 @@ export function classify(input: string): Classified {
   const first = fw[1]!;
   const upper = first.toUpperCase();
   const rest = body.slice(first.length).trim();
+  if (first.startsWith('/QOpenSys/')) return { kind: 'pase', text, why: `PASE path ${first}` };
   if (first.startsWith('/') || first.startsWith('./') || first.startsWith('~') || first.startsWith('../')) {
     return { kind: 'qsh', text, why: `shell path ${first}` };
   }
+  if (PASE_ONLY.has(first)) return { kind: 'pase', text, why: `PASE command ${first}` };
   if (ASSIGN.test(body) && !SQL_KEYWORDS.has(upper)) return { kind: 'qsh', text, why: 'shell assignment' };
   if (upper === 'CALL') {
     return CALL_CL.test(body) ? { kind: 'cl', text, why: 'CL CALL' } : { kind: 'sql', text, why: 'SQL CALL' };

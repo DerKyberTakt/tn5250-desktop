@@ -103,6 +103,8 @@ type sqlSession struct {
 	cancel  atomic.Bool
 	// header is false once this host refused CPYTOIMPF ADDCOLNAM (releases before 7.2).
 	header bool
+	// paseCCSID is true once the server job was given CCSID 37 for PASE.
+	paseCCSID bool
 }
 
 type sqlState struct {
@@ -472,6 +474,66 @@ func (a *App) QshRun(id string, command string) (SqlResult, error) {
 	}
 	out.ElapsedMs = elapsed(start)
 	return out, nil
+}
+
+// PaseRun runs a PASE command line (/QOpenSys/usr/bin/sh through QP2SHELL, the open-source
+// packages on PATH) with its output sent to a stream file and read back. PASE refuses a
+// job whose CCSID is 65535: when the first run says so, the server job gets CCSID 37 and
+// the line runs again.
+func (a *App) PaseRun(id string, command string) (SqlResult, error) {
+	s, err := a.sqlSession(id)
+	if err != nil {
+		return SqlResult{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	start := time.Now()
+	stmf := s.tempFile("txt")
+	res, err := s.cmd.Run(sqlviacl.PaseCommand(command, stmf))
+	if err != nil {
+		return SqlResult{}, a.sqlFail(id, s, err)
+	}
+	if res.Failed() && !s.paseCCSID && mentionsCCSID65535(res) {
+		if r2, err2 := s.cmd.Run("CHGJOB CCSID(37)"); err2 == nil && !r2.Failed() {
+			s.paseCCSID = true
+			if res, err = s.cmd.Run(sqlviacl.PaseCommand(command, stmf)); err != nil {
+				return SqlResult{}, a.sqlFail(id, s, err)
+			}
+		}
+	}
+	out := SqlResult{Kind: "none", Messages: messagesOf(res), ElapsedMs: elapsed(start)}
+	if data, ccsid, readErr := s.readAndRemove(stmf); readErr == nil {
+		rows, exit := sqlviacl.PaseExit(sqlviacl.Lines(sqlviacl.StreamText(data, ccsid)))
+		out.Rows = rows
+		if len(out.Rows) > 0 {
+			out.Kind = "rows"
+			out.Columns = []SqlColumn{{Name: "output", Type: "VARCHAR"}}
+		}
+		if exit != "" && exit != "0" {
+			out.Kind = "error"
+			out.Messages = append(out.Messages, SqlMessage{Text: "the command ended with exit status " + exit})
+		}
+	} else if !ifs.IsNotFound(readErr) {
+		out.Messages = append(out.Messages, SqlMessage{Text: "the command's output could not be read: " + readErr.Error()})
+	}
+	if res.Failed() {
+		out.Kind = "error"
+		if len(out.Messages) == 0 {
+			out.Messages = []SqlMessage{{Text: res.Err().Error()}}
+		}
+	}
+	out.ElapsedMs = elapsed(start)
+	return out, nil
+}
+
+// mentionsCCSID65535 tells the PASE refusal of a job without a code page from other failures.
+func mentionsCCSID65535(res *rmtcmd.Result) bool {
+	for _, m := range res.Messages {
+		if strings.Contains(m.Text, "65535") {
+			return true
+		}
+	}
+	return false
 }
 
 // --- the database server path ------------------------------------------------------

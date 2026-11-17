@@ -13,7 +13,7 @@
 import { classify } from './runKind';
 
 export interface Statement {
-  kind: 'sql' | 'cl' | 'qsh';
+  kind: 'sql' | 'cl' | 'qsh' | 'pase';
   /** The statement without its terminating semicolon (CL: / QSH: without the prefix). */
   text: string;
   /** What decided the kind ("CL verb DSPLIBL", "prefix QSH:", ...). */
@@ -53,13 +53,13 @@ export function splitStatements(source: string): Statement[] {
     const start = i;
     const firstLine = source.slice(i, endOfLine(source, i)).replace(/\r?\n$/, '');
     const probe = classify(firstLine.replace(/\s*[+\\]\s*$/, '').replace(/\s*;\s*$/, ''));
-    if (probe.kind === 'qsh') {
+    if (probe.kind === 'qsh' || probe.kind === 'pase') {
       // A shell command line, to the end of the line; `\` continues it.
       let j = endOfLine(source, i);
       while (/\\\s*$/.test(source.slice(i, j).replace(/\r?\n$/, '')) && j < n) j = endOfLine(source, j);
       const text = joinContinued(source.slice(i, j), '\\');
       const { text: body, why } = classify(text);
-      if (body) out.push({ kind: 'qsh', text: body, why, start, end: j, line: lineAt(start) });
+      if (body) out.push({ kind: probe.kind, text: body, why, start, end: j, line: lineAt(start) });
       i = j;
       continue;
     }
@@ -157,6 +157,6 @@ export function statementsFrom(statements: Statement[], pos: number, source: str
 
 /** A short label for the Messages pane: the first words of the statement. */
 export function statementLabel(s: Statement, max = 60): string {
-  const flat = (s.kind === 'cl' ? 'CL: ' : s.kind === 'qsh' ? 'QSH: ' : '') + s.text.replace(/\s+/g, ' ');
+  const flat = (s.kind === 'cl' ? 'CL: ' : s.kind === 'qsh' ? 'QSH: ' : s.kind === 'pase' ? 'PASE: ' : '') + s.text.replace(/\s+/g, ' ');
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
