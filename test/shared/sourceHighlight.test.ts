@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ScreenSnapshot, SnapshotField } from '../../src/shared/protocol';
-import { detectSeu, highlightLines, highlightScreen, languageFromContent, languageFromFile, Tok, type SourceLang } from '../../src/shared/sourceHighlight';
+import { detectSeu, highlightLines, highlightScreen, languageFromContent, languageFromFile, languageFromFormatLine, Tok, type SourceLang } from '../../src/shared/sourceHighlight';
 
 /** Token kind of the first character of `needle` in line `text`. */
 function kindOf(lang: SourceLang, text: string, needle: string, lines: string[] = [text]): number {
@@ -151,18 +151,53 @@ describe('language detection', () => {
     expect(languageFromFile('QCLSRC')).toBe('cl');
     expect(languageFromFile('QDDSSRC')).toBe('dds');
     expect(languageFromFile('QSQLSRC')).toBe('sql');
+    expect(languageFromFile('QCMDSRC')).toBe('cl');
+    expect(languageFromFile('H')).toBe('c');
+    expect(languageFromFile('SYS')).toBe('c');
+    expect(languageFromFile('QCSRC')).toBe('c');
+    expect(languageFromFile('QCPPSRC')).toBe('c');
     expect(languageFromFile('MYSRC')).toBeUndefined();
+  });
+  it("uses SEU's format line", () => {
+    expect(languageFromFormatLine(' FMT H  HKeywords++++++++++++++++++++++++++++++')).toBe('rpg');
+    expect(languageFromFormatLine(' FMT C  CL0N01Factor1+++++++Opcode&ExtFactor2+++')).toBe('rpg');
+    expect(languageFromFormatLine(' FMT A  AAN01N02N03T.Name++++++RLen++TDpBLinPosFunctions+++')).toBe('dds');
+    expect(languageFromFormatLine(' FMT **  ...+... 1 ...+... 2 ...+... 3')).toBeUndefined();
+    expect(languageFromFormatLine(' SEU==>')).toBeUndefined();
   });
   it('falls back to the content', () => {
     expect(languageFromContent(['             PGM', '             DCL        VAR(&A) TYPE(*CHAR)'], 1)).toBe('cl');
     expect(languageFromContent([col(6, 'A          R REC1'), col(6, 'A            FLD1          10A')], 1)).toBe('dds');
     expect(languageFromContent(['     C                   EVAL      X = 1'], 1)).toBe('rpg');
     expect(languageFromContent(['select * from t'], 1)).toBe('sql');
+    expect(languageFromContent(['#include <stdio.h>', 'typedef struct {', '  int a;', '} T;'], 1)).toBe('c');
+  });
+  it('gives no language for text it cannot place', () => {
+    expect(languageFromContent(['/*                  Qus_OBJD0100                          */', '/* Function Prototype List: QUSROBJD                      */'], 1)).toBeUndefined();
+    expect(languageFromContent(['Dear Sir,', 'this is a text member.'], 1)).toBeUndefined();
+  });
+});
+
+describe('C', () => {
+  it('colours comments, strings, keywords, calls and preprocessor lines', () => {
+    const lines = ['#include <stdio.h>', 'typedef struct { /* layout', '  int  a; */ char *p;', '  char s[] = "a /* not a comment */";', "  return printf(\"%d\\n\", 'x'); // done"];
+    expect(kindOf('c', lines[0] as string, '#include', lines)).toBe(Tok.Marker);
+    expect(kindOf('c', lines[0] as string, '<stdio.h>', lines)).toBe(Tok.String);
+    expect(kindOf('c', lines[1] as string, 'typedef', lines)).toBe(Tok.Keyword);
+    expect(kindOf('c', lines[1] as string, '/* layout', lines)).toBe(Tok.Comment);
+    expect(kindOf('c', lines[2] as string, 'int', lines)).toBe(Tok.Comment);
+    expect(kindOf('c', lines[2] as string, 'char', lines)).toBe(Tok.Keyword);
+    expect(kindOf('c', lines[2] as string, '*p', lines)).toBe(Tok.None);
+    expect(kindOf('c', lines[3] as string, '"a /*', lines)).toBe(Tok.String);
+    expect(kindOf('c', lines[3] as string, 'not a', lines)).toBe(Tok.String);
+    expect(kindOf('c', lines[4] as string, 'printf', lines)).toBe(Tok.Builtin);
+    expect(kindOf('c', lines[4] as string, "'x'", lines)).toBe(Tok.String);
+    expect(kindOf('c', lines[4] as string, '// done', lines)).toBe(Tok.Comment);
   });
 });
 
 /** A synthetic 24x80 SEU edit screen: sequence-number field + source field per data line. */
-function seuScreen(file: string, source: string[]): ScreenSnapshot {
+function seuScreen(file: string, source: string[], fmt = ' FMT **  ...+... 1 ...+... 2 ...+... 3 ...+... 4 ...+... 5 ...+... 6 ...+... 7'): ScreenSnapshot {
   const rows = 24;
   const cols = 80;
   const lines: string[] = Array.from({ length: rows }, () => ' '.repeat(cols));
@@ -173,7 +208,7 @@ function seuScreen(file: string, source: string[]): ScreenSnapshot {
   put(0, ` Columns . . . :    1  71           Edit                       MYLIB/${file}`);
   put(1, ' SEU==>                                                              MYMBR');
   fields.push({ start: 1 * cols + 8, length: 60, bypass: false });
-  put(2, ' FMT **  ...+... 1 ...+... 2 ...+... 3 ...+... 4 ...+... 5 ...+... 6 ...+... 7');
+  put(2, fmt);
   put(3, '        *************** Beginning of data *************************************');
   source.forEach((s, i) => {
     const r = 4 + i;
@@ -205,6 +240,19 @@ describe('SEU screen detection', () => {
     // Header and function-key rows are left alone.
     expect(cells.slice(0, 4 * 80).every((k) => k === 0)).toBe(true);
     expect(cells.slice(21 * 80, 22 * 80).every((k) => k === 0)).toBe(true);
+  });
+  it('takes the language from the FMT line when the file name says nothing', () => {
+    const s = seuScreen('MYSRC', ['     C                   EVAL      X = 1'], ' FMT C  CL0N01Factor1+++++++Opcode&ExtFactor2+++++++++++++++++++++++++++');
+    expect(detectSeu(s)?.lang).toBe('rpg');
+  });
+  it('leaves a member it cannot place in the host colours (QSYSINC/H header)', () => {
+    const s = seuScreen('H', ['/*                  Qus_OBJD0100                          */', '/* Function Prototype List: QUSROBJD                      */']);
+    expect(detectSeu(s)?.lang).toBe('c');
+    const cells = highlightScreen(s) as Uint8Array;
+    expect(cells[4 * 80 + 8]).toBe(Tok.Comment);
+    const unknown = seuScreen('MYSRC', ['Dear Sir,', 'this is a text member.']);
+    expect(detectSeu(unknown)?.lang).toBeUndefined();
+    expect(highlightScreen(unknown)).toBeUndefined();
   });
   it('ignores screens that are not SEU', () => {
     const s = seuScreen('QCLLESRC', ['             PGM']);

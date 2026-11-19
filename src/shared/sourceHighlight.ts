@@ -3,13 +3,16 @@ import { rowText } from './screenText';
 
 /**
  * Syntax colouring for the SEU (Source Entry Utility) edit and browse screens:
- * CL, DDS, RPG/RPGLE (fixed, free and fully free) and DB2 SQL, including SQL
- * embedded in RPG. Colouring only: nothing is sent to the host. The terminal
- * works out the language from the source file name in the SEU header
- * (QRPGLESRC, QCLLESRC, QDDSSRC, QSQLSRC ...) and falls back to the content.
+ * CL (and command definitions), DDS, RPG/RPGLE (fixed, free and fully free),
+ * DB2 SQL including SQL embedded in RPG, and C/C++ (QSYSINC headers, QCSRC).
+ * Colouring only: nothing is sent to the host. The terminal works out the
+ * language from the source file name in the SEU header (QRPGLESRC, QCLLESRC,
+ * QDDSSRC, QSQLSRC, H ...), then from SEU's FMT line (an RPG or DDS spec
+ * format), then from the code itself. A member it cannot place is left in the
+ * host's colours: wrong colours are worse than none.
  */
 
-export type SourceLang = 'rpg' | 'cl' | 'dds' | 'sql';
+export type SourceLang = 'rpg' | 'cl' | 'dds' | 'sql' | 'c';
 
 /** Token kinds; 0 means "leave the host colour". */
 export const Tok = {
@@ -36,7 +39,8 @@ export interface SeuLine {
 }
 
 export interface SeuScreen {
-  lang: SourceLang;
+  /** Undefined when the language is not known: the screen is then left in the host's colours. */
+  lang: SourceLang | undefined;
   /** Source column of the first visible character ("Columns . . . : 1 71"). */
   firstColumn: number;
   sourceFile: string;
@@ -82,6 +86,14 @@ const SQL_KEYWORDS = words(`
 
 const DDS_KEYWORDS_HINT = /^[A-Z][A-Z0-9]{1,9}$/;
 
+const C_KEYWORDS = words(`
+  auto break case char const continue default do double else enum extern float for goto if inline int long
+  register restrict return short signed sizeof static struct switch typedef union unsigned void volatile while
+  _Bool _Complex _Imaginary _Packed _Noreturn
+  class namespace template typename public private protected virtual new delete this true false nullptr bool
+  try catch throw using operator friend explicit mutable constexpr static_cast dynamic_cast reinterpret_cast
+`);
+
 // ---------------------------------------------------------------------------
 // Small helpers
 
@@ -120,6 +132,22 @@ interface ExprOptions {
   cl?: boolean;
   /** SQL: ":host" variables, "--" comments. */
   sql?: boolean;
+  /** C: "..." strings and 'c' characters with backslash escapes; no RPG "*SPECIAL" / "%builtin" words. */
+  c?: boolean;
+}
+
+/** Reads a C string or character literal starting at i (backslash escapes). Returns the end index. */
+function readCString(text: string, i: number, quote: string): number {
+  let j = i + 1;
+  while (j < text.length) {
+    if (text[j] === '\\') {
+      j += 2;
+      continue;
+    }
+    if (text[j] === quote) return j + 1;
+    j++;
+  }
+  return text.length;
 }
 
 /** Tokenizes an expression region [from, to) of a line. Returns the index where a ";" ended embedded SQL, if any. */
@@ -140,20 +168,26 @@ function scanExpr(text: string, from: number, to: number, out: Out, o: ExprOptio
       paint(out, i, end, Tok.Comment);
       return;
     }
+    if (o.c && (c === '"' || c === "'")) {
+      const j = Math.min(readCString(text, i, c), end);
+      paint(out, i, j, Tok.String);
+      i = j;
+      continue;
+    }
     if (c === "'") {
       const j = Math.min(readString(text, i, "'"), end);
       paint(out, i, j, Tok.String);
       i = j;
       continue;
     }
-    if (c === '%' && /[A-Za-z]/.test(text[i + 1] ?? '')) {
+    if (!o.c && c === '%' && /[A-Za-z]/.test(text[i + 1] ?? '')) {
       let j = i + 1;
       while (j < end && /[A-Za-z0-9]/.test(text[j] as string)) j++;
       paint(out, i, j, Tok.Builtin);
       i = j;
       continue;
     }
-    if (c === '*' && /[A-Za-z]/.test(text[i + 1] ?? '')) {
+    if (!o.c && c === '*' && /[A-Za-z]/.test(text[i + 1] ?? '')) {
       let j = i + 1;
       while (j < end && /[A-Za-z0-9]/.test(text[j] as string)) j++;
       paint(out, i, j, /^\*IN(\d\d|[A-Z]\d|LR|RT|H\d|U\d)$/i.test(text.slice(i, j)) ? Tok.Indicator : Tok.Special);
@@ -183,8 +217,8 @@ function scanExpr(text: string, from: number, to: number, out: Out, o: ExprOptio
     }
     if (isWordStart(c)) {
       let j = i;
-      // SQL and CL words have no "-" inside; RPG has dcl-s, end-proc, on-error ...
-      const wordChar = o.sql || o.cl ? (ch: string): boolean => /[A-Za-z0-9@#$_]/.test(ch) : isWord;
+      // SQL, CL and C words have no "-" inside; RPG has dcl-s, end-proc, on-error ...
+      const wordChar = o.sql || o.cl || o.c ? (ch: string): boolean => /[A-Za-z0-9@#$_]/.test(ch) : isWord;
       while (j < end && wordChar(text[j] as string)) j++;
       const word = text.slice(i, j).toUpperCase();
       if (o.keywords.has(word)) paint(out, i, j, Tok.Keyword);
@@ -308,6 +342,59 @@ function highlightCl(lines: string[]): Out[] {
     const trimmed = text.replace(/\/\*.*$/, '').trimEnd();
     // Only a trailing + or - continues the command; an open comment does not.
     continued = /[+-]$/.test(trimmed);
+    return out;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// C / C++ (QSYSINC headers, QCSRC, QCPPSRC)
+
+function highlightC(lines: string[]): Out[] {
+  let inComment = false;
+  return lines.map((text) => {
+    const out = new Uint8Array(text.length);
+    const code: Array<[number, number]> = [];
+    let i = 0;
+    while (i < text.length) {
+      if (inComment) {
+        const close = text.indexOf('*/', i);
+        const j = close < 0 ? text.length : close + 2;
+        paint(out, i, j, Tok.Comment);
+        if (close < 0) break;
+        inComment = false;
+        i = j;
+        continue;
+      }
+      // Skip strings and character literals so "/*" inside them is not a comment.
+      let j = i;
+      let open = -1;
+      while (j < text.length) {
+        const ch = text[j] as string;
+        if (ch === '"' || ch === "'") {
+          j = readCString(text, j, ch);
+          continue;
+        }
+        if (ch === '/' && text[j + 1] === '*') {
+          open = j;
+          break;
+        }
+        if (ch === '/' && text[j + 1] === '/') break; // the rest is a line comment, scanExpr paints it
+        j++;
+      }
+      code.push([i, open < 0 ? text.length : open]);
+      if (open < 0) break;
+      inComment = true;
+      i = open;
+    }
+    for (const [a, b] of code) scanExpr(text, a, b, out, { keywords: C_KEYWORDS, slashComments: true, callsAreBuiltins: true, c: true });
+    // Preprocessor line: "#include", "# define" ... the directive word is a marker, a <file> after include is a string.
+    const pp = /^(\s*)#\s*([A-Za-z_]+)/.exec(text);
+    if (pp && out[(pp[1] as string).length] !== Tok.Comment) {
+      const from = (pp[1] as string).length;
+      paint(out, from, from + (pp[0] as string).length - from, Tok.Marker);
+      const inc = /<[^>]*>/.exec(text.slice(from));
+      if (inc && pp[2]?.toLowerCase() === 'include') paint(out, from + inc.index, from + inc.index + inc[0].length, Tok.String);
+    }
     return out;
   });
 }
@@ -563,9 +650,21 @@ function highlightRpg(lines: string[], firstColumn: number): Out[] {
 export function languageFromFile(sourceFile: string): SourceLang | undefined {
   const f = sourceFile.toUpperCase();
   if (/RPG/.test(f)) return 'rpg';
-  if (/^Q?CL|CLLE|CLP|QCL/.test(f)) return 'cl';
+  if (/^Q?CL|CLLE|CLP|QCL|QCMDSRC/.test(f)) return 'cl';
   if (/DDS|DSPF|PRTF|QPF|QLF/.test(f)) return 'dds';
   if (/SQL/.test(f)) return 'sql';
+  // QSYSINC's C header files (H, SYS, MIH, ARPA, NET, NETINET, NETNS) and C/C++ source files.
+  if (/^(H|SYS|MIH|ARPA|NET|NETINET|NETNS)$|CSRC|CPPSRC|QCXX/.test(f)) return 'c';
+  return undefined;
+}
+
+/** The language SEU's format line gives away: an RPG spec letter (FMT H, FMT C ...) or FMT A for DDS. */
+export function languageFromFormatLine(fmtLine: string): SourceLang | undefined {
+  const m = /^\s*FMT\s+(\S+)/.exec(fmtLine);
+  if (!m) return undefined;
+  const f = (m[1] as string).toUpperCase();
+  if (f === 'A') return 'dds';
+  if (/^[HFDCIOPE]$/.test(f)) return 'rpg';
   return undefined;
 }
 
@@ -575,20 +674,24 @@ export function languageFromContent(lines: string[], firstColumn: number): Sourc
   let dds = 0;
   let cl = 0;
   let sql = 0;
+  let c = 0;
   for (const t of lines) {
     const at = (c: number): string => t[c - firstColumn] ?? '';
+    if (/^\s*#\s*(include|define|pragma|if|ifdef|ifndef|else|elif|endif|undef)\b/.test(t)) c += 3;
+    if (/^\s*(typedef|struct|extern|static|void|int|char|unsigned)\b/.test(t) || /;\s*$/.test(t) && /[{}]/.test(t)) c++;
     if (/^\s*(\*\*free|dcl-|ctl-opt)/i.test(t)) rpg += 3;
     if (at(6).toUpperCase() === 'A' && firstColumn <= 6) dds++;
     else if (/[HFDCP]/i.test(at(6)) && firstColumn <= 6) rpg++;
     if (/^\s*(\w+:\s*)?(PGM|ENDPGM|DCL|DCLF|CHGVAR|MONMSG|CALL|SNDPGMMSG|RTVJOBA|OVRDBF|DLTOVR|GOTO|IF|ELSE|DO|ENDDO)\b/i.test(t)) cl++;
     if (/^\s*(select|insert|update|delete|create|alter|drop|with|set|call|values|merge)\b/i.test(t)) sql++;
   }
-  const best = Math.max(rpg, dds, cl, sql);
+  const best = Math.max(rpg, dds, cl, sql, c);
   if (best === 0) return undefined;
   if (best === rpg) return 'rpg';
   if (best === dds) return 'dds';
   if (best === cl) return 'cl';
-  return 'sql';
+  if (best === sql) return 'sql';
+  return 'c';
 }
 
 // ---------------------------------------------------------------------------
@@ -603,7 +706,12 @@ export function detectSeu(s: ScreenSnapshot): SeuScreen | undefined {
   const cm = /Columns\s*\.\s*\.\s*\.\s*:\s*(\d+)\s+(\d+)/.exec(head);
   if (!cm) return undefined;
   let seuLine = false;
-  for (let r = 0; r < 3; r++) if (/SEU\s*==>/.test(rowText(s, r))) seuLine = true;
+  let fmtLang: SourceLang | undefined;
+  for (let r = 0; r < 4; r++) {
+    const t = rowText(s, r);
+    if (/SEU\s*==>/.test(t)) seuLine = true;
+    fmtLang ??= languageFromFormatLine(t);
+  }
   if (!seuLine) return undefined;
   const firstColumn = Number(cm[1]);
   const fm = /(\S+)\/(\S+)\s*$/.exec(head);
@@ -629,7 +737,7 @@ export function detectSeu(s: ScreenSnapshot): SeuScreen | undefined {
     lines.push({ row: r, col, text: raw });
   }
   if (!lines.length) return undefined;
-  const lang = languageFromFile(sourceFile) ?? languageFromContent(lines.map((l) => l.text), firstColumn) ?? 'rpg';
+  const lang = languageFromFile(sourceFile) ?? fmtLang ?? languageFromContent(lines.map((l) => l.text), firstColumn);
   return { lang, firstColumn, sourceFile, lines };
 }
 
@@ -642,6 +750,8 @@ export function highlightLines(lang: SourceLang, lines: string[], firstColumn = 
       return highlightDds(lines, firstColumn);
     case 'sql':
       return highlightSql(lines);
+    case 'c':
+      return highlightC(lines);
     default:
       return highlightRpg(lines, firstColumn);
   }
@@ -650,7 +760,7 @@ export function highlightLines(lang: SourceLang, lines: string[], firstColumn = 
 /** Per-cell token kinds for an SEU screen, or undefined when the screen is not SEU. */
 export function highlightScreen(s: ScreenSnapshot): Uint8Array | undefined {
   const seu = detectSeu(s);
-  if (!seu) return undefined;
+  if (!seu?.lang) return undefined;
   const cells = new Uint8Array(s.rows * s.cols);
   const kinds = highlightLines(seu.lang, seu.lines.map((l) => l.text), seu.firstColumn);
   seu.lines.forEach((l, i) => {
