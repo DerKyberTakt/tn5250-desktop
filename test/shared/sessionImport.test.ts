@@ -75,3 +75,28 @@ describe('savedIndex and isSaved', () => {
     expect(savedIndex([s('A', 'x'), s('Prod (2)', 'h')], s('Prod', 'h'))).toBe(1);
   });
 });
+
+describe('mergeImported credentials and TLS', () => {
+  const saved = [s('PUB400', 'pub400.com', { port: 992, tls: true, tlsPinnedCertificate: 'AA', signonUser: 'KYLE', autoSignon: true })];
+
+  it('keeps TLS and the port when the profile says plain telnet, and keeps the sign-on', () => {
+    const r = mergeImported(saved, [s('PUB400', 'pub400.com', { port: 23, tls: false })]);
+    expect(r.sessions[0]).toMatchObject({ port: 992, tls: true, tlsPinnedCertificate: 'AA', signonUser: 'KYLE', autoSignon: true });
+    expect(r.tlsKept).toHaveLength(1);
+    expect(r.credentialsReset).toEqual([]);
+  });
+
+  it('clears the sign-on user and bypass sign-on when the port or host changes, and reports the old entry', () => {
+    const r = mergeImported(saved, [s('PUB400', 'pub400.com', { port: 9923, tls: true })]);
+    expect(r.sessions[0]?.signonUser).toBeUndefined();
+    expect(r.sessions[0]?.autoSignon).toBeUndefined();
+    expect(r.credentialsReset).toEqual(saved);
+  });
+
+  it('does not reset when nothing that matters changed (an unset port equals its default)', () => {
+    const plain = [s('A', 'a.example.com', { signonUser: 'U', autoSignon: true })];
+    const r = mergeImported(plain, [s('A', 'a.example.com', { port: 23, tls: false })]);
+    expect(r.sessions[0]).toMatchObject({ signonUser: 'U', autoSignon: true });
+    expect(r.credentialsReset).toEqual([]);
+  });
+});

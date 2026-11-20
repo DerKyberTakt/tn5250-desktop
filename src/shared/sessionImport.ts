@@ -31,6 +31,15 @@ export interface MergeResult {
   replaced: SessionOverrides[];
   /** The imported connections left out because they were already saved (updateSaved false). */
   skipped: SessionOverrides[];
+  /** Saved TLS connections the profile wanted as plain telnet: TLS (and the saved port) were kept. */
+  tlsKept: SessionOverrides[];
+  /**
+   * Saved connections whose host, port or TLS changed and that had a sign-on user: the
+   * sign-on user and bypass sign-on were cleared on the merged entry. The entries are
+   * given as they were before the import, so the caller can delete the stored password
+   * (the secret store key follows USER@host) unless another connection still uses it.
+   */
+  credentialsReset: SessionOverrides[];
   /** Index in `sessions` of every connection the import added or replaced, in import order. */
   touched: number[];
 }
@@ -48,6 +57,9 @@ export interface MergeOptions {
  * saved entry in place: every value the import brings wins, and what only the emulator
  * has (a trusted certificate, demo mode ...) stays, as does the saved name.
  * With `updateSaved: false` it is skipped instead, so nothing already saved changes.
+ * An import never turns TLS off on a saved TLS connection (TLS and the saved port stay,
+ * see tlsKept), and a saved sign-on user and bypass sign-on never follow a connection to
+ * another host, port or TLS setting (see credentialsReset).
  * A new one is appended; a name already used by a connection to another host gets " (2)",
  * " (3)" ... so every name stays unique. The list given is never changed.
  */
@@ -57,6 +69,8 @@ export function mergeImported(saved: SessionOverrides[], incoming: SessionOverri
   const replaced: SessionOverrides[] = [];
   const skipped: SessionOverrides[] = [];
   const touched: number[] = [];
+  const tlsKept: SessionOverrides[] = [];
+  const credentialsReset: SessionOverrides[] = [];
   const names = new Set(saved.map((s) => norm(s.name)));
   for (const s of incoming) {
     const at = savedIndex(sessions, s);
@@ -67,6 +81,18 @@ export function mergeImported(saved: SessionOverrides[], incoming: SessionOverri
     if (at >= 0) {
       const current = sessions[at] as SessionOverrides;
       const entry: SessionOverrides = { ...current, ...s, name: current.name ?? s.name };
+      if (current.tls === true && entry.tls !== true) {
+        entry.tls = true;
+        if (current.port !== undefined) entry.port = current.port;
+        else delete entry.port;
+        tlsKept.push(entry);
+      }
+      const where = (x: SessionOverrides): string => `${norm(x.host)}:${x.port ?? (x.tls ? 992 : 23)}:${x.tls === true}`;
+      if (where(entry) !== where(current)) {
+        if (current.signonUser || current.autoSignon) credentialsReset.push(current);
+        delete entry.signonUser;
+        delete entry.autoSignon;
+      }
       sessions[at] = entry;
       if (!touched.includes(at)) {
         touched.push(at);
@@ -83,5 +109,5 @@ export function mergeImported(saved: SessionOverrides[], incoming: SessionOverri
     added.push(entry);
     touched.push(sessions.length - 1);
   }
-  return { sessions, added, replaced, skipped, touched };
+  return { sessions, added, replaced, skipped, tlsKept, credentialsReset, touched };
 }
