@@ -860,9 +860,11 @@ export class DataStreamProcessor {
       while ((r.peek() & 0xc0) === 0x80) fcws.push(r.u16());
     }
     const attr = r.u8();
-    const len = r.u16();
+    const declared = r.u16();
     this.put(attr);
     if (ffw !== undefined) {
+      // The host names the length: a field never reaches past the end of the screen.
+      const len = Math.min(declared, Math.max(0, this.screen.size - this.addr));
       this.screen.addField(new Field(this.addr, len, ffw, fcws, attr));
     }
   }

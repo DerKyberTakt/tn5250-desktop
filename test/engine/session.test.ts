@@ -101,4 +101,14 @@ describe('Session5250', () => {
     expect(() => session.feed(rec)).not.toThrow();
     expect(errors.map((e) => e.message)).toEqual(['boom']);
   });
+
+  it('a field length longer than the screen is clamped to the screen end (e1-3)', () => {
+    const session = new Session5250({ screenSize: '24x80', codePage: 37 }, { send: () => undefined, error: () => undefined });
+    const data = hexToBytes('041100001105051d400020ffff');
+    session.feed(Uint8Array.from([...Array.from(buildRecord(OP_PUT_GET, 0, data)).flatMap((b) => (b === 255 ? [255, 255] : [b])), 255, 239]));
+    const f = session.screen.fields[0];
+    expect(f).toBeDefined();
+    expect((f?.end ?? Infinity) <= session.screen.size).toBe(true);
+    expect(f?.length).toBeLessThan(65535);
+  });
 });
