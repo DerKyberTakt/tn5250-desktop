@@ -45,7 +45,16 @@ export interface TelnetCallbacks {
   record(record: Uint8Array): void;
   /** Variables the host reports back through NEW-ENVIRON (e.g. DEVNAME). */
   environment?(vars: Map<string, string>): void;
+  /** The host broke a limit (record or subnegotiation too long); the session is dead and ignores further bytes. */
+  error?(err: Error): void;
 }
+
+/** Largest 5250 record accepted (the GDS length is 16 bits; real records are a few KB). A host that sends more without IAC EOR is cut off. */
+export const MAX_RECORD_BYTES = 1 << 20;
+/** Largest IAC SB ... IAC SE body accepted (real ones are under 100 bytes). */
+export const MAX_SUBNEGOTIATION_BYTES = 1024;
+/** feed() works through a chunk in pieces of this size, so one huge chunk never sits in the pending buffer whole. */
+const FEED_SLICE = 16 * 1024;
 
 const ascii = (s: string): number[] => Array.from(s, (c) => c.charCodeAt(0) & 0x7f);
 
@@ -53,6 +62,9 @@ export class TelnetSession {
   private pending: number[] = [];
   private record: number[] = [];
   private readonly agreed = new Set<number>();
+  /** Bytes of the open IAC SB at the start of `pending` that the scan for IAC SE has already passed. */
+  private sbScanned = 0;
+  private failed = false;
 
   constructor(
     private readonly options: TelnetOptions,
@@ -65,8 +77,19 @@ export class TelnetSession {
 
   /** Feeds bytes from the socket. */
   feed(chunk: Uint8Array): void {
-    for (const b of chunk) this.pending.push(b);
-    this.parse();
+    for (let off = 0; off < chunk.length && !this.failed; off += FEED_SLICE) {
+      const end = Math.min(off + FEED_SLICE, chunk.length);
+      for (let k = off; k < end; k++) this.pending.push(chunk[k] as number);
+      this.parse();
+    }
+  }
+
+  private fail(message: string): void {
+    this.failed = true;
+    this.pending = [];
+    this.record = [];
+    this.sbScanned = 0;
+    this.callbacks.error?.(new Error(message));
   }
 
   /** Sends one 5250 record: escapes IAC and appends IAC EOR. `forTrace` is framed the same way. */
@@ -95,6 +118,7 @@ export class TelnetSession {
       if (b !== IAC) {
         this.record.push(b);
         i += 1;
+        if (this.record.length > MAX_RECORD_BYTES) return this.fail(`record longer than ${MAX_RECORD_BYTES} bytes without IAC EOR`);
         continue;
       }
       if (i + 1 >= buf.length) break;
@@ -102,6 +126,7 @@ export class TelnetSession {
       if (cmd === IAC) {
         this.record.push(IAC);
         i += 2;
+        if (this.record.length > MAX_RECORD_BYTES) return this.fail(`record longer than ${MAX_RECORD_BYTES} bytes without IAC EOR`);
         continue;
       }
       if (cmd === DO || cmd === DONT || cmd === WILL || cmd === WONT) {
@@ -111,9 +136,15 @@ export class TelnetSession {
         continue;
       }
       if (cmd === SB) {
-        let j = i + 2;
+        // Resume where the last feed stopped scanning (the open SB is at the start of pending).
+        let j = i + 2 + (i === 0 ? this.sbScanned : 0);
         while (j + 1 < buf.length && !((buf[j] as number) === IAC && (buf[j + 1] as number) === SE)) j += 1;
-        if (j + 1 >= buf.length) break;
+        if (j - (i + 2) > MAX_SUBNEGOTIATION_BYTES) return this.fail(`subnegotiation longer than ${MAX_SUBNEGOTIATION_BYTES} bytes`);
+        if (j + 1 >= buf.length) {
+          this.sbScanned = j - (i + 2);
+          break;
+        }
+        this.sbScanned = 0;
         this.subnegotiate(buf.slice(i + 2, j));
         i = j + 2;
         continue;

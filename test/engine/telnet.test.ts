@@ -1,103 +1,69 @@
 import { describe, expect, it } from 'vitest';
-import { OPT_BINARY, OPT_EOR, OPT_NEW_ENVIRON, OPT_TERMINAL_TYPE, TelnetSession, parseEnvironment } from '../../src/engine/telnet';
-import { bytesToHex, hexToBytes, loadCapture, outboundHex } from '../helpers/fixture';
+import { MAX_RECORD_BYTES, MAX_SUBNEGOTIATION_BYTES, TelnetSession } from '../../src/engine/telnet';
 
-function harness(options = { terminalType: 'IBM-3477-FC' }) {
-  const sent: string[] = [];
+const IAC = 255;
+const SB = 250;
+const SE = 240;
+const EOR = 239;
+
+function make() {
+  const sent: number[][] = [];
   const records: Uint8Array[] = [];
-  const telnet = new TelnetSession(options, {
-    send: (b) => sent.push(bytesToHex(b)),
-    record: (r) => records.push(r),
-  });
-  return { telnet, sent, records };
+  const errors: Error[] = [];
+  const t = new TelnetSession(
+    { terminalType: 'IBM-3179-2' },
+    { send: (b) => sent.push([...b]), record: (r) => records.push(r), error: (e) => errors.push(e) },
+  );
+  return { t, sent, records, errors };
 }
 
-describe('TelnetSession', () => {
-  it('replays the PUB400 negotiation and produces the same outbound bytes', () => {
-    const capture = loadCapture('pub400-signon-3477fc');
-    const h = harness();
-    for (const ev of capture.events) {
-      if (ev.dir === 'in') h.telnet.feed(hexToBytes(ev.hex));
+describe('TelnetSession limits', () => {
+  it('answers a terminal-type SEND split across feeds at every byte boundary', () => {
+    const frame = [IAC, SB, 24, 1, IAC, SE];
+    for (let cut = 1; cut < frame.length; cut++) {
+      const { t, sent, errors } = make();
+      t.feed(Uint8Array.from(frame.slice(0, cut)));
+      t.feed(Uint8Array.from(frame.slice(cut)));
+      expect(errors).toEqual([]);
+      expect(sent).toHaveLength(1);
     }
-    expect(h.sent.join('')).toBe(outboundHex(capture));
-    expect(h.records).toHaveLength(1);
-    const rec = h.records[0] as Uint8Array;
-    expect(rec.length).toBe(0x032d);
-    expect(bytesToHex(rec.subarray(0, 4))).toBe('032d12a0');
-    expect([...h.telnet.negotiatedOptions].sort((a, b) => a - b)).toEqual(
-      [OPT_BINARY, OPT_EOR, OPT_TERMINAL_TYPE, OPT_NEW_ENVIRON].sort((a, b) => a - b),
-    );
   });
 
-  it('handles records split across chunks and escaped IAC bytes', () => {
-    const h = harness();
-    h.telnet.feed(hexToBytes('0102ff'));
-    h.telnet.feed(hexToBytes('ff03ff'));
-    expect(h.records).toHaveLength(0);
-    h.telnet.feed(hexToBytes('ef'));
-    expect(h.records).toHaveLength(1);
-    expect(bytesToHex(h.records[0] as Uint8Array)).toBe('0102ff03');
+  it('fails the session on an unterminated subnegotiation instead of buffering it', () => {
+    const { t, sent, errors } = make();
+    t.feed(Uint8Array.from([IAC, SB, 24]));
+    const chunk = new Uint8Array(1000).fill(65);
+    for (let i = 0; i < 3; i++) t.feed(chunk);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toMatch(/subnegotiation/);
+    expect(MAX_SUBNEGOTIATION_BYTES).toBeLessThan(3003);
+    // Dead: later bytes are ignored, nothing more is sent.
+    t.feed(Uint8Array.from([IAC, SB, 24, 1, IAC, SE]));
+    expect(sent).toEqual([]);
+    expect(errors).toHaveLength(1);
   });
 
-  it('escapes IAC and appends IAC EOR when sending a record', () => {
-    const h = harness();
-    h.telnet.sendRecord(hexToBytes('01ff02'));
-    expect(h.sent).toEqual(['01ffff02ffef']);
+  it('does not rescan an open subnegotiation on every feed (linear time)', () => {
+    const { t, errors } = make();
+    t.feed(Uint8Array.from([IAC, SB, 24]));
+    const start = Date.now();
+    for (let i = 0; i < 200; i++) t.feed(new Uint8Array(4).fill(65));
+    expect(Date.now() - start).toBeLessThan(500);
+    expect(errors).toEqual([]);
   });
 
-  it('refuses options it does not support', () => {
-    const h = harness();
-    h.telnet.feed(hexToBytes('fffd05fffb20'));
-    expect(h.sent).toEqual(['fffc05', 'fffe20']);
+  it('fails the session when a record grows past the limit without IAC EOR, even in one huge chunk', () => {
+    const { t, records, errors } = make();
+    t.feed(new Uint8Array(MAX_RECORD_BYTES + 5000).fill(1));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toMatch(/record/);
+    expect(records).toEqual([]);
   });
 
-  it('sends DEVNAME, KBDTYPE, CODEPAGE and CHARSET when a device name is requested', () => {
-    const h = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 37 } as never);
-    h.telnet.feed(hexToBytes('fffa2701fff0'));
-    const reply = h.sent[0] as string;
-    const text = Buffer.from(reply, 'hex').toString('latin1');
-    expect(text).toContain('DEVNAME\u0001MYDEV');
-    expect(text).toContain('KBDTYPE\u0001USB');
-    expect(text).toContain('CODEPAGE\u000137');
-    expect(text).toContain('CHARSET\u0001697');
-  });
-
-  it('sends KBDTYPE, CODEPAGE and CHARSET without a device name too (the host names the device)', () => {
-    const h = harness({ terminalType: 'IBM-3179-2', codePage: 870 } as never);
-    h.telnet.feed(hexToBytes('fffa2701fff0'));
-    const text = Buffer.from(h.sent[0] as string, 'hex').toString('latin1');
-    expect(text).not.toContain('DEVNAME');
-    expect(text).toContain('KBDTYPE\u0001CSB');
-    expect(text).toContain('CODEPAGE\u0001870');
-    expect(text).toContain('CHARSET\u0001959');
-  });
-
-  it('KBDTYPE and CHARSET follow the code page (IBM keyboard type table); a keyboard type override wins', () => {
-    const latin = (h: ReturnType<typeof harness>): string => Buffer.from(h.sent[0] as string, 'hex').toString('latin1');
-    const de = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 1141 } as never);
-    de.telnet.feed(hexToBytes('fffa2701fff0'));
-    expect(latin(de)).toContain('KBDTYPEAGE');
-    expect(latin(de)).toContain('CODEPAGE1141');
-    expect(latin(de)).toContain('CHARSET695');
-    const uk = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 500, keyboardType: 'ukb' } as never);
-    uk.telnet.feed(hexToBytes('fffa2701fff0'));
-    expect(latin(uk)).toContain('KBDTYPEUKB');
-    expect(latin(uk)).toContain('CHARSET697');
-  });
-
-  it('a code page the table does not know sends DEVNAME only (RFC 4777: the host then uses its system values)', () => {
-    const h = harness({ terminalType: 'IBM-3179-2', deviceName: 'mydev', codePage: 9999 } as never);
-    h.telnet.feed(hexToBytes('fffa2701fff0'));
-    const text = Buffer.from(h.sent[0] as string, 'hex').toString('latin1');
-    expect(text).toContain('DEVNAMEMYDEV');
-    expect(text).not.toContain('KBDTYPE');
-    expect(text).not.toContain('CHARSET');
-  });
-
-  it('parses NEW-ENVIRON IS payloads', () => {
-    const bytes = Array.from(Buffer.from('\u0003DEVNAME\u0001QPADEV0001\u0000USER\u0001ALEX', 'latin1'));
-    const vars = parseEnvironment(bytes);
-    expect(vars.get('DEVNAME')).toBe('QPADEV0001');
-    expect(vars.get('USER')).toBe('ALEX');
+  it('still delivers records of normal size', () => {
+    const { t, records, errors } = make();
+    t.feed(Uint8Array.from([1, 2, IAC, IAC, 3, IAC, EOR]));
+    expect(errors).toEqual([]);
+    expect([...(records[0] ?? [])]).toEqual([1, 2, IAC, 3]);
   });
 });

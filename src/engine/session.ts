@@ -104,6 +104,7 @@ export class Session5250 {
       {
         send: (bytes, forTrace) => this.events.send(bytes, forTrace),
         record: (record) => this.onRecord(record),
+        error: (err) => this.events.error?.(err),
         environment: (vars) => {
           const name = vars.get('DEVNAME');
           if (name) this.deviceName = name;
