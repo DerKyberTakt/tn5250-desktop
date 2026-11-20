@@ -105,6 +105,13 @@ func (s *Server) Seen() []uint16 {
 	return append([]uint16(nil), s.Requests...)
 }
 
+// Prepared returns the statements received so far.
+func (s *Server) Prepared() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.Statements...)
+}
+
 // Port is the TCP port the server listens on.
 func (s *Server) Port() int { return s.l.Addr().(*net.TCPAddr).Port }
 

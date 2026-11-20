@@ -250,10 +250,12 @@ export class SqlTab {
   }
 
   /** Asks, then signs on again; true when the tab has a connection again. */
-  private async offerReconnect(): Promise<boolean> {
+  private async offerReconnect(mayHaveRun = false): Promise<boolean> {
     const again = await confirmDialog(
       `Disconnected from ${this.request.host}`,
-      `The host-server connection was lost (the server job ended, or the network dropped). Reconnect as ${this.request.user.toUpperCase()} and run the statement again?`,
+      mayHaveRun
+        ? `The host-server connection was lost (the server job ended, or the network dropped). The statement may already have run on the host, so it will not be run again. Reconnect as ${this.request.user.toUpperCase()}?`
+        : `The host-server connection was lost (the server job ended, or the network dropped). Reconnect as ${this.request.user.toUpperCase()} and run the statement again?`,
       'Reconnect',
     );
     if (!again) return false;
@@ -353,11 +355,17 @@ export class SqlTab {
           } catch (err) {
             const raw = errorText(err);
             // The host-server session is gone (its job ended, the network dropped): offer
-            // to sign on again and run this statement once more, instead of a dead tab.
+            // to sign on again instead of a dead tab. A "connection lost" statement may
+            // already have run on the host, so it is not run again; a stale id ("the
+            // connection is closed") means it never left, so that one is retried once.
             if (!retried && connectionLost(raw)) {
               retried = true;
+              const mayHaveRun = /^connection lost\b/i.test(raw.trim());
               this.lostConnection(raw);
-              if (await this.offerReconnect()) continue;
+              if (await this.offerReconnect(mayHaveRun)) {
+                if (!mayHaveRun) continue;
+                this.outputLine('info', 'The statement was not run again: it may already have run on the host. Check, then run it again if needed.');
+              }
             }
             const why = explainToolError(s.kind === 'cl' ? 'CL' : s.kind === 'qsh' || s.kind === 'pase' ? 'QSH' : 'SQL', this.request.host, raw);
             this.endStatement();

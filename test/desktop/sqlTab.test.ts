@@ -304,7 +304,47 @@ describe('Run SQL Scripts: a lost connection offers a reconnect', () => {
 
   const dialog = (): HTMLDialogElement | null => document.querySelector('dialog.modal');
 
-  it('Reconnect signs on again and runs the statement once more', async () => {
+  it('a statement that may have run is not run again after Reconnect', async () => {
+    const tab = await openTab();
+    fake.app.SqlRun.mockImplementation(() =>
+      Promise.reject(new Error('connection lost: the statement may already have run on the host (the database server connection failed after it was sent), check before running it again: database server: EOF')),
+    );
+    tab.setScript('INSERT INTO PAYMENTS VALUES (1, 100.00);');
+    const run = tab.runAll();
+    await tick();
+    const d = dialog();
+    expect(d).not.toBeNull();
+    expect(d!.querySelector('p')!.textContent).toContain('will not be run again');
+    d!.returnValue = 'ok';
+    d!.close();
+    await run;
+    expect(fake.app.SqlConnect).toHaveBeenCalledTimes(2);
+    expect(fake.app.SqlRun).toHaveBeenCalledTimes(1);
+    expect(outputLines(tab).some((l) => l.includes('was not run again'))).toBe(true);
+  });
+
+  it('a stale connection id (the statement never left) signs on again and runs the statement once more', async () => {
+    const tab = await openTab();
+    let dead = true;
+    fake.app.SqlRun.mockImplementation(() => {
+      if (dead) {
+        dead = false;
+        return Promise.reject(new Error('the connection is closed; connect again'));
+      }
+      return Promise.resolve({ kind: 'count', more: false, updateCount: 1, messages: [], elapsedMs: 5 } as SqlResult);
+    });
+    tab.setScript('DELETE FROM QGPL.T1;');
+    const run = tab.runAll();
+    await tick();
+    const d = dialog()!;
+    expect(d.querySelector('p')!.textContent).toContain('run the statement again');
+    d.returnValue = 'ok';
+    d.close();
+    await run;
+    expect(fake.app.SqlRun).toHaveBeenCalledTimes(2);
+  });
+
+  it('Reconnect after "connection lost" signs on again but does not run the statement again', async () => {
     const tab = await openTab();
     expect(fake.app.SqlConnect).toHaveBeenCalledTimes(1);
     let dead = true;
@@ -327,9 +367,9 @@ describe('Run SQL Scripts: a lost connection offers a reconnect', () => {
     d!.close();
     await run;
     expect(fake.app.SqlConnect).toHaveBeenCalledTimes(2);
-    expect(fake.app.SqlRun).toHaveBeenCalledTimes(2);
+    expect(fake.app.SqlRun).toHaveBeenCalledTimes(1);
     expect(outputLines(tab).some((l) => l === 'Reconnected to pub400.com.')).toBe(true);
-    expect(outputLines(tab).some((l) => l === '✓ 3 rows affected in 24 ms.')).toBe(true);
+    expect(outputLines(tab).some((l) => l === '✓ 3 rows affected in 24 ms.')).toBe(false);
     expect(job(tab)).toContain('database server');
   });
 

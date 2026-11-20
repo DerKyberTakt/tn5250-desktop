@@ -299,8 +299,13 @@ func (a *App) SqlRun(id string, statement string, maxRows int) (SqlResult, error
 		if err == nil {
 			return out, nil
 		}
-		// The database connection is gone: give it up and continue on the fallback.
+		// The database connection is gone: give it up. A query can safely go again on the
+		// fallback; any other statement may already have run on the host, so it is never
+		// sent a second time (audit d4-1).
 		s.dropDB(err)
+		if sqlviacl.Classify(stmt) != sqlviacl.Query {
+			return SqlResult{}, a.sqlFail(id, s, fmt.Errorf("the statement may already have run on the host (the database server connection failed after it was sent), check before running it again: %w", err))
+		}
 	}
 	if sqlviacl.Classify(stmt) == sqlviacl.Query {
 		out, err := s.query(stmt, maxRows, start)

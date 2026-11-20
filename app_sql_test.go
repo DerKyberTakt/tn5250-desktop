@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,5 +73,29 @@ func TestSqlCloseWhileStatementHangs(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("SqlRun did not return after SqlClose")
+	}
+}
+
+// A statement the database server may already have executed is never sent again over the
+// CL fallback (audit d4-1).
+func TestSqlRunDoesNotRerunADroppedStatement(t *testing.T) {
+	a, id, cmds, dbs := testSQL(t, func(string) any { return dbtest.Drop{} })
+	_, err := a.SqlRun(id, "INSERT INTO PAYMENTS VALUES (1, 100.00)", 10)
+	if err == nil || !strings.Contains(err.Error(), "may already have run") {
+		t.Fatalf("err = %v", err)
+	}
+	if got := cmds.Ran(); len(got) != 0 {
+		t.Fatalf("the fallback ran %v", got)
+	}
+	if got := dbs.Prepared(); len(got) != 1 {
+		t.Fatalf("the database server saw %v", got)
+	}
+}
+
+func TestSqlRunQueryStillFallsBack(t *testing.T) {
+	a, id, cmds, _ := testSQL(t, func(string) any { return dbtest.Drop{} })
+	_, _ = a.SqlRun(id, "SELECT * FROM QIWS.QCUSTCDT", 10)
+	if len(cmds.Ran()) == 0 {
+		t.Fatal("a read-only query should fall back to the command server")
 	}
 }
