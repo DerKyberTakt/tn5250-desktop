@@ -219,8 +219,13 @@ func Open(o Options) (*Client, error) {
 func (c *Client) Attributes() ServerAttributes { return c.attrs }
 
 // Close ends the connection; an open cursor is closed on the host first.
+//
+// A request in flight holds c.mu while it waits for the host. Close then does not wait
+// behind it: it closes the socket, which fails the request at once.
 func (c *Client) Close() error {
-	c.mu.Lock()
+	if !c.mu.TryLock() {
+		return c.c.Close()
+	}
 	defer c.mu.Unlock()
 	if c.closed {
 		return nil

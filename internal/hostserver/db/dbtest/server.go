@@ -48,6 +48,13 @@ type Fail struct {
 	SQLState string
 }
 
+// Drop is a handler result: the server closes the connection without replying, after
+// it has received (and, as far as the client can tell, perhaps executed) the statement.
+type Drop struct{}
+
+// dropFrame tells conn to close the connection instead of writing a reply.
+var dropFrame = &hs.Frame{}
+
 // Handler answers one statement with a Table, an Exec or a Fail.
 type Handler func(sql string) any
 
@@ -131,6 +138,9 @@ func (s *Server) conn(c net.Conn) {
 		s.Requests = append(s.Requests, req.ReqRepID)
 		s.mu.Unlock()
 		out := s.answer(req, &clientSeed, cur)
+		if out == dropFrame {
+			return
+		}
 		if out == nil {
 			continue
 		}
@@ -258,6 +268,8 @@ func (s *Server) answer(req *hs.Frame, clientSeed *[]byte, cur *cursor) *hs.Fram
 			res = s.Handler(sql)
 		}
 		switch v := res.(type) {
+		case Drop:
+			return dropFrame
 		case Fail:
 			return s.fail(req, v)
 		case Table:

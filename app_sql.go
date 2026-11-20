@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -105,6 +106,33 @@ type sqlSession struct {
 	header bool
 	// paseCCSID is true once the server job was given CCSID 37 for PASE.
 	paseCCSID bool
+	// socks lists every host-server connection of the session so SqlClose can cut them
+	// while a statement holds mu; aborted is set once it did.
+	sockMu  sync.Mutex
+	socks   []io.Closer
+	aborted bool
+}
+
+// track registers a connection for abort. After an abort a late connection is closed at once.
+func (s *sqlSession) track(c io.Closer) {
+	s.sockMu.Lock()
+	defer s.sockMu.Unlock()
+	if s.aborted {
+		_ = c.Close()
+		return
+	}
+	s.socks = append(s.socks, c)
+}
+
+// abort closes every connection without taking mu, so a statement waiting for a silent
+// host fails at once instead of blocking SqlClose behind it.
+func (s *sqlSession) abort() {
+	s.sockMu.Lock()
+	defer s.sockMu.Unlock()
+	s.aborted = true
+	for _, c := range s.socks {
+		_ = c.Close()
+	}
 }
 
 type sqlState struct {
@@ -146,10 +174,12 @@ func (a *App) SqlConnect(r SqlConnectRequest) (string, error) {
 		results: map[string]*sqlCache{},
 		header:  true,
 	}
+	s.track(c)
 	if d, err := db.Open(db.Options{DialOptions: o, Naming: r.Naming, DefaultSchema: r.DefaultSchema}); err != nil {
 		s.fallback = err.Error()
 	} else {
 		s.db = d
+		s.track(d)
 	}
 	st := a.sql()
 	st.mu.Lock()
@@ -170,6 +200,9 @@ func (a *App) SqlClose(id string) {
 	if s == nil {
 		return
 	}
+	// A statement waiting for a silent host holds mu: cut the sockets first so it fails,
+	// then take mu to close what is left.
+	s.abort()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closeLocked()
@@ -359,6 +392,7 @@ func (s *sqlSession) aux() (*db.Client, error) {
 		return nil, err
 	}
 	s.dbAux = c
+	s.track(c)
 	return c, nil
 }
 
@@ -822,6 +856,7 @@ func (s *sqlSession) readAndRemove(p string) ([]byte, uint16, error) {
 			return nil, 0, fmt.Errorf("file server: %w", err)
 		}
 		s.files = c
+		s.track(c)
 	}
 	data, ccsid, _, err := s.files.ReadAll(p, streamFileMax)
 	_ = s.files.Remove(p, false)

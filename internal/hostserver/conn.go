@@ -22,8 +22,53 @@ type DialOptions struct {
 	TLS                 bool
 	TrustAnyCertificate bool
 	Timeout             time.Duration
-	User                string
-	Password            string
+	// IdleTimeout is how long a read or write on the signed-on connection may stall
+	// before it fails (the deadline restarts with every read and write, so a slow but
+	// steady transfer is fine). 0 means DefaultIdleTimeout, a negative value turns it off.
+	IdleTimeout time.Duration
+	User        string
+	Password    string
+}
+
+// DefaultIdleTimeout bounds a silent host after sign-on. It is long on purpose: a
+// remote command or a statement can legitimately take minutes before its reply, and
+// the user can cancel or close the tab at any time.
+const DefaultIdleTimeout = 15 * time.Minute
+
+// deadlineConn re-arms an idle deadline before every read and write, never later than
+// the deadline the caller set explicitly.
+type deadlineConn struct {
+	net.Conn
+	idle time.Duration
+	mu   sync.Mutex
+	set  time.Time
+}
+
+func (d *deadlineConn) arm() {
+	d.mu.Lock()
+	t := time.Now().Add(d.idle)
+	if !d.set.IsZero() && d.set.Before(t) {
+		t = d.set
+	}
+	d.mu.Unlock()
+	_ = d.Conn.SetDeadline(t)
+}
+
+func (d *deadlineConn) Read(p []byte) (int, error) {
+	d.arm()
+	return d.Conn.Read(p)
+}
+
+func (d *deadlineConn) Write(p []byte) (int, error) {
+	d.arm()
+	return d.Conn.Write(p)
+}
+
+func (d *deadlineConn) SetDeadline(t time.Time) error {
+	d.mu.Lock()
+	d.set = t
+	d.mu.Unlock()
+	return d.Conn.SetDeadline(t)
 }
 
 // Conn is an authenticated connection to one host server.
@@ -113,6 +158,12 @@ func Dial(server uint16, service string, o DialOptions) (*Conn, error) {
 		return nil, err
 	}
 	_ = nc.SetDeadline(time.Time{})
+	if idle := o.IdleTimeout; idle >= 0 {
+		if idle == 0 {
+			idle = DefaultIdleTimeout
+		}
+		c.c = &deadlineConn{Conn: nc, idle: idle}
+	}
 	return c, nil
 }
 
