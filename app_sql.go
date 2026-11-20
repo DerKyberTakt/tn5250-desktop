@@ -389,7 +389,7 @@ func (a *App) CmdRun(id string, command string) (SqlResult, error) {
 
 // maxCollectedRows bounds the rows read into memory from a host that keeps sending: the
 // user's own result is paged and capped elsewhere (sqlviacl.HardCap).
-const maxCollectedRows = 100000
+const maxCollectedRows = 1000000
 
 // drainRows reads the rest of a result into memory, failing with a clear error when the
 // host sends more than maxCollectedRows rows.

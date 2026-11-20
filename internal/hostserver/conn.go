@@ -33,7 +33,7 @@ type DialOptions struct {
 // DefaultIdleTimeout bounds a silent host after sign-on. It is long on purpose: a
 // remote command or a statement can legitimately take minutes before its reply, and
 // the user can cancel or close the tab at any time.
-const DefaultIdleTimeout = 15 * time.Minute
+const DefaultIdleTimeout = 60 * time.Minute
 
 // deadlineConn re-arms an idle deadline before every read and write, never later than
 // the deadline the caller set explicitly.
