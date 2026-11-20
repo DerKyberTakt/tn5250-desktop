@@ -108,6 +108,22 @@ describe('the plain dialogs share the keycap frame', () => {
     expect(await p).toBe(false);
   });
 
+  it('confirmDialog with a detail: bounded monospace area with the whole text, Cancel focused', async () => {
+    const p = confirmDialog('PC command from host', 'the host wants to run this', 'Run', { detail: 'rm -rf x'.padEnd(900, ' '), cancelDefault: true });
+    const pre = modal().querySelector('pre.detail');
+    expect(pre?.textContent).toHaveLength(900);
+    expect(document.activeElement).toBe(modal().querySelector('button.cancel'));
+    (modal().querySelector('button.cancel') as HTMLButtonElement).click();
+    expect(await p).toBe(false);
+  });
+
+  it('confirmDialog without options still focuses the primary key', async () => {
+    const p = confirmDialog('Save?', 'Keep', 'Save');
+    expect(document.activeElement).toBe(modal().querySelector('button.primary'));
+    (modal().querySelector('button.cancel') as HTMLButtonElement).click();
+    await p;
+  });
+
   it('choiceDialog: always has a Cancel key and resolves with the label pressed', async () => {
     let p = choiceDialog('Download', ['How?'], ['As on the host', 'Convert to UTF-8']);
     expect(keys()).toEqual(['keycap grey cancel|Cancel', 'keycap blue|As on the host', 'keycap green primary|Convert to UTF-8']);

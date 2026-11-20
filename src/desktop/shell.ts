@@ -1611,7 +1611,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
 
   /** A yes/no question the broker needs answered by the user of this window. */
   private async askFromBroker(msg: Extract<ToWindow, { type: 'ui:ask' }>): Promise<void> {
-    const ok = await confirmDialog(msg.title, msg.text, msg.ok);
+    const ok = await confirmDialog(msg.title, msg.text, msg.ok, { detail: msg.detail, cancelDefault: msg.cancelDefault });
     void relay('broker', { type: 'ui:answer', request: msg.request, ok }).catch(() => undefined);
     if (ok && msg.then === 'openSettings') {
       const entry = this.entries.find((e) => e.kind === 'terminal' && e.tab.id === msg.tab);

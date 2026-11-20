@@ -815,6 +815,23 @@ dialog.modal h2 {
 
 dialog.modal p {
   margin: 0 0 10px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* The full text of what a confirmation approves: bounded, scrolling, monospace. */
+dialog.modal pre.detail {
+  margin: 0 0 12px;
+  max-height: 9em;
+  overflow: auto;
+  padding: 6px 8px;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  user-select: text;
 }
 
 dialog.modal .note {

@@ -127,17 +127,30 @@ export async function promptDialog(title: string, label: string, options: { pass
   return r?.[0];
 }
 
-export function confirmDialog(title: string, message: string, okLabel = 'OK'): Promise<boolean> {
+export interface ConfirmOptions {
+  /** Shown under the message in a bounded, scrollable monospace area (the full text of what is being approved). */
+  detail?: string;
+  /** Focus Cancel, not the primary key: for approvals where one stray Enter must not do the risky thing. */
+  cancelDefault?: boolean;
+}
+
+export function confirmDialog(title: string, message: string, okLabel = 'OK', options: ConfirmOptions = {}): Promise<boolean> {
   return new Promise((resolve) => {
     const dialog = el('dialog', 'modal');
     const form = el('form');
     form.method = 'dialog';
     form.append(head(title, dialog), el('p', undefined, message));
+    if (options.detail !== undefined) {
+      const box = el('pre', 'detail', options.detail);
+      box.tabIndex = 0;
+      form.append(box);
+    }
     const buttons = el('div', 'buttons');
     let ok = false;
     const okKey = submitKey(okLabel);
     okKey.value = 'ok';
-    buttons.append(keyButton('Cancel', 'grey', () => dialog.close(), 'cancel'), okKey);
+    const cancelKey = keyButton('Cancel', 'grey', () => dialog.close(), 'cancel');
+    buttons.append(cancelKey, okKey);
     form.append(buttons);
     form.onsubmit = () => {
       ok = true;
@@ -149,7 +162,7 @@ export function confirmDialog(title: string, message: string, okLabel = 'OK'): P
       resolve(ok || dialog.returnValue === 'ok');
     };
     dialog.showModal();
-    okKey.focus();
+    (options.cancelDefault ? cancelKey : okKey).focus();
   });
 }
 

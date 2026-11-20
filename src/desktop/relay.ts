@@ -40,7 +40,7 @@ export type ToWindow =
   | { type: 'tab:notify'; tab: string; text: string }
   | { type: 'tab:trace'; tab: string; request: string; trace: Record<string, unknown> | undefined }
   | { type: 'tab:gone'; tab: string }
-  | { type: 'ui:ask'; request: string; tab: string; title: string; text: string; ok: string; then?: 'openSettings' }
+  | { type: 'ui:ask'; request: string; tab: string; title: string; text: string; ok: string; then?: 'openSettings'; detail?: string; cancelDefault?: boolean }
   | { type: 'registry'; tabs: RegistryEntry[] }
   /** Another window saved settings.json: reload it and refresh. */
   | { type: 'store:changed' }

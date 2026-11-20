@@ -7,6 +7,7 @@
 import { SessionController } from '../extension/sessionController';
 import { expandDeviceName } from '../shared/deviceName';
 import type { PcCommandKind } from '../shared/pcCommand';
+import { commandMessage, commandView } from './pcCommandView';
 import type { ConnectionStatus, WebviewToHost } from '../shared/protocol';
 import { buildTitle, resolveSettings, type TerminalSettings } from '../shared/settings';
 import { signonGate } from '../shared/signonGate';
@@ -198,11 +199,11 @@ class Broker {
   }
 
   /** A yes/no dialog shown by the window that owns the tab; false when it closes first. */
-  private ask(s: Session, title: string, text: string, ok: string, then?: 'openSettings'): Promise<boolean> {
+  private ask(s: Session, title: string, text: string, ok: string, then?: 'openSettings', extra: { detail?: string; cancelDefault?: boolean } = {}): Promise<boolean> {
     const request = `ask-${++this.askCounter}`;
     return new Promise((resolve) => {
       this.asks.set(request, { window: s.window, resolve });
-      this.send(s.window, { type: 'ui:ask', request, tab: s.tab, title, text, ok, then });
+      this.send(s.window, { type: 'ui:ask', request, tab: s.tab, title, text, ok, then, ...extra });
     });
   }
 
@@ -378,14 +379,20 @@ class Broker {
 
   private async handlePcCommand(s: Session, kind: PcCommandKind, decision: 'open' | 'run' | 'ask', wait: boolean): Promise<void> {
     if (kind.kind === 'link') {
-      if (decision === 'ask' && !(await this.ask(s, 'Open link', `${s.title}: the host wants to open\n${kind.url}`, 'Open'))) return;
+      if (decision === 'ask') {
+        const m = commandMessage(s.title, 'the host wants to open this link', kind.url);
+        if (!(await this.ask(s, 'Open link', m.text, 'Open', undefined, { detail: m.detail, cancelDefault: true }))) return;
+      }
       await goApp().OpenURL(kind.url);
       this.send(s.window, { type: 'tab:notify', tab: s.tab, text: `Opened ${kind.url}` });
       return;
     }
-    if (decision === 'ask' && !(await this.ask(s, 'PC command from host', `${s.title}: the host wants to run this command on your PC:\n${kind.command}`, 'Run'))) {
-      this.send(s.window, { type: 'tab:log', tab: s.tab, line: `[${s.title}] PC command not run: ${kind.command}` });
-      return;
+    if (decision === 'ask') {
+      const m = commandMessage(s.title, 'the host wants to run this command on your PC', kind.command);
+      if (!(await this.ask(s, 'PC command from host', m.text, 'Run', undefined, { detail: m.detail, cancelDefault: true }))) {
+        this.send(s.window, { type: 'tab:log', tab: s.tab, line: `[${s.title}] PC command not run: ${commandView(kind.command).preview}` });
+        return;
+      }
     }
     try {
       await goApp().RunPcCommand(kind.command, wait);
