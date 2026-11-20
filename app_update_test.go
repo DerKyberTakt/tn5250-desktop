@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -66,7 +67,7 @@ func TestInstallAppImageSameName(t *testing.T) {
 	if err != nil || string(b) != "new" {
 		t.Fatalf("installed = %q, %v", b, err)
 	}
-	if fi, _ := os.Stat(exe); fi.Mode().Perm()&0o111 == 0 {
+	if fi, _ := os.Stat(exe); runtime.GOOS != "windows" && fi.Mode().Perm()&0o111 == 0 { // no execute bit on Windows
 		t.Errorf("not executable: %v", fi.Mode())
 	}
 }
