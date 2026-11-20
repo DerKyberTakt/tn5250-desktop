@@ -149,15 +149,10 @@ func (a *App) IfsSearch(id, dir, text string, subtree bool) ([]IfsHit, error) {
 		}
 		return nil, err
 	}
-	all := data
-	for !rows.Done {
-		d, err := rows.Next()
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, d...)
+	all, err := drainRows(rows, data, maxCollectedRows)
+	if err != nil {
+		return nil, err
 	}
-	_ = rows.Close()
 	prefix := dir + "/"
 	if dir == "/" {
 		prefix = "/"
@@ -309,6 +304,39 @@ func (c cancelReader) Read(p []byte) (int, error) {
 // transferClient opens a second connection so browsing stays responsive during a transfer.
 func transferClient(s *ifsSession) (*ifs.Client, error) { return ifs.Open(s.options) }
 
+// maxPlannedFiles bounds one folder download (the host chooses what a folder holds).
+const maxPlannedFiles = 200000
+
+// minSlackBytes is how far a file may outgrow its announced size before the download
+// stops (a log being written while it is copied is fine, an endless stream is not);
+// some host objects announce size 0, so the floor is generous. Larger files get 12.5%.
+const minSlackBytes = 16 << 20
+
+// boundedWriter fails once more than limit bytes arrived.
+type boundedWriter struct {
+	w     io.Writer
+	left  int64
+	limit int64
+}
+
+var errHostSentTooMuch = errors.New("the host sent more data than the size it announced; download stopped")
+
+func (b *boundedWriter) Write(p []byte) (int, error) {
+	if int64(len(p)) > b.left {
+		return 0, fmt.Errorf("%w (limit %d bytes)", errHostSentTooMuch, b.limit)
+	}
+	b.left -= int64(len(p))
+	return b.w.Write(p)
+}
+
+func newBoundedWriter(w io.Writer, announced int64) *boundedWriter {
+	if announced < 0 {
+		announced = 0
+	}
+	limit := announced + max(minSlackBytes, announced/8)
+	return &boundedWriter{w: w, left: limit, limit: limit}
+}
+
 type plannedFile struct {
 	remote string
 	local  string
@@ -321,11 +349,17 @@ func planDownload(c *ifs.Client, remote, local string, depth int, out *[]planned
 		return err
 	}
 	if !st.Dir {
+		if len(*out) >= maxPlannedFiles {
+			return fmt.Errorf("more than %d files to download; pick a smaller folder", maxPlannedFiles)
+		}
 		*out = append(*out, plannedFile{remote: remote, local: local, size: int64(st.Size)})
 		return nil
 	}
 	if depth > 64 {
 		return fmt.Errorf("%s: folders nested too deeply", remote)
+	}
+	if len(*dirs) >= maxPlannedFiles {
+		return fmt.Errorf("more than %d folders to download; pick a smaller folder", maxPlannedFiles)
 	}
 	*dirs = append(*dirs, local)
 	es, err := c.List(remote)
@@ -342,6 +376,9 @@ func planDownload(c *ifs.Client, remote, local string, depth int, out *[]planned
 				return err
 			}
 		} else {
+			if len(*out) >= maxPlannedFiles {
+				return fmt.Errorf("more than %d files to download; pick a smaller folder", maxPlannedFiles)
+			}
 			*out = append(*out, plannedFile{remote: path.Join(remote, e.Name), local: filepath.Join(local, name), size: int64(e.Size)})
 		}
 	}
@@ -435,7 +472,7 @@ func downloadOne(c *ifs.Client, f plannedFile, progress func(int64), cancel func
 	if err != nil {
 		return err
 	}
-	err = c.Download(f.remote, cancelWriter{w: out, cancel: cancel}, progress)
+	err = c.Download(f.remote, cancelWriter{w: newBoundedWriter(out, f.size), cancel: cancel}, progress)
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}

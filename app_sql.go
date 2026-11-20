@@ -382,6 +382,28 @@ func (a *App) CmdRun(id string, command string) (SqlResult, error) {
 	return out, nil
 }
 
+// maxCollectedRows bounds the rows read into memory from a host that keeps sending: the
+// user's own result is paged and capped elsewhere (sqlviacl.HardCap).
+const maxCollectedRows = 100000
+
+// drainRows reads the rest of a result into memory, failing with a clear error when the
+// host sends more than maxCollectedRows rows.
+func drainRows(rows *db.Rows, first [][]*string, limit int) ([][]*string, error) {
+	all := first
+	for !rows.Done {
+		if len(all) > limit {
+			_ = rows.Close()
+			return nil, fmt.Errorf("the host sent more than %d rows; stopped", limit)
+		}
+		d, err := rows.Next()
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, d...)
+	}
+	return all, nil
+}
+
 // aux opens (once) the session's second database connection.
 func (s *sqlSession) aux() (*db.Client, error) {
 	if s.dbAux != nil {
@@ -412,13 +434,9 @@ func (s *sqlSession) auxAll(sql string) ([][]*string, error) {
 		}
 		return nil, err
 	}
-	all := data
-	for !rows.Done {
-		d, err := rows.Next()
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, d...)
+	all, err := drainRows(rows, data, maxCollectedRows)
+	if err != nil {
+		return nil, err
 	}
 	_ = rows.Close()
 	return all, nil

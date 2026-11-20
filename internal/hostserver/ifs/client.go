@@ -225,6 +225,10 @@ func parseEntry(rep *hs.Frame) (Entry, bool) {
 	return e, true
 }
 
+// MaxListEntries bounds one listing: a host that never says "done" must not grow the
+// list without limit.
+const MaxListEntries = 500000
+
 // list sends one list-attributes request for name (a path, or a pattern like "/home/*").
 func (cl *Client) list(name, op, display string) ([]Entry, error) {
 	body := (&hs.Builder{}).U16(0).U32(0).U16(nameCCSID).U32(1).U16(0).U16(0xFFFF).U16(0x0001).U16(0).
@@ -241,6 +245,9 @@ func (cl *Client) list(name, op, display string) ([]Entry, error) {
 		switch rep.ReqRepID {
 		case repList:
 			if e, ok := parseEntry(rep); ok && e.Name != "." && e.Name != ".." {
+				if len(out) >= MaxListEntries {
+					return nil, fmt.Errorf("%s %s: the host listed more than %d entries; stopped", op, display, MaxListEntries)
+				}
 				out = append(out, e)
 			}
 		case repReturn:
