@@ -314,7 +314,7 @@ tabIcon: '',
   typeAhead: true,
   alarm: true,
   keyClick: false,
-  pcCommands: 'links',
+  pcCommands: 'ask',
   subfileScrollBar: false,
 
   keymap: {},

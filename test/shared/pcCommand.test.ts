@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { classifyPcCommand, decidePcCommand } from '../../src/shared/pcCommand';
+import { SETTINGS_DEFAULTS } from '../../src/shared/settings';
 
 describe('PC command policy (STRPCCMD)', () => {
+  it('asks before opening a host-chosen link by default', () => {
+    expect(SETTINGS_DEFAULTS.pcCommands).toBe('ask');
+    expect(decidePcCommand(SETTINGS_DEFAULTS.pcCommands, { kind: 'link', url: 'https://tracker.example/x' })).toBe('ask');
+  });
+
   it('tells links from commands', () => {
     expect(classifyPcCommand('START http://pub400.com:8080/wv/x?key=1')).toEqual({ kind: 'link', url: 'http://pub400.com:8080/wv/x?key=1' });
     expect(classifyPcCommand('start "" https://pub400.com/')).toEqual({ kind: 'link', url: 'https://pub400.com/' });
