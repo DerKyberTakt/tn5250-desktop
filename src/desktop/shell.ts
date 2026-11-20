@@ -19,6 +19,7 @@ import { TabDrag, reorderWithin, type DragHost, type Point } from './tabDrag';
 import { ACS_EMULATOR_DIR, HOD_FILTERS, credentialsToDrop, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
 import { watchRecording, MacroRecorder, describeStep, macrosFromJson, macrosToJson, mergeMacros, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
 import { macroEditorDialog } from './macroEditor';
+import { cleanName, macroImportPreview } from './macroImport';
 
 const APP_NAME = 'TN5250 Terminal';
 const PROJECT_URL = 'https://github.com/DerKyberTakt/tn5250-desktop';
@@ -1216,15 +1217,20 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     const app = goApp();
     const file = await app.PickFile('Import macros', [{ name: 'TN5250 macros', patterns: '*.json' }, { name: 'All files', patterns: '*.*' }]);
     if (!file) return;
-    const incoming = macrosFromJson(await app.ReadTextFile(file));
+    const refused: string[] = [];
+    const incoming = macrosFromJson(await app.ReadTextFile(file), refused);
     if (!incoming) {
       await messageDialog('Import macros', ['That file is not a macros export.']);
       return;
     }
+    // Nothing is stored before the user has seen what comes in and what it replaces.
+    const preview = macroImportPreview(incoming, this.store.macros, refused);
+    if (!(await confirmDialog(preview.title, preview.note, 'Import', { detail: preview.detail, cancelDefault: true }))) return;
     const r = mergeMacros(this.store.macros, incoming);
     await this.store.replaceMacros(r.macros);
     const dropped = r.keysDropped.length ? ` The key of ${r.keysDropped.join(', ')} was already taken and was left off.` : '';
-    this.notify(`${r.added} macro${r.added === 1 ? '' : 's'} added, ${r.replaced} replaced.${dropped}`);
+    const refusedNote = refused.length ? ` ${refused.length} key${refused.length === 1 ? ' was' : 's were'} refused (they would shadow ordinary keys): ${refused.map(cleanName).join(', ')}.` : '';
+    this.notify(`${r.added} macro${r.added === 1 ? '' : 's'} added, ${r.replaced} replaced.${dropped}${refusedNote}`);
   }
 
   /** Actions > Run Macro: pick one for the active session. */
