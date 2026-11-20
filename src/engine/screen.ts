@@ -394,6 +394,9 @@ export class Screen {
 
   /** Rolls rows top..bottom (0-based, inclusive) by n lines; positive n = up. */
   roll(n: number, top: number, bottom: number): void {
+    // The host sends the rows: keep them on the screen, whatever it declares.
+    top = Math.max(0, top);
+    bottom = Math.min(this.rows - 1, bottom);
     if (n === 0 || top > bottom) return;
     const lines = bottom - top + 1;
     const count = Math.min(Math.abs(n), lines);

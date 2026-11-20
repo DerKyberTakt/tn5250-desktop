@@ -103,7 +103,7 @@ export class Session5250 {
       },
       {
         send: (bytes, forTrace) => this.events.send(bytes, forTrace),
-        record: (record) => this.onRecord(record),
+        record: (record) => this.guardedRecord(record),
         error: (err) => this.events.error?.(err),
         environment: (vars) => {
           const name = vars.get('DEVNAME');
@@ -239,6 +239,15 @@ export class Session5250 {
     const masked = data.slice();
     for (const [start, end] of secret) masked.fill(0x40, start, end);
     this.telnet.sendRecord(frame, buildRecord(opcode, flags1, masked));
+  }
+
+  /** One bad record (a hostile or damaged data stream) ends the session with an error; it never throws out of feed(). */
+  private guardedRecord(bytes: Uint8Array): void {
+    try {
+      this.onRecord(bytes);
+    } catch (err) {
+      this.events.error?.(err instanceof Error ? err : new Error(String(err)));
+    }
   }
 
   private onRecord(bytes: Uint8Array): void {

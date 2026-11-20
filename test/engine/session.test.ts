@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { OP_PUT_GET, buildRecord } from '../../src/engine/gds';
 import { Session5250 } from '../../src/engine/session';
 import { bytesToHex, hexToBytes, loadCapture, outboundHex } from '../helpers/fixture';
 
@@ -77,5 +78,27 @@ describe('Session5250', () => {
     expect(session.state.messageWaiting).toBe(false);
     session.feed(hexToBytes('000a12a00000040000' + '0a' + 'ffef'));
     expect(sent).toEqual(['000a12a000000400000affef']);
+  });
+
+  it('a Roll with rows outside the screen is clamped and does not wedge the session (e1-2)', () => {
+    const errors: Error[] = [];
+    let updates = 0;
+    const session = new Session5250({ screenSize: '24x80', codePage: 37 }, { send: () => undefined, update: () => updates++, error: (e) => errors.push(e) });
+    const frame = (data: Uint8Array): Uint8Array => Uint8Array.from([...Array.from(buildRecord(OP_PUT_GET, 0, data)).flatMap((b) => (b === 255 ? [255, 255] : [b])), 255, 239]);
+    expect(() => session.feed(frame(hexToBytes('0423815687')))).not.toThrow();
+    expect(() => session.feed(frame(hexToBytes('04402004')))).not.toThrow();
+    expect(errors).toEqual([]);
+    expect(updates).toBeGreaterThan(0);
+  });
+
+  it('an exception while processing a record is reported through events.error, not thrown out of feed', () => {
+    const errors: Error[] = [];
+    const session = new Session5250({ screenSize: '24x80', codePage: 37 }, { send: () => undefined, error: (e) => errors.push(e) });
+    (session.processor as unknown as { process: () => void }).process = () => {
+      throw new RangeError('boom');
+    };
+    const rec = Uint8Array.from([...buildRecord(OP_PUT_GET, 0, hexToBytes('04402004')), 255, 239]);
+    expect(() => session.feed(rec)).not.toThrow();
+    expect(errors.map((e) => e.message)).toEqual(['boom']);
   });
 });
