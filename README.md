@@ -49,13 +49,21 @@ It shares its TN5250 engine and terminal UI with the
   5000 characters, update counts are not reported, NULL shows as an empty field, and the
   first 10,000 rows of a query are kept for paging. A result's column types come from
   QSYS2.SYSCOLUMNS.
-- No telemetry. Connections go only to the hosts you enter. Passwords are kept in the
-  operating system credential store.
+- No telemetry. Connections go to the hosts you enter, and to GitHub for the update check
+  described next. Passwords are kept in the operating system credential store.
 - Updates from GitHub: the ↓ toolbar button glows green when a new release is out, and
   updates in place after checking the download against the release's `SHA256SUMS`. The
-  only other connection the app makes is that check, to github.com, at startup and once
-  a day (Help > Check for Updates at Startup turns it off). Behind a proxy, set
-  `HTTPS_PROXY`.
+  update check is the only connection the app makes besides your hosts. It is on by default:
+  at startup and then every 24 hours while the app runs, it sends an HTTPS GET for
+  `https://github.com/DerKyberTakt/tn5250-desktop/releases/latest` and reads the newest release
+  tag from the redirect. The one header the app sets is `User-Agent: tn5250-terminal` (no
+  version, no operating system, no identifier, no cookies, no token). When a newer release
+  exists it also fetches that release's `CHANGELOG.md` from `raw.githubusercontent.com`, and
+  Update now downloads from github.com (`*.githubusercontent.com`). GitHub sees your IP
+  address like any web server does. To turn the check off, untick Help > Check for Updates
+  at Startup, or set `"checkForUpdates": false` in `settings.json` (in the settings folder,
+  or in the managed file for a rollout, see [DEPLOYMENT.md](DEPLOYMENT.md)); Help > Check for
+  Updates still works by hand. Behind a proxy, set `HTTPS_PROXY`.
 
 ## Download
 
