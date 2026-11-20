@@ -8,6 +8,7 @@ import { ConnectionOverlay } from './connectionOverlay';
 import { FindBar } from './findBar';
 import { dragUnits } from './gui';
 import { Renderer, type ScrollBarTarget } from './renderer';
+import { snapshotCursorHidden } from '../shared/hiddenCursor';
 
 const vscode = acquireVsCodeApi();
 
@@ -48,6 +49,9 @@ const keyLines: string[] = [];
 function post(message: WebviewToHost): void {
   vscode.postMessage(message);
 }
+
+/** The cursor of the last screen is in a non-display field: the key overlay names no keys typed there. */
+let cursorInHiddenField = false;
 
 function logKey(line: string): void {
   if (!config.keyOverlay) return;
@@ -230,6 +234,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
     case 'screen':
       lastScreen = { rows: msg.screen.rows, cols: msg.screen.cols, fields: msg.screen.fields };
       hostMouseEvents = msg.screen.gui?.mouseEvents ?? [];
+      cursorInHiddenField = snapshotCursorHidden(msg.screen);
       renderer.setScreen(msg.screen);
       findBar.refresh();
       renderOia();
@@ -436,7 +441,8 @@ window.addEventListener(
       return;
     }
     if (result.kind === 'text') {
-      logKey(`${keyName(info)}  -> text`);
+      // The overlay never shows what goes into a password field.
+      logKey(cursorInHiddenField ? '(key)  -> text, non-display field' : `${keyName(info)}  -> text`);
       post({ type: 'text', text: result.text });
     } else if (result.kind === 'action' && result.action === 'printScreen') {
       post({ type: 'printScreen' });
