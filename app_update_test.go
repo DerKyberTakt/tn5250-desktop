@@ -44,3 +44,46 @@ func mk(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 }
+
+// The installed AppImage keeps the release file name; the update must replace it
+// atomically and never delete it (audit d5-1 / g6-8).
+func TestInstallAppImageSameName(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, assetAppImage)
+	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(dir, ".tn5250-update-x")
+	mk(t, work)
+	got := filepath.Join(work, assetAppImage)
+	if err := os.WriteFile(got, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := installAppImage(exe, got); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(exe)
+	if err != nil || string(b) != "new" {
+		t.Fatalf("installed = %q, %v", b, err)
+	}
+	if fi, _ := os.Stat(exe); fi.Mode().Perm()&0o111 == 0 {
+		t.Errorf("not executable: %v", fi.Mode())
+	}
+}
+
+func TestInstallAppImageKeepsOldOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, assetAppImage)
+	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := installAppImage(exe, filepath.Join(dir, "missing")); err == nil {
+		t.Fatal("expected an error")
+	}
+	if err := installAppImage(exe, exe); err == nil {
+		t.Fatal("same path: expected an error")
+	}
+	if b, err := os.ReadFile(exe); err != nil || string(b) != "old" {
+		t.Fatalf("installed file lost: %q, %v", b, err)
+	}
+}

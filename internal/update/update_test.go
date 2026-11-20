@@ -277,3 +277,30 @@ func TestCompareFourParts(t *testing.T) {
 		t.Fatal("equal versions")
 	}
 }
+
+// Download into a folder that already holds a file of the same name replaces it in
+// one rename and keeps it when the download fails.
+func TestDownloadReplacesSameNameAtomically(t *testing.T) {
+	good := []byte("new image")
+	sums := fmt.Sprintf("%s  app.bin\n%s  bad.bin\n", sha(good), strings.Repeat("0", 64))
+	c, _ := fakeGitHub(t, "", map[string][]byte{"app.bin": good, "bad.bin": []byte("x")}, sums)
+	dir := t.TempDir()
+	for _, n := range []string{"app.bin", "bad.bin"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("installed"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := c.Download(context.Background(), "v0.2.0", "bad.bin", dir, nil); err == nil {
+		t.Fatal("expected a checksum mismatch")
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "bad.bin")); err != nil || string(b) != "installed" {
+		t.Fatalf("existing file lost: %q, %v", b, err)
+	}
+	p, err := c.Download(context.Background(), "v0.2.0", "app.bin", dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != string(good) {
+		t.Fatalf("got %q", b)
+	}
+}

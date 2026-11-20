@@ -161,7 +161,7 @@ func (c *Client) Download(ctx context.Context, tag, asset, dir string, progress 
 		return "", err
 	}
 	final := filepath.Join(dir, asset)
-	_ = os.Remove(final)
+	// rename(2) replaces an existing file atomically; the old file is never removed first.
 	if err := os.Rename(tmp.Name(), final); err != nil {
 		return "", err
 	}

@@ -102,27 +102,39 @@ func (a *App) UpdateInstall(tag string) error {
 		if err := exec.Command(setup, "/S", "/relaunch").Start(); err != nil {
 			return fmt.Errorf("could not start the installer: %w", err)
 		}
-	case "portable", "appimage":
+	case "appimage":
+		dir := filepath.Dir(exe)
+		// Download into a private folder beside the AppImage (same filesystem, so the final
+		// rename is atomic). The installed file is never removed or touched until the
+		// verified download is renamed over it.
+		work, err := os.MkdirTemp(dir, ".tn5250-update-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(work)
+		got, err := c.Download(ctx, tag, assetAppImage, work, progress)
+		if err != nil {
+			return friendlyUpdateError(err)
+		}
+		if err := installAppImage(exe, got); err != nil {
+			return fmt.Errorf("could not replace %s (the installed copy was kept): %w", filepath.Base(exe), err)
+		}
+		cmd := exec.Command(exe, updatedFromFlag+strconv.Itoa(os.Getpid()))
+		cmd.Dir = dir
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("updated, but could not restart: %w", err)
+		}
+	case "portable":
 		dir := filepath.Dir(exe)
 		next := exe + ".new"
-		if mode == "portable" {
-			zipPath, err := c.Download(ctx, tag, assetPortable, filepath.Join(os.TempDir(), "tn5250-terminal-update"), progress)
-			if err != nil {
-				return friendlyUpdateError(err)
-			}
-			if err := update.ExtractFile(zipPath, exeName, next); err != nil {
-				return err
-			}
-			_ = os.Remove(zipPath)
-		} else {
-			got, err := c.Download(ctx, tag, assetAppImage, dir, progress)
-			if err != nil {
-				return friendlyUpdateError(err)
-			}
-			if err := os.Rename(got, next); err != nil {
-				return err
-			}
+		zipPath, err := c.Download(ctx, tag, assetPortable, filepath.Join(os.TempDir(), "tn5250-terminal-update"), progress)
+		if err != nil {
+			return friendlyUpdateError(err)
 		}
+		if err := update.ExtractFile(zipPath, exeName, next); err != nil {
+			return err
+		}
+		_ = os.Remove(zipPath)
 		if err := update.Replace(exe, next); err != nil {
 			_ = os.Remove(next)
 			return fmt.Errorf("could not replace %s: %w", filepath.Base(exe), err)
@@ -177,6 +189,20 @@ func (a *App) UpdateInstall(tag string) error {
 		}
 	}()
 	return nil
+}
+
+// installAppImage puts the verified download over the installed AppImage. The download
+// must already sit on the same filesystem (a private folder beside exe). The installed
+// file is never removed first: rename(2) replaces it atomically, and when anything fails
+// before that the installed copy is untouched. The download is never deleted here.
+func installAppImage(exe, downloaded string) error {
+	if filepath.Clean(exe) == filepath.Clean(downloaded) {
+		return errors.New("the download and the installed file are the same path")
+	}
+	if err := os.Chmod(downloaded, 0o755); err != nil {
+		return err
+	}
+	return os.Rename(downloaded, exe)
 }
 
 func currentExe() (string, error) {
