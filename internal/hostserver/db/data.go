@@ -16,6 +16,13 @@ import (
 // u32 at 4, column count u16 at 8, indicator size u16 at 10, row size u32 at 16;
 // the null indicators (i16 per row and column, row-major, -1 = NULL, -2 = mapping
 // error) at 20; then the rows, each a fixed slot per field in format order.
+// maxRowsPerReply is a sanity ceiling for the rows one reply may announce (a block is at
+// most 32767 rows); the real bound is the number of bytes received.
+const maxRowsPerReply = 1 << 20
+
+// maxCellsPerReply bounds rows x columns of one reply (zero-length columns cost no bytes).
+const maxCellsPerReply = 1 << 22
+
 func (f *dataFormat) decodeRows(d []byte, jobCCSID uint16) ([][]*string, error) {
 	if len(d) < 20 {
 		return nil, nil
@@ -30,11 +37,31 @@ func (f *dataFormat) decodeRows(d []byte, jobCCSID uint16) ([][]*string, error) 
 	if colCount != len(f.fields) {
 		return nil, fmt.Errorf("result data has %d columns, the format %d", colCount, len(f.fields))
 	}
+	// Everything below is bounded by the bytes actually received before anything is
+	// allocated: a host-supplied row count must not size an allocation by itself.
+	if rowSize <= 0 {
+		return nil, fmt.Errorf("result data has %d rows of %d bytes", rowCount, rowSize)
+	}
+	if rowCount > maxRowsPerReply {
+		return nil, fmt.Errorf("result data announces %d rows (limit %d per reply)", rowCount, maxRowsPerReply)
+	}
 	indicators := 20
-	data := indicators + rowCount*colCount*indSize
-	if data+rowCount*rowSize > len(d) || rowSize < 0 {
+	indBytes := int64(rowCount) * int64(colCount) * int64(indSize)
+	dataBytes := int64(rowCount) * int64(rowSize)
+	if indBytes+dataBytes > int64(len(d)-indicators) {
 		return nil, fmt.Errorf("result data of %d bytes is short for %d rows of %d bytes", len(d), rowCount, rowSize)
 	}
+	if int64(rowCount)*int64(colCount) > maxCellsPerReply {
+		return nil, fmt.Errorf("result data announces %d rows of %d columns (limit %d cells per reply)", rowCount, colCount, maxCellsPerReply)
+	}
+	var slots int64
+	for _, fld := range f.fields {
+		slots += int64(fld.length)
+	}
+	if slots > int64(rowSize) {
+		return nil, fmt.Errorf("result data: fields need %d bytes per row, the row size is %d", slots, rowSize)
+	}
+	data := indicators + int(indBytes)
 	out := make([][]*string, 0, rowCount)
 	for r := 0; r < rowCount; r++ {
 		row := make([]*string, colCount)
