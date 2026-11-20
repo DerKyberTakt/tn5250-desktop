@@ -119,6 +119,12 @@ export function describeStep(step: MacroStep): string {
   }
 }
 
+/** Whether the cursor of a screen is in a non-display (password) field: the recorder must not keep what is typed there. */
+export function cursorInHiddenField(screen: { cursor: number; fieldAt(addr: number): { attr: number } | undefined }): boolean {
+  const f = screen.fieldAt(screen.cursor);
+  return !!f && (f.attr & 0x07) === 0x07;
+}
+
 /**
  * Collects what the user does in a session into steps: consecutive characters become
  * one text step, a key the host answers is followed by a wait for input, local actions
@@ -135,16 +141,30 @@ export class MacroRecorder {
     this.lastInputAt = this.startedAt;
   }
 
-  text(text: string): void {
+  /**
+   * `hidden`: the cursor is in a non-display (password) field. What is typed there is
+   * never stored: the macro gets one hidden prompt step instead, so playback asks for the
+   * value (see cursorInHiddenField).
+   */
+  text(text: string, hidden = false): void {
     if (!text) return;
     this.lastInputAt = this.now();
+    if (hidden) {
+      const last = this.steps[this.steps.length - 1];
+      if (!(last?.type === 'prompt' && last.secret)) this.steps.push({ type: 'prompt', label: 'Password', secret: true });
+      return;
+    }
     const last = this.steps[this.steps.length - 1];
     if (last?.type === 'text') last.text += text;
     else this.steps.push({ type: 'text', text });
   }
 
   /** A paste: its lines as typed text, a New Line between them (the nearest a macro step comes to the block paste). */
-  paste(text: string): void {
+  paste(text: string, hidden = false): void {
+    if (hidden) {
+      this.text(text, true);
+      return;
+    }
     const lines = text.replace(/\r\n?/g, '\n').split('\n');
     if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
     lines.forEach((line, i) => {

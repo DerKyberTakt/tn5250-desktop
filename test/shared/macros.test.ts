@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MacroRecorder,
+  cursorInHiddenField,
   actionName,
   describeStep,
   keyMatches,
@@ -40,6 +41,34 @@ function fakeTarget(options: { locked?: boolean[]; screen?: string[]; answers?: 
 }
 
 const instant = { sleep: async () => undefined, pollMs: 1 };
+
+describe('MacroRecorder hidden fields', () => {
+  it('never stores text typed or pasted into a non-display field; leaves one hidden prompt', () => {
+    const r = new MacroRecorder();
+    r.text('qsecofr');
+    r.key('tab');
+    for (const ch of 'S3cret!') r.text(ch, true);
+    r.paste('S3cret!', true);
+    r.key('enter');
+    const steps = r.finish();
+    expect(JSON.stringify(steps)).not.toContain('S3cret');
+    expect(JSON.stringify(r.steps)).not.toContain('S3cret');
+    expect(steps).toEqual([
+      { type: 'text', text: 'qsecofr' },
+      { type: 'key', action: 'tab' },
+      { type: 'prompt', label: 'Password', secret: true },
+      { type: 'key', action: 'enter' },
+    ]);
+    expect(JSON.stringify(macrosFromJson(macrosToJson([{ id: 'a', name: 'n', key: '', steps }])))).not.toContain('S3cret');
+  });
+
+  it('cursorInHiddenField reads the field attribute at the cursor', () => {
+    const fields = [{ attr: 0x27 }, { attr: 0x20 }];
+    expect(cursorInHiddenField({ cursor: 0, fieldAt: () => fields[0] })).toBe(true);
+    expect(cursorInHiddenField({ cursor: 0, fieldAt: () => fields[1] })).toBe(false);
+    expect(cursorInHiddenField({ cursor: 0, fieldAt: () => undefined })).toBe(false);
+  });
+});
 
 describe('MacroRecorder', () => {
   it('merges typed characters, follows a host key with a wait for input, drops local actions', () => {
