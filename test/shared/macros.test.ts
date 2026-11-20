@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MacroRecorder,
   cursorInHiddenField,
+  macroKeyProblem,
   actionName,
   describeStep,
   keyMatches,
@@ -317,5 +318,28 @@ describe('watchRecording', () => {
     expect(idle).toBe(0); // stopped: no callbacks
     expect(rec.lastInputAt).toBe(900);
     expect(rec.startedAt).toBe(0);
+  });
+});
+
+describe('macro import keys (g3-2)', () => {
+  const file = (key: string) => JSON.stringify({ tn5250Macros: 1, macros: [{ id: 'a', name: 'M', key, steps: [{ type: 'text', text: 'x' }] }] });
+
+  it('refuses keys that would shadow Enter, Backspace, Tab, plain characters and bare function keys', () => {
+    for (const key of ['Enter', 'Backspace', 'Tab', 'a', 'F3', 'Shift+F3', 'Escape', 'Ctrl+Shift+1']) {
+      const refused: string[] = [];
+      const [m] = macrosFromJson(file(key), refused) ?? [];
+      expect(m?.key, key).toBe('');
+      expect(refused, key).toEqual([`M: ${key}`]);
+    }
+  });
+
+  it('keeps Ctrl/Alt/Meta combinations', () => {
+    for (const key of ['Ctrl+Alt+1', 'Alt+F5', 'Ctrl+!']) expect(macrosFromJson(file(key))?.[0]?.key).toBe(key);
+  });
+
+  it('macroKeyProblem explains the refusal', () => {
+    expect(macroKeyProblem('Enter')).toMatch(/Ctrl, Alt or Meta/);
+    expect(macroKeyProblem('Ctrl+1')).toBeUndefined();
+    expect(macroKeyProblem('')).toBeUndefined();
   });
 });
