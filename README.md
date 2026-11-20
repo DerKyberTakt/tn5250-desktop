@@ -36,8 +36,9 @@ It shares its TN5250 engine and terminal UI with the
   wait for the host, wait for a text, ask for a value), click to change in place, drag to
   move, + to add a step or record more after any step. Name it, give it a key, run it in
   any session. Actions > Macros.
-- **Host PC commands**: `STRPCCMD` from a host program opens http(s) links in your
-  browser; other commands ask first (or never run, by setting).
+- **Host PC commands**: `STRPCCMD` from a host program asks first, for links and for other
+  commands alike, and shows what it wants to open or run (Preferences > Behavior > PC commands
+  from the host: ask (default), open links without asking, run everything, off).
 - SEU syntax colouring for RPG/RPGLE, CL, DDS and DB2 SQL.
 - **Integrated File System browser** (Tools menu): browse, upload, download, rename, Double-click opens folders and files; the viewer tab decodes text by the file's CCSID (EBCDIC included), finds, wraps, edits and saves back, shows binaries as hex, and saves a UTF-8 copy on request.
   delete. It talks to the IBM i file server directly, like IBM i Access Client
