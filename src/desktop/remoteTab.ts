@@ -7,6 +7,7 @@
 import { buildDemoScreen } from '../engine/demoScreen';
 import type { KeyAction } from '../shared/keymap';
 import type { Macro, MacroRecorder } from '../shared/macros';
+import { snapshotCursorHidden } from './hiddenField';
 import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type OiaState, type ScreenSnapshot, type WebviewToHost } from '../shared/protocol';
 import { buildTitle, type TerminalSettings } from '../shared/settings';
 import { errorText, goApp, relay, type SystemInfo } from './bridge';
@@ -339,8 +340,9 @@ export class TerminalTab {
     }
     if (isSessionInput(msg)) {
       if (this.recorder) {
-        if (msg.type === 'text') this.recorder.text(msg.text);
-        else if (msg.type === 'pasteText') this.recorder.paste(msg.text);
+        // Decided before the input goes on: text typed into a non-display field is never recorded.
+        if (msg.type === 'text') this.recorder.text(msg.text, snapshotCursorHidden(this.lastScreen));
+        else if (msg.type === 'pasteText') this.recorder.paste(msg.text, snapshotCursorHidden(this.lastScreen));
         else if (msg.type === 'action') this.recorder.key(msg.action);
       }
       this.forward(msg);
