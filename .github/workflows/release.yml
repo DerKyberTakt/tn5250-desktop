@@ -342,6 +342,60 @@ jobs:
           name: macos
           path: out/
 
+  # The packaged Linux files, installed and started the way a user would, on a clean container
+  # per distribution (sketch from docs/CI-AND-PACKAGING.md, corrected: the WebKitGTK web process
+  # cannot start its bubblewrap sandbox inside a container, so the smoke test disables it the
+  # documented way; no --privileged). A failure here says "does not start on distribution X" or
+  # "the package forgot a dependency"; it says nothing about Wayland or a real desktop.
+  linux-distros:
+    needs: linux
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: arch,   image: "archlinux:latest", file: tar,
+              setup: "pacman -Syu --noconfirm --needed webkitgtk-6.0 gtk4 libsoup3 xorg-server-xvfb dbus ttf-dejavu" }
+          - { name: ubuntu, image: "ubuntu:24.04", file: deb,
+              setup: "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb dbus-bin dbus-x11 fonts-dejavu-core" }
+          - { name: debian, image: "debian:13", file: deb,
+              setup: "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb dbus-bin dbus-x11 fonts-dejavu-core" }
+          - { name: fedora, image: "fedora:latest", file: tar,
+              setup: "dnf install -y webkitgtk6.0 gtk4 libsoup3 xorg-x11-server-Xvfb dbus-daemon dbus-tools dejavu-sans-fonts" }
+    container:
+      image: ${{ matrix.image }}
+    name: installs and starts on ${{ matrix.name }}
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: linux
+          path: out
+      - name: Distribution packages (what a user has after installing the web view)
+        run: ${{ matrix.setup }}
+      - name: Install the packaged file the way a user would
+        run: |
+          set -eux
+          ls -la out
+          if [ "${{ matrix.file }}" = deb ]; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ./out/*.deb
+          else
+            mkdir -p /opt && tar -C /opt -xzf out/*.tar.gz
+          fi
+      - name: It starts and stays up for 8 s
+        run: |
+          bin=$(command -v tn5250-terminal || echo /opt/tn5250-terminal/tn5250-terminal)
+          ldd "$bin" | grep "not found" && { echo "::error::missing shared libraries"; exit 1; } || true
+          export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1   # no user namespaces inside the container
+          set +e
+          dbus-run-session -- xvfb-run -a timeout 8 "$bin" --demo > smoke.log 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -ne 124 ]; then
+            echo "::group::smoke.log"; head -n 80 smoke.log; echo "::endgroup::"
+            echo "::error title=${{ matrix.name }}::exit $rc; $(grep -m1 -E 'SIG[A-Z]+|panic:|fatal error|error' smoke.log | cut -c1-300)"; exit 1
+          fi
+          echo "started and ran until the timeout (exit 124): ok"
+
   publish:
     needs: [version, windows, linux, macos]
     runs-on: ubuntu-latest
