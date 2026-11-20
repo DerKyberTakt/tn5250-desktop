@@ -34,8 +34,8 @@ type App struct {
 	// The drag ghost window (app_ghost.go).
 	ghostOnce sync.Once
 	ghostSt   *ghostState
-	sqlOnce sync.Once
-	sqlSt   *sqlState
+	sqlOnce   sync.Once
+	sqlSt     *sqlState
 }
 
 func NewApp() *App {

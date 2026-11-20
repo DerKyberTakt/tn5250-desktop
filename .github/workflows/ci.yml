@@ -1,12 +1,12 @@
 name: CI
 
-# Every push to main (and to a ci/** branch, for trying changes without a release)
+# Every push to main or next (and to a ci/** branch, for trying changes without a release)
 # typechecks, lints and tests the page, vets and tests the Go host, and builds the
 # app on each supported platform so a build break shows up before a release.
 
 on:
   push:
-    branches: [main, 'ci/**']
+    branches: [main, next, 'ci/**']
   pull_request:
 
 jobs:
@@ -42,8 +42,16 @@ jobs:
       - run: npm run check
       # Go embeds dist/desktop, so the page is built before vet and tests.
       - run: npm run build -- --production
+      - name: gofmt
+        shell: bash
+        run: |
+          out=$(gofmt -l . )
+          if [ -n "$out" ]; then echo "gofmt needed on:"; echo "$out"; exit 1; fi
       - run: go vet . ./internal/... ./cmd/...
       - run: go test . ./internal/...
+      - name: go test (race detector)
+        if: runner.os == 'Linux'
+        run: go test -race . ./internal/...
 
       - name: Wails CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
