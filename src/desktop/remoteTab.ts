@@ -7,7 +7,7 @@
 import { buildDemoScreen } from '../engine/demoScreen';
 import type { KeyAction } from '../shared/keymap';
 import type { Macro, MacroRecorder } from '../shared/macros';
-import { snapshotCursorHidden } from './hiddenField';
+import { keyLogLine, snapshotCursorHidden } from './hiddenField';
 import { DEFAULT_OIA, type ConnectionStatus, type HostToWebview, type OiaState, type ScreenSnapshot, type WebviewToHost } from '../shared/protocol';
 import { buildTitle, type TerminalSettings } from '../shared/settings';
 import { errorText, goApp, relay, type SystemInfo } from './bridge';
@@ -365,11 +365,7 @@ export class TerminalTab {
         if (/^https?:\/\//i.test(msg.url)) void goApp().OpenURL(msg.url);
         break;
       case 'key':
-        if (this.keyOverlay) {
-          const m = msg.event;
-          const mods = [m.ctrl && 'Ctrl', m.shift && 'Shift', m.alt && 'Alt', m.meta && 'Meta'].filter(Boolean).join('+');
-          this.host.log(`key ${mods ? mods + '+' : ''}${m.key} (${m.code})`);
-        }
+        if (this.keyOverlay) this.host.log(keyLogLine(msg.event, this.lastScreen));
         break;
       case 'log':
         this.host.log(msg.message);

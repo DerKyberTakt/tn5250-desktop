@@ -1,4 +1,4 @@
-import type { ScreenSnapshot } from '../shared/protocol';
+import type { KeyEventInfo, ScreenSnapshot } from '../shared/protocol';
 
 /**
  * Whether the cursor of a screen snapshot is in a non-display (password) field. The
@@ -18,4 +18,11 @@ export function snapshotCursorHidden(s: ScreenSnapshot | undefined): boolean {
     if (a >= 0x20 && a <= 0x3f) return (a & 0x07) === 0x07;
   }
   return false;
+}
+
+/** The session-log line for a key while the key overlay is on; nothing about the key when it goes into a password field. */
+export function keyLogLine(m: KeyEventInfo, screen: ScreenSnapshot | undefined): string {
+  if (snapshotCursorHidden(screen)) return 'key (not logged: cursor in a non-display field)';
+  const mods = [m.ctrl && 'Ctrl', m.shift && 'Shift', m.alt && 'Alt', m.meta && 'Meta'].filter(Boolean).join('+');
+  return `key ${mods ? mods + '+' : ''}${m.key} (${m.code})`;
 }

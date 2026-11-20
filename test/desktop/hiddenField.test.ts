@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { snapshotCursorHidden } from '../../src/desktop/hiddenField';
+import { keyLogLine, snapshotCursorHidden } from '../../src/desktop/hiddenField';
 import { MacroRecorder } from '../../src/shared/macros';
 import type { ScreenSnapshot } from '../../src/shared/protocol';
 
@@ -35,5 +35,15 @@ describe('snapshotCursorHidden', () => {
     r.text('hunter2', snapshotCursorHidden(snap(205)));
     expect(JSON.stringify(r.steps)).not.toContain('hunter2');
     expect(r.steps).toEqual([{ type: 'text', text: 'kyle' }, { type: 'prompt', label: 'Password', secret: true }]);
+  });
+});
+
+describe('keyLogLine (key overlay log)', () => {
+  const ev = { key: 'h', code: 'KeyH', ctrl: false, shift: true, alt: false, meta: false } as Parameters<typeof keyLogLine>[0];
+  it('logs a key outside a password field and nothing about it inside one', () => {
+    expect(keyLogLine(ev, snap(105))).toBe('key Shift+h (KeyH)');
+    const hidden = keyLogLine(ev, snap(205));
+    expect(hidden).toBe('key (not logged: cursor in a non-display field)');
+    expect(hidden).not.toContain('KeyH');
   });
 });
