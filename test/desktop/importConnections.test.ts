@@ -57,14 +57,14 @@ describe('importMessage', () => {
 
 describe('import: kept TLS and cleared sign-on (g3-2 / g3-4)', () => {
   const saved = [
-    { name: 'Prod', host: 'pub400.com', port: 992, tls: true, signonUser: 'KYLE', autoSignon: true },
-    { name: 'Dev', host: 'pub400.com', port: 23, signonUser: 'KYLE' },
+    { name: 'Prod', host: 'pub400.com', port: 992, tls: true, signonUser: 'ALEX', autoSignon: true },
+    { name: 'Dev', host: 'pub400.com', port: 23, signonUser: 'ALEX' },
   ];
 
   it('a profile that changes the port clears the sign-on, names the password to delete and says so', () => {
     const merged = mergeImported(saved, [{ name: 'Prod', host: 'pub400.com', port: 9923, tls: true }]);
     expect(merged.credentialsReset.map((c) => c.name)).toEqual(['Prod']);
-    // Dev still signs on as KYLE at pub400.com with the same key: the password must stay.
+    // Dev still signs on as ALEX at pub400.com with the same key: the password must stay.
     expect(credentialsToDrop(merged)).toEqual([]);
     const message = importMessage(merged, 0, 0);
     expect(message).toContain('sign-on user and bypass sign-on of 1 connection were cleared');
@@ -73,7 +73,7 @@ describe('import: kept TLS and cleared sign-on (g3-2 / g3-4)', () => {
   it('deletes the password when no other connection uses USER@host (the key follows user and host)', () => {
     const only = [saved[0] as (typeof saved)[number]];
     const merged = mergeImported(only, [{ name: 'Prod', host: 'pub400.com', port: 9923, tls: true }]);
-    expect(credentialsToDrop(merged)).toEqual([{ user: 'KYLE', host: 'pub400.com', name: 'Prod' }]);
+    expect(credentialsToDrop(merged)).toEqual([{ user: 'ALEX', host: 'pub400.com', name: 'Prod' }]);
     expect(importMessage(merged, 0, 1)).toContain('1 saved password deleted');
   });
 

@@ -77,11 +77,11 @@ describe('savedIndex and isSaved', () => {
 });
 
 describe('mergeImported credentials and TLS', () => {
-  const saved = [s('PUB400', 'pub400.com', { port: 992, tls: true, tlsPinnedCertificate: 'AA', signonUser: 'KYLE', autoSignon: true })];
+  const saved = [s('PUB400', 'pub400.com', { port: 992, tls: true, tlsPinnedCertificate: 'AA', signonUser: 'ALEX', autoSignon: true })];
 
   it('keeps TLS and the port when the profile says plain telnet, and keeps the sign-on', () => {
     const r = mergeImported(saved, [s('PUB400', 'pub400.com', { port: 23, tls: false })]);
-    expect(r.sessions[0]).toMatchObject({ port: 992, tls: true, tlsPinnedCertificate: 'AA', signonUser: 'KYLE', autoSignon: true });
+    expect(r.sessions[0]).toMatchObject({ port: 992, tls: true, tlsPinnedCertificate: 'AA', signonUser: 'ALEX', autoSignon: true });
     expect(r.tlsKept).toHaveLength(1);
     expect(r.credentialsReset).toEqual([]);
   });
