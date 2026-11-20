@@ -50,7 +50,9 @@ It shares its TN5250 engine and terminal UI with the
   first 10,000 rows of a query are kept for paging. A result's column types come from
   QSYS2.SYSCOLUMNS.
 - No telemetry. Connections go to the hosts you enter, and to GitHub for the update check
-  described next. Passwords are kept in the operating system credential store.
+  described next. Passwords are kept in the operating system credential store (Windows
+  Credential Manager, macOS Keychain, Linux Secret Service). On Linux how well that protects
+  a password depends on the keyring being locked and encrypted.
 - Updates from GitHub: the ↓ toolbar button glows green when a new release is out, and
   updates in place after checking the download against the release's `SHA256SUMS`. The
   update check is the only connection the app makes besides your hosts. It is on by default:
