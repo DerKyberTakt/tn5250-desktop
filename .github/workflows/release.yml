@@ -11,7 +11,7 @@ name: Release
 #   tn5250-terminal-setup-x64.exe        Windows, per-user installer (no admin), silent /S
 #   tn5250-terminal-x64.msi              Windows, per-machine MSI for IT deployment (msiexec /i ... /qn)
 #   tn5250-terminal-portable-x64.zip     Windows, single exe, run from anywhere
-#   tn5250-terminal-x86_64.AppImage      Linux, run anywhere (updates in place)
+#   tn5250-terminal-x86_64.AppImage      Linux, one file, needs the system's GTK 4 + WebKitGTK 6.0 (updates in place)
 #   tn5250-terminal-linux-amd64.tar.gz   Linux, binary + desktop file + icon
 #   tn5250-terminal_<ver>_amd64.deb      Debian / Ubuntu package
 #   tn5250-terminal-macos-universal.dmg  macOS 11+, Intel and Apple silicon
@@ -225,7 +225,7 @@ jobs:
           Section: net
           Priority: optional
           Architecture: amd64
-          Depends: libgtk-4-1, libwebkitgtk-6.0-4
+          Depends: libgtk-4-1, libwebkitgtk-6.0-4, libjavascriptcoregtk-6.0-1
           Installed-Size: $size
           Maintainer: DerKyberTakt <DerKyberTakt@users.noreply.github.com>
           Homepage: https://github.com/DerKyberTakt/tn5250-desktop

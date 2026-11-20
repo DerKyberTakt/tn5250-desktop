@@ -28,11 +28,14 @@ contents:
 depends:
   - libgtk-4-1
   - libwebkitgtk-6.0-4
+  - libjavascriptcoregtk-6.0-1
 
 # Distribution-specific overrides for different package formats
 overrides:
   # RPM packages for Fedora / RHEL / AlmaLinux / Rocky Linux
   rpm:
+    # TODO: Fedora also has a separate javascriptcoregtk6.0 package; webkitgtk6.0 requires
+    # it, so it is not listed here until the name is checked on a Fedora machine.
     depends:
       - gtk4
       - webkitgtk6.0

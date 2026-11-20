@@ -3,7 +3,8 @@
 [![Release](https://img.shields.io/github/v/release/DerKyberTakt/tn5250-desktop?label=release)](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest) [![Downloads](https://img.shields.io/github/downloads/DerKyberTakt/tn5250-desktop/total)](https://github.com/DerKyberTakt/tn5250-desktop/releases) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078d4)](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest) [![CI](https://github.com/DerKyberTakt/tn5250-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/DerKyberTakt/tn5250-desktop/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A free, open-source 5250 terminal emulator for IBM i, as a native desktop app for
-Windows, Linux and macOS. Nothing else to install: no Java, no .NET, no browser runtime.
+Windows, Linux and macOS. No Java, no .NET, no browser runtime to install. On Linux the
+app uses the system's GTK 4 and WebKitGTK 6.0 libraries ([Linux requirements](#linux-requirements)).
 
 It shares its TN5250 engine and terminal UI with the
 [TN5250 Terminal VS Code extension](https://github.com/DerKyberTakt/tn5250-terminal).
@@ -90,6 +91,24 @@ everyone at their next start. [DEPLOYMENT.md](DEPLOYMENT.md) has the details and
 
 Settings are kept in `~/.config/tn5250-terminal`; passwords in the desktop's secret
 service (GNOME Keyring, KDE Wallet) through libsecret.
+
+### Linux requirements
+
+The Linux builds are dynamically linked against GTK 4 and WebKitGTK 6.0
+(`libwebkitgtk-6.0.so.4`, `libjavascriptcoregtk-6.0.so.1`). The AppImage and the
+`.tar.gz` do not bundle them: they come from your distribution. The `.deb` declares them,
+so `apt` installs them. A session D-Bus is needed too (any desktop session has one; the
+app prints `no D-Bus session bus` and exits when it is missing).
+
+| Distribution | Install the libraries |
+| --- | --- |
+| Arch / Omarchy | `sudo pacman -S gtk4 webkitgtk-6.0` |
+| Debian 13+ / Ubuntu 24.04+ | `sudo apt install libgtk-4-1 libwebkitgtk-6.0-4` |
+| Fedora 40+ | `sudo dnf install gtk4 webkitgtk6.0` |
+
+A machine that only has the older WebKitGTK 4.1 (`webkit2gtk-4.1`) cannot run the
+released binary. Building from source with the `gtk3` tag (`go build -tags production,gtk3`)
+targets webkit2gtk-4.1 and GTK 3 instead; the release does not ship that build.
 
 **macOS 11+ (Intel and Apple silicon, one universal build)**
 
