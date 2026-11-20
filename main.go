@@ -4,7 +4,6 @@ package main
 import (
 	"embed"
 	"io/fs"
-	"log"
 	"os"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -21,13 +20,17 @@ const mainWindow = "main"
 
 func main() {
 	afterUpdate(os.Args[1:])
+	if err := checkSessionBus(); err != nil {
+		failStartup(err)
+	}
 	assets, err := fs.Sub(dist, "dist/desktop")
 	if err != nil {
-		log.Fatal(err)
+		failStartup(err)
 	}
 	app := NewApp()
 	wails := application.New(application.Options{
 		Name:        "TN5250 Terminal",
+		Logger:      errorLogger(os.Stderr),
 		Description: "5250 terminal emulator for IBM i",
 		Icon:        icon,
 		Services:    []application.Service{application.NewService(app)},
@@ -50,6 +53,6 @@ func main() {
 	app.newBrokerWindow()
 	app.newWindow(mainWindow, "TN5250 Terminal", 1180, 800)
 	if err := wails.Run(); err != nil {
-		log.Fatal(err)
+		failStartup(err)
 	}
 }
