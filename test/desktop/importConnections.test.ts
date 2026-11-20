@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileName, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote } from '../../src/desktop/importConnections';
+import { credentialsToDrop, fileName, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote } from '../../src/desktop/importConnections';
 
 const hod = (lines: string[]): string => ['[Host On-Demand Session File][4.00]', '[HostPrintTerminal]', '[Terminal]', ...lines].join('\r\n');
 
@@ -52,5 +52,35 @@ describe('importMessage', () => {
     expect(importMessage(mergeImported([], [{ name: 'Dev', host: 'd' }]), 2)).toBe('1 connection imported. 2 files could not be read.');
     expect(unreadableNote(1)).toBe(' 1 file could not be read.');
     expect(unreadableNote(0)).toBe('');
+  });
+});
+
+describe('import: kept TLS and cleared sign-on (g3-2 / g3-4)', () => {
+  const saved = [
+    { name: 'Prod', host: 'pub400.com', port: 992, tls: true, signonUser: 'KYLE', autoSignon: true },
+    { name: 'Dev', host: 'pub400.com', port: 23, signonUser: 'KYLE' },
+  ];
+
+  it('a profile that changes the port clears the sign-on, names the password to delete and says so', () => {
+    const merged = mergeImported(saved, [{ name: 'Prod', host: 'pub400.com', port: 9923, tls: true }]);
+    expect(merged.credentialsReset.map((c) => c.name)).toEqual(['Prod']);
+    // Dev still signs on as KYLE at pub400.com with the same key: the password must stay.
+    expect(credentialsToDrop(merged)).toEqual([]);
+    const message = importMessage(merged, 0, 0);
+    expect(message).toContain('sign-on user and bypass sign-on of 1 connection were cleared');
+  });
+
+  it('deletes the password when no other connection uses USER@host (the key follows user and host)', () => {
+    const only = [saved[0] as (typeof saved)[number]];
+    const merged = mergeImported(only, [{ name: 'Prod', host: 'pub400.com', port: 9923, tls: true }]);
+    expect(credentialsToDrop(merged)).toEqual([{ user: 'KYLE', host: 'pub400.com', name: 'Prod' }]);
+    expect(importMessage(merged, 0, 1)).toContain('1 saved password deleted');
+  });
+
+  it('a profile that says plain telnet for a saved TLS connection keeps TLS and reports it', () => {
+    const merged = mergeImported(saved, [{ name: 'Prod', host: 'pub400.com', port: 23, tls: false }]);
+    expect(merged.tlsKept).toHaveLength(1);
+    expect(merged.sessions[0]?.tls).toBe(true);
+    expect(importMessage(merged, 0)).toContain('TLS stays on for 1 saved connection');
   });
 });

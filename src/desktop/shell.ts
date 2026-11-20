@@ -16,7 +16,7 @@ import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow, type
 import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
 import { TabDrag, reorderWithin, type DragHost, type Point } from './tabDrag';
-import { ACS_EMULATOR_DIR, HOD_FILTERS, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
+import { ACS_EMULATOR_DIR, HOD_FILTERS, credentialsToDrop, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
 import { watchRecording, MacroRecorder, describeStep, macrosFromJson, macrosToJson, mergeMacros, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
 import { macroEditorDialog } from './macroEditor';
 
@@ -1294,7 +1294,17 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       return;
     }
     await this.store.writeSessions(merged.sessions);
-    const message = importMessage(merged, found.unreadable);
+    // A saved password never follows a connection to another host, port or TLS setting.
+    let passwordsDropped = 0;
+    for (const c of credentialsToDrop(merged)) {
+      try {
+        await this.credentials.remove(c.user, c.host, c.name);
+        passwordsDropped++;
+      } catch (err) {
+        this.log(`import: could not delete the saved password of ${c.user}@${c.host}: ${errorText(err)}`);
+      }
+    }
+    const message = importMessage(merged, found.unreadable, passwordsDropped);
     this.notify(message);
     const next = await choiceDialog('Import Connections', [message], ['Undo', 'Close', 'Open Settings']);
     if (next === 'Undo') {

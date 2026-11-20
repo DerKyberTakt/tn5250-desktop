@@ -76,11 +76,33 @@ export function unreadableNote(unreadable: number): string {
   return unreadable ? ` ${plural(unreadable, 'file')} could not be read.` : '';
 }
 
-/** The status line after an import. */
-export function importMessage(merged: MergeResult, unreadable: number): string {
+/**
+ * Saved passwords an import must delete: a saved sign-on user never follows a connection
+ * to another host, port or TLS setting, so the password stored for USER@host goes too,
+ * unless another saved connection still signs on with the same user at the same host.
+ */
+export function credentialsToDrop(merged: MergeResult): { user: string; host: string; name: string }[] {
+  const out: { user: string; host: string; name: string }[] = [];
+  for (const old of merged.credentialsReset) {
+    const user = (old.signonUser ?? '').trim().toUpperCase();
+    const host = (old.host ?? '').trim().toLowerCase();
+    if (!user || !host) continue;
+    const inUse = merged.sessions.some((x) => (x.signonUser ?? '').trim().toUpperCase() === user && (x.host ?? '').trim().toLowerCase() === host);
+    if (inUse || out.some((c) => c.user === user && c.host === host)) continue;
+    out.push({ user, host, name: old.name ?? '' });
+  }
+  return out;
+}
+
+/** The status line after an import; passwordsDropped is how many saved passwords were deleted. */
+export function importMessage(merged: MergeResult, unreadable: number, passwordsDropped = 0): string {
   const replaced = merged.replaced.length ? ` (${merged.replaced.length} updated)` : '';
   const skipped = merged.skipped.length ? ` ${plural(merged.skipped.length, 'saved connection')} left as ${merged.skipped.length === 1 ? 'it was' : 'they were'}.` : '';
-  return `${plural(merged.touched.length, 'connection')} imported${replaced}.${skipped}${unreadableNote(unreadable)}`;
+  const tls = merged.tlsKept.length ? ` TLS stays on for ${plural(merged.tlsKept.length, 'saved connection')} whose profile said plain telnet.` : '';
+  const reset = merged.credentialsReset.length
+    ? ` The sign-on user and bypass sign-on of ${plural(merged.credentialsReset.length, 'connection')} were cleared because host, port or TLS changed${passwordsDropped ? ` (${plural(passwordsDropped, 'saved password')} deleted; Undo does not bring it back)` : ''}; enter them again.`
+    : '';
+  return `${plural(merged.touched.length, 'connection')} imported${replaced}.${skipped}${tls}${reset}${unreadableNote(unreadable)}`;
 }
 
 /** What an import that changed nothing says. */
