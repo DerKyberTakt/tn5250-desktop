@@ -91,11 +91,138 @@ const CHARS: Record<string, [string, string]> = {
   NumpadDecimal: ['.', '.'],
 };
 
+/**
+ * A keyboard layout for the picture: what each character key produces, unshifted and
+ * shifted, where it differs from US QWERTY. Only the picture uses it (cap labels, which cap
+ * a binding sits on, the name of a chord built by clicks). Typing and bindings never do:
+ * they take the character the operating system's layout produces.
+ */
+export interface KeyboardLayout {
+  id: string;
+  label: string;
+  chars: Record<string, [string, string]>;
+}
+
+/** Letter keys from three rows of 10, 9 and 7 letters (the KeyQ, KeyA and KeyZ rows). */
+function letters(top: string, home: string, bottom: string): Record<string, [string, string]> {
+  const codes = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
+  const out: Record<string, [string, string]> = {};
+  [top, home, bottom].forEach((row, r) => {
+    [...row].forEach((ch, i) => {
+      out[`Key${(codes[r] as string)[i]}`] = [ch, ch.toUpperCase()];
+    });
+  });
+  return out;
+}
+
+/** The layouts the Keyboard page offers for its picture; the first is the default. */
+export const KEYBOARD_LAYOUTS: KeyboardLayout[] = [
+  { id: 'us', label: 'US QWERTY', chars: {} },
+  {
+    id: 'uk',
+    label: 'UK QWERTY',
+    chars: { Backquote: ['`', '¬'], Digit2: ['2', '"'], Digit3: ['3', '£'], Quote: ["'", '@'], Backslash: ['#', '~'] },
+  },
+  {
+    id: 'dvorak',
+    label: 'Dvorak',
+    chars: {
+      ...letters('   pyfgcrl', 'aoeuidhtn', ' qjkxbm'),
+      KeyQ: ["'", '"'],
+      KeyW: [',', '<'],
+      KeyE: ['.', '>'],
+      KeyZ: [';', ':'],
+      Minus: ['[', '{'],
+      Equal: [']', '}'],
+      BracketLeft: ['/', '?'],
+      BracketRight: ['=', '+'],
+      Semicolon: ['s', 'S'],
+      Quote: ['-', '_'],
+      Comma: ['w', 'W'],
+      Period: ['v', 'V'],
+      Slash: ['z', 'Z'],
+    },
+  },
+  {
+    id: 'colemak',
+    label: 'Colemak',
+    chars: { ...letters('qwfpgjluy ', 'arstdhnei', 'zxcvbkm'), KeyP: [';', ':'], Semicolon: ['o', 'O'] },
+  },
+  {
+    id: 'azerty',
+    label: 'AZERTY (French)',
+    chars: {
+      ...letters('azertyuiop', 'qsdfghjkl', 'wxcvbn '),
+      Backquote: ['²', '²'],
+      Digit1: ['&', '1'],
+      Digit2: ['é', '2'],
+      Digit3: ['"', '3'],
+      Digit4: ["'", '4'],
+      Digit5: ['(', '5'],
+      Digit6: ['-', '6'],
+      Digit7: ['è', '7'],
+      Digit8: ['_', '8'],
+      Digit9: ['ç', '9'],
+      Digit0: ['à', '0'],
+      Minus: [')', '°'],
+      Equal: ['=', '+'],
+      BracketLeft: ['^', '¨'],
+      BracketRight: ['$', '£'],
+      Backslash: ['*', 'µ'],
+      Semicolon: ['m', 'M'],
+      Quote: ['ù', '%'],
+      KeyM: [',', '?'],
+      Comma: [';', '.'],
+      Period: [':', '/'],
+      Slash: ['!', '§'],
+    },
+  },
+  {
+    id: 'qwertz',
+    label: 'QWERTZ (German)',
+    chars: {
+      ...letters('qwertzuiop', 'asdfghjkl', 'yxcvbnm'),
+      Backquote: ['^', '°'],
+      Digit2: ['2', '"'],
+      Digit3: ['3', '§'],
+      Digit6: ['6', '&'],
+      Digit7: ['7', '/'],
+      Digit8: ['8', '('],
+      Digit9: ['9', ')'],
+      Digit0: ['0', '='],
+      Minus: ['ß', '?'],
+      Equal: ['´', '`'],
+      BracketLeft: ['ü', 'Ü'],
+      BracketRight: ['+', '*'],
+      Backslash: ['#', "'"],
+      Semicolon: ['ö', 'Ö'],
+      Quote: ['ä', 'Ä'],
+      Comma: [',', ';'],
+      Period: ['.', ':'],
+      Slash: ['-', '_'],
+    },
+  },
+];
+
+export const US_LAYOUT = KEYBOARD_LAYOUTS[0] as KeyboardLayout;
+
+/** The layout with an id, or US QWERTY for an unknown or missing one. */
+export function layoutById(id: unknown): KeyboardLayout {
+  return KEYBOARD_LAYOUTS.find((l) => l.id === id) ?? US_LAYOUT;
+}
+
+/** What a layout prints on a key cap: its unshifted character, a letter in upper case. */
+export function capLabel(cap: KeyCap, layout: KeyboardLayout = US_LAYOUT): string {
+  const pair = layout.chars[cap.code];
+  if (!pair || cap.code.startsWith('Numpad')) return cap.label;
+  return pair[0] !== pair[1] && pair[0].toUpperCase() === pair[1] ? pair[1] : pair[0];
+}
+
 const MOD_KEY: Record<string, string> = { ControlLeft: 'Control', ControlRight: 'Control', ShiftLeft: 'Shift', ShiftRight: 'Shift', AltLeft: 'Alt', AltRight: 'Alt', MetaLeft: 'Meta', MetaRight: 'Meta' };
 
 /** The `KeyboardEvent.key` a code produces, so `keyName` can name a chord built by clicks exactly as it names a typed one. */
-export function keyFromCode(code: string, shift = false): string {
-  const pair = CHARS[code];
+export function keyFromCode(code: string, shift = false, layout: KeyboardLayout = US_LAYOUT): string {
+  const pair = layout.chars[code] ?? CHARS[code];
   if (pair) return shift ? pair[1] : pair[0];
   if (MOD_KEY[code]) return MOD_KEY[code] as string;
   if (/^Key[A-Z]$/.test(code)) return code.slice(3);
@@ -158,13 +285,13 @@ export function modsPrefix(c: ClickedChord): string {
  * The key name for a chord composed on the visual keyboard. Modifiers alone name the
  * first latched one (a bare ControlRight); otherwise the main key with the modifiers.
  */
-export function chordName(c: ClickedChord): string | undefined {
+export function chordName(c: ClickedChord, layout: KeyboardLayout = US_LAYOUT): string | undefined {
   const has = (m: string): boolean => [...c.mods].some((code) => MOD_KEY[code] === m);
   if (!c.main) {
     const first = [...c.mods][0];
     return first ? keyName({ key: MOD_KEY[first] as string, code: first, ctrl: false, shift: false, alt: false, meta: false }) : undefined;
   }
-  const info: KeyEventInfo = { key: keyFromCode(c.main, has('Shift')), code: c.main, ctrl: has('Control'), shift: has('Shift'), alt: has('Alt'), meta: has('Meta') };
+  const info: KeyEventInfo = { key: keyFromCode(c.main, has('Shift'), layout), code: c.main, ctrl: has('Control'), shift: has('Shift'), alt: has('Alt'), meta: has('Meta') };
   return keyName(info);
 }
 
@@ -175,7 +302,7 @@ export function keyTokens(name: string): string[] {
 }
 
 /** Whether a binding name involves a key cap: exact token match, modifiers by family, letters by their character. */
-export function nameUsesCode(name: string, code: string): boolean {
+export function nameUsesCode(name: string, code: string, layout: KeyboardLayout = US_LAYOUT): boolean {
   const tokens = keyTokens(name).map((t) => t.toLowerCase());
   const mod = MOD_KEY[code];
   if (mod) {
@@ -185,16 +312,16 @@ export function nameUsesCode(name: string, code: string): boolean {
   const last0 = tokens[tokens.length - 1] ?? '';
   // Keypad keys are always named by their code (NumpadEnter, Numpad7), never by the character.
   if (code.startsWith('Numpad')) return last0 === code.toLowerCase();
-  const plain = keyFromCode(code, false).toLowerCase();
-  const shifted = keyFromCode(code, true).toLowerCase();
+  const plain = keyFromCode(code, false, layout).toLowerCase();
+  const shifted = keyFromCode(code, true, layout).toLowerCase();
   const last = tokens[tokens.length - 1] ?? '';
   // 'Shift+F1' and 'F1' both use F1; a letter is named by its character; 'Ctrl+1' uses Digit1, '!' too.
   return last === code.toLowerCase() || last === plain || last === shifted || (code === 'Space' && last === 'space');
 }
 
 /** The bindings that use a key cap, as "Shift+F1 -> pf13" lines. */
-export function bindingsForCode(keymap: Keymap, code: string): string[] {
+export function bindingsForCode(keymap: Keymap, code: string, layout: KeyboardLayout = US_LAYOUT): string[] {
   return Object.entries(keymap)
-    .filter(([name]) => nameUsesCode(name, code))
+    .filter(([name]) => nameUsesCode(name, code, layout))
     .map(([name, action]) => `${name} → ${action}`);
 }

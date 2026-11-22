@@ -2,7 +2,7 @@ import type { KeyAction } from '../shared/keymap';
 import { ACS_KEYMAP } from '../shared/keymap';
 import { KeyCapture } from './keyCapture';
 import { preserveScroll } from './scroll';
-import { MAIN_ROWS, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, blockWidth, capWidth, chordName, isLatched, mergePhysical, modsPrefix, nameUsesCode, primaryAcsKey, toggleCap, typesText, type ClickedChord, type KeyRow } from './visualKeyboard';
+import { KEYBOARD_LAYOUTS, MAIN_ROWS, NAV_ROWS, NUMPAD_ROWS, bindingsForCode, blockWidth, capLabel, capWidth, chordName, isLatched, keyFromCode, layoutById, mergePhysical, modsPrefix, nameUsesCode, primaryAcsKey, toggleCap, typesText, type ClickedChord, type KeyboardLayout, type KeyRow } from './visualKeyboard';
 import {
   COLOR_KEYS,
   KEY_ACTION_GROUPS,
@@ -39,6 +39,37 @@ let pendingAgentSave = false;
 let agentSaveSettle: ReturnType<typeof setTimeout> | undefined;
 /** The chord latched on the visual keyboard while Assign is active (clicks, or keys pressed once something is latched). */
 let vkChord: ClickedChord = { mods: new Set() };
+/**
+ * The layout the keyboard picture is drawn in. A convenience of this page only: typing and
+ * bindings follow the operating system's layout whatever is picked here. Kept in the page's
+ * own state, not in the settings.
+ */
+let vkLayout: KeyboardLayout = loadVkLayout();
+function loadVkLayout(): KeyboardLayout {
+  try {
+    const st = vscode.getState() as { vkLayout?: unknown } | undefined;
+    if (st?.vkLayout) return layoutById(st.vkLayout);
+  } catch {
+    // no page state here
+  }
+  try {
+    return layoutById(localStorage.getItem('tn5250.vkLayout'));
+  } catch {
+    return layoutById(undefined);
+  }
+}
+function saveVkLayout(id: string): void {
+  try {
+    vscode.setState({ ...((vscode.getState() as object | undefined) ?? {}), vkLayout: id });
+  } catch {
+    // no page state here
+  }
+  try {
+    localStorage.setItem('tn5250.vkLayout', id);
+  } catch {
+    // storage blocked: the choice lasts for this page only
+  }
+}
 /** Rebuilds the visual keyboard and its key bar in place (set while the Keyboard page is shown). */
 let vkRefresh: (() => void) | undefined;
 /** Rebuilds the keyboard, its bar, the warnings and the key tables in place, leaving the search box alone. */
@@ -1144,7 +1175,7 @@ function renderKeyTables(query: string): HTMLElement[] {
   const out: HTMLElement[] = [];
   for (const group of KEY_ACTION_GROUPS) {
     const rows = group.actions.filter(([action, label]) =>
-      code !== undefined ? keysFor(action).some((k) => nameUsesCode(k, code)) : !q || [action, label, ...keysFor(action)].join(' ').toLowerCase().includes(q),
+      code !== undefined ? keysFor(action).some((k) => nameUsesCode(k, code, vkLayout)) : !q || [action, label, ...keysFor(action)].join(' ').toLowerCase().includes(q),
     );
     if (!rows.length) continue;
     out.push(el('h4', undefined, group.title));
@@ -1332,14 +1363,14 @@ function renderVisualKeyboard(search: HTMLInputElement): HTMLElement {
             r.append(g);
             continue;
           }
-          const key = el('button', 'vk-key', cap.label);
+          const key = el('button', 'vk-key', capLabel(cap, vkLayout));
           key.type = 'button';
           if (cap.tall) key.classList.add('tall');
           key.tabIndex = -1;
           key.onmousedown = (e) => e.preventDefault(); // never takes focus, so no focus ring shows up after the next keypress
           key.dataset.code = cap.code;
           key.style.width = `${capWidth(cap)}px`;
-          const bound = bindingsForCode(map, cap.code);
+          const bound = bindingsForCode(map, cap.code, vkLayout);
           if (bound.length) {
             key.classList.add('bound');
             key.title = bound.join('\n');
@@ -1370,9 +1401,10 @@ function renderVisualKeyboard(search: HTMLInputElement): HTMLElement {
     if (capturing) {
       const cancel = el('button', 'secondary', 'Cancel');
       cancel.onclick = cancelCapture;
-      const name = chordName(vkChord);
+      const name = chordName(vkChord, vkLayout);
       const label = actionLabel(capturing);
-      const shiftOnLetter = vkChord.main !== undefined && /^Key[A-Z]$/.test(vkChord.main) && [...vkChord.mods].some((c) => c.startsWith('Shift'));
+      const mainChar = vkChord.main !== undefined && !vkChord.main.startsWith('Numpad') ? keyFromCode(vkChord.main, false, vkLayout) : '';
+      const shiftOnLetter = mainChar.length === 1 && mainChar.toLowerCase() !== mainChar.toUpperCase() && [...vkChord.mods].some((c) => c.startsWith('Shift'));
       const modsOnly = !vkChord.main && vkChord.mods.size > 0;
       let text: string;
       let canSave = !!name;
@@ -1395,9 +1427,33 @@ function renderVisualKeyboard(search: HTMLInputElement): HTMLElement {
     }
     return b;
   };
+  // The picture's layout: a drop-down and a note that it changes the picture only.
+  const pick = el('div', 'vk-layout');
+  const pickLabel = el('label', undefined, 'Keyboard picture');
+  const select = el('select');
+  select.id = 'vk-layout-select';
+  pickLabel.htmlFor = select.id;
+  for (const l of KEYBOARD_LAYOUTS) {
+    const o = el('option', undefined, l.label);
+    o.value = l.id;
+    o.selected = l.id === vkLayout.id;
+    select.append(o);
+  }
+  select.onchange = () => {
+    vkLayout = layoutById(select.value);
+    saveVkLayout(vkLayout.id);
+    refresh();
+    // A "key:" filter names a key cap, and which bindings sit on a cap depends on the picture.
+    if (search.value.startsWith('key:')) search.dispatchEvent(new Event('input'));
+  };
+  pick.append(
+    pickLabel,
+    select,
+    infoBubble('This only changes the picture below. Typing and key bindings always follow the keyboard layout set in your operating system, whichever one is picked here.'),
+  );
   keyboard = build();
   bar = buildBar();
-  vk.append(keyboard, bar);
+  vk.append(pick, keyboard, bar);
   vkRefresh = refresh;
   // Narrow page: nav and numpad wrap under the main block first (flex-wrap); when even the
   // main block does not fit, the whole picture is zoomed down so the caps keep their proportions.
