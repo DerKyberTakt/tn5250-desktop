@@ -31,10 +31,10 @@ describe('snapshotCursorHidden', () => {
 
   it('feeds the recorder so a password never lands in a step', () => {
     const r = new MacroRecorder();
-    r.text('kyle', snapshotCursorHidden(snap(105)));
+    r.text('user1', snapshotCursorHidden(snap(105)));
     r.text('hunter2', snapshotCursorHidden(snap(205)));
     expect(JSON.stringify(r.steps)).not.toContain('hunter2');
-    expect(r.steps).toEqual([{ type: 'text', text: 'kyle' }, { type: 'prompt', label: 'Password', secret: true }]);
+    expect(r.steps).toEqual([{ type: 'text', text: 'user1' }, { type: 'prompt', label: 'Password', secret: true }]);
   });
 });
 
