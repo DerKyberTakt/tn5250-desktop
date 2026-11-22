@@ -4,6 +4,7 @@ import { classifyKey, keyName, type Keymap } from '../shared/keymap';
 import { doubleClickRange, fieldRanges, hotspotAt, urlAt } from '../shared/screenText';
 import { SETTINGS_DEFAULTS, effectiveKeymap } from '../shared/settings';
 import { isBareModifier, isPassThrough, toKeyEventInfo, zoomActionFor } from './keyboard';
+import { startsDrag } from './clickDrag';
 import { ConnectionOverlay } from './connectionOverlay';
 import { FindBar } from './findBar';
 import { dragUnits } from './gui';
@@ -597,6 +598,11 @@ function scrollRequest(target: ScrollBarTarget): void {
 }
 
 let dragging = false;
+/**
+ * Where the left button went down (page pixels and cell), and whether the press has become
+ * a selection drag. Until it has, the press is a click and moves the cursor on release.
+ */
+let press: { x: number; y: number; cell: { row: number; col: number }; selecting: boolean } | undefined;
 /** A host scroll bar thumb being dragged: where it started and what it stands for. */
 let thumbDrag: { target: ScrollBarTarget; startPx: number; units: number } | undefined;
 canvas.addEventListener('mousedown', (e) => {
@@ -625,6 +631,7 @@ canvas.addEventListener('mousedown', (e) => {
   const cell = cellFromMouse(e);
   if (!cell) return;
   dragging = true;
+  press = { x: e.clientX, y: e.clientY, cell, selecting: false };
   keyAnchor = undefined;
   keyEnd = undefined;
   renderer.startSelection(cell.row, cell.col);
@@ -651,7 +658,14 @@ window.addEventListener('mousemove', (e) => {
     return;
   }
   const cell = cellFromMouse(e);
-  if (cell) renderer.extendSelection(cell.row, cell.col);
+  if (!cell || !press) return;
+  // A hand that moves a pixel while it clicks must not turn the click into a one-cell
+  // selection: a click that ends with a selection does not move the cursor.
+  if (!press.selecting) {
+    if (!startsDrag(press, { x: e.clientX, y: e.clientY }, press.cell, cell)) return;
+    press.selecting = true;
+  }
+  renderer.extendSelection(cell.row, cell.col);
 });
 canvas.addEventListener('mouseleave', () => renderer.setScrollHover(undefined));
 window.addEventListener('mouseup', (e) => {
@@ -667,8 +681,12 @@ window.addEventListener('mouseup', (e) => {
   if (!dragging) return;
   dragging = false;
   renderer.endSelection();
-  const cell = cellFromMouse(e);
-  if (renderer.hasSelection || !cell) return;
+  const wasDrag = press?.selecting ?? false;
+  // A click goes to the cell it was pressed on, even when the release slipped a pixel
+  // into the neighbouring cell.
+  const cell = wasDrag ? cellFromMouse(e) : press?.cell;
+  press = undefined;
+  if (wasDrag || renderer.hasSelection || !cell) return;
   if (handleHotspot(cell)) return;
   // A plain click moves the cursor.
   renderer.setCursor(cell.row, cell.col);
