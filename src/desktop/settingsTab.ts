@@ -36,6 +36,11 @@ export class SettingsTab {
     this.frame.title = 'TN5250 Settings';
   }
 
+  /** The profile the page shows (-1 = Defaults). */
+  get shown(): number {
+    return this.select;
+  }
+
   show(select: number): void {
     this.select = select;
     this.push();

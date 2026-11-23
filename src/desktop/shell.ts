@@ -2,6 +2,7 @@ import type { KeyAction } from '../shared/keymap';
 import type { WebviewToHost } from '../shared/protocol';
 import { resolveSettings, type TerminalSettings } from '../shared/settings';
 import type { SettingsToHost } from '../shared/settingsProtocol';
+import { settingsTarget } from '../shared/settingsTarget';
 import { brokerIsReady, errorText, goApp, onLaunchArgs, onRelay, relay, relayNow, wailsRuntime, type SqlConnectRequest, type SystemInfo, type UpdateInfo } from './bridge';
 import { Credentials } from './credentials';
 import { checkListDialog, choiceDialog, confirmDialog, formDialog, iconListDialog, listDialog, messageDialog, promptDialog, updateDialog } from './dialogs';
@@ -651,6 +652,19 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       return;
     }
     this.addEntry({ kind: 'settings', tab: new SettingsTab(this, select), button: el('div') }, true);
+  }
+
+  /**
+   * Settings from the toolbar and the menu: on the connection of the tab being looked at,
+   * Defaults without one. A Settings tab that is open already stays on what it shows when
+   * that is the same connection or no session is in front, unsaved changes included.
+   */
+  private openSettingsHere(): void {
+    const existing = this.entries.find((e) => e.kind === 'settings');
+    const shown = existing?.kind === 'settings' ? existing.tab.shown : undefined;
+    const target = settingsTarget(this.store.resolvedSessions(), this.activeTerminal()?.profile, shown, -1);
+    if (target !== 'keep') this.openSettings(target.select);
+    else if (existing) this.activate(existing);
   }
 
   private addEntry(entry: Entry, activate: boolean): void {
@@ -1695,7 +1709,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       '|',
       { icon: 'ifs', title: 'Integrated File System', run: () => void this.openIfs() },
       { icon: 'sql', title: 'Run SQL Scripts', run: () => void this.openSql() },
-      { icon: 'settings', title: 'Settings', run: () => this.openSettings(-1) },
+      { icon: 'settings', title: 'Settings', run: () => this.openSettingsHere() },
       { icon: 'help', title: `About ${APP_NAME}`, run: () => void this.about() },
       { icon: 'update', title: 'Check for updates', run: () => void this.checkForUpdates() },
     ];
@@ -1762,7 +1776,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
           { label: 'Import Connections…', run: () => void this.importConnections().catch((err: unknown) => this.notify(`Import failed: ${errorText(err)}`)) },
           { label: 'Connect to Previous', run: () => this.connectPrevious(), enabled: () => !!this.store.lastSession },
           '-',
-          { label: 'Settings…', run: () => this.openSettings(-1) },
+          { label: 'Settings…', run: () => this.openSettingsHere() },
           '-',
           { label: 'Print Screen…', run: () => t() && this.printScreen(t() as TerminalTab), enabled: live },
           { label: 'Save Screen As…', run: () => void this.saveScreen(), enabled: live },
