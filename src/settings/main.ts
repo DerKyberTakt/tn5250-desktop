@@ -705,6 +705,9 @@ function searchFields(query: string): Array<{ page: (typeof PAGES)[number]; fiel
   return out;
 }
 
+/** What a change on Defaults reaches: said in a toast the first time Defaults is shown, and as its tooltip. */
+const DEFAULTS_NOTE = 'Changes to Defaults affect every connection, new and existing, except where a connection has its own value for that setting.';
+let defaultsNoteShown = false;
 let searchQuery = '';
 /** Filter typed into the Keyboard page's own search box. */
 let keySearch = '';
@@ -729,7 +732,13 @@ function renderNav(): HTMLElement {
   const entries = el('div', 'entries');
   entries.append(el('h3', undefined, 'Profiles'));
   const mk = (label: string, index: number): void => {
-    const b = el('button', 'entry' + (index === selected ? ' active' : ''), label);
+    const b = el('button', 'entry' + (index === selected ? ' active' : ''), index < 0 ? undefined : label);
+    if (index < 0) {
+      // Defaults is not a connection: it stands apart in its own box, with what it reaches.
+      b.classList.add('defaults');
+      b.title = DEFAULTS_NOTE;
+      b.append(el('span', 'entry-name', `${label} *`), el('span', 'entry-sub', '* Applies to every connection'));
+    }
     b.onclick = () => {
       select(index);
       // The watermark image and imported font of this profile come from the host.
@@ -1886,6 +1895,11 @@ function select(index: number): void {
   dirty = false;
   stopCapture();
   render();
+  if (index < 0 && !defaultsNoteShown) {
+    // Said once each time the page is opened, the first time Defaults comes up.
+    defaultsNoteShown = true;
+    toast(DEFAULTS_NOTE, { ms: 8000 });
+  }
 }
 
 window.addEventListener('message', (ev: MessageEvent<HostToSettings>) => {
