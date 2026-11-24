@@ -44,6 +44,16 @@ describe('subfile detection for the synthetic scroll bar', () => {
     expect(detectSubfiles(s)).toEqual([{ top: 5, bottom: 7, end: 'bottom', col: 74 }]);
   });
 
+  it('a last page that is not full keeps the place of the full pages (blank rows before Bottom)', () => {
+    const full = screen({ 4: '~Opt  Name', 5: '     1   first', 6: '     2   second', 7: '     3   third', 8: '                                                                         More...' });
+    const short = screen({ 4: '~Opt  Name', 5: '     4   fourth', 8: '                                                                          Bottom' });
+    expect(detectSubfiles(full)).toEqual([{ top: 5, bottom: 8, end: 'more', col: 73 }]);
+    // The bug: no list was found on this page, so the bar went away and the page count was lost.
+    expect(detectSubfiles(short)).toEqual([{ top: 5, bottom: 8, end: 'bottom', col: 74 }]);
+    // Bottom with only a heading above it is not a list.
+    expect(detectSubfiles(screen({ 4: '~Opt  Name', 8: '                                                                          Bottom' }))).toEqual([]);
+  });
+
   it('a plus sign counts, text in the middle of a row does not, and nothing above the marker means no subfile', () => {
     expect(detectSubfiles(screen({ 3: '   a', 4: '   b', 5: '                                                                               +' }))).toEqual([
       { top: 3, bottom: 5, end: 'more', col: 79 },

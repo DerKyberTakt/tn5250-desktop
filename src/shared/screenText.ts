@@ -293,8 +293,10 @@ export function detectSubfiles(s: Pick<ScreenSnapshot, 'rows' | 'cols' | 'text' 
     if (!m || m.index < s.cols - 12) continue;
     // The marker row itself is the row after the last record; the records are above it.
     let top = row - 1;
+    // A last page that is not full leaves blank rows between its records and Bottom.
+    if (m[1] === 'Bottom') while (top > 0 && blank(top) && !underlined(top)) top--;
     while (top > 0 && !blank(top - 1) && !underlined(top - 1)) top--;
-    if (top > row - 1 || blank(top)) continue;
+    if (top > row - 1 || blank(top) || underlined(top)) continue;
     out.push({ top, bottom: row, end: m[1] === 'Bottom' ? 'bottom' : 'more', col: m.index });
     row = row + 1;
   }

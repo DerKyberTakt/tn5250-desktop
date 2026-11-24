@@ -62,6 +62,28 @@ describe('Session5250', () => {
     expect(session.queuedKeys).toBe(0);
   });
 
+  it('marks the screen that answers a page key, and only that one', () => {
+    const seen: Array<number | undefined> = [];
+    const session: Session5250 = new Session5250({ screenSize: '27x132', codePage: 37 }, { send: () => undefined, update: () => seen.push(session.snapshot().paged) });
+    for (const ev of loadCapture('pub400-signon-3477fc').events) {
+      if (ev.dir === 'in') session.feed(hexToBytes(ev.hex));
+    }
+    // Write to Display, CC2 0x08 = unlock keyboard.
+    const answer = hexToBytes('000e12a00000040000030411000' + '8' + 'ffef');
+    seen.length = 0;
+    session.press('pageDown');
+    session.press('pageUp'); // type-ahead: goes out when the first answer unlocks the keyboard
+    session.feed(answer);
+    session.feed(answer);
+    session.feed(answer); // not asked for by a page key
+    session.press('enter');
+    session.feed(answer);
+    // A key press publishes the screen too (keyboard locked): that is not an answer.
+    expect(seen.filter((p) => p !== undefined)).toEqual([1, -1]);
+    expect(seen.indexOf(1)).toBeLessThan(seen.indexOf(-1));
+    expect(session.snapshot().paged).toBeUndefined();
+  });
+
   it('drops keys while locked when type-ahead is off', () => {
     const session = new Session5250({ typeAhead: false }, { send: () => undefined });
     expect(session.state.inputInhibited).toBe('system');

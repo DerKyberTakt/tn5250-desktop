@@ -10,8 +10,8 @@ import { placeWatermark, tileWatermark } from './watermark';
 import { scrollBarGeometry, scrollBarHit, type Rect, type ScrollBarGeometry, type ScrollHit } from './gui';
 import { nextPaging, pagingBar, type PageView, type PagingState } from './subfilePaging';
 
-/** A page key counts for the screen that answers it for this long; after that it was refused or lost. */
-const PAGE_KEY_MS = 5000;
+/** The lists whose page is remembered while another screen is shown. */
+const PAGING_KEPT = 8;
 
 /** Width of the gutter right of the text where the synthetic subfile scroll bar lives. */
 const GUTTER = 18;
@@ -276,8 +276,8 @@ export class Renderer {
   private subfilePreview: { index: number; pos: number } | undefined;
   /** Which page each synthetic bar's list is on (same order as `subfiles`). */
   private paging: Array<PagingState | undefined> = [];
-  /** Page keys sent to the host that no screen has answered yet, oldest first. */
-  private pageKeys: Array<{ dir: number; at: number }> = [];
+  /** The same by list, so a list keeps its page while a help or detail screen is shown. */
+  private pagingKept = new Map<string, PagingState>();
   /** Extra canvas width right of the text (synthetic scroll bar). */
   private gutter = 0;
   /** Find on screen: the matches drawn over the text, and the translucent fill they get. */
@@ -333,16 +333,6 @@ export class Renderer {
     this.draw();
   }
 
-  /** A page key went to the host (1 = page down, -1 = page up): the next screen with other records is its answer. */
-  notePaging(dir: 1 | -1): void {
-    this.pageKeys.push({ dir, at: Date.now() });
-  }
-
-  /** The host refused the key (keyboard error): no page key is waiting for an answer any more. */
-  dropPaging(): void {
-    this.pageKeys = [];
-  }
-
   /** The synthetic bar of a subfile in pages: how many there are (as far as known) and which one is shown. */
   subfileBar(index: number): { total: number; pos: number } {
     return pagingBar(this.paging[index], this.subfiles[index]?.end ?? 'more');
@@ -350,23 +340,26 @@ export class Renderer {
 
   /** Follows the lists with a synthetic bar from screen to screen, so the thumb shows the page. */
   private trackPaging(screen: ScreenSnapshot): void {
-    const now = Date.now();
-    this.pageKeys = this.pageKeys.filter((k) => now - k.at < PAGE_KEY_MS);
-    const dir = this.pageKeys[0]?.dir ?? 0;
-    let used = false;
-    this.paging = this.subfiles.map((area, i) => {
-      const next = nextPaging(this.paging[i], this.pageView(screen, area), dir);
-      used = used || next.used;
-      return next.state;
+    this.paging = this.subfiles.map((area) => {
+      const view = this.pageView(screen, area);
+      const next = nextPaging(this.pagingKept.get(view.key), view, screen.paged ?? 0);
+      // Newest last; the oldest list goes when there are too many.
+      this.pagingKept.delete(view.key);
+      this.pagingKept.set(view.key, next);
+      if (this.pagingKept.size > PAGING_KEPT) this.pagingKept.delete(this.pagingKept.keys().next().value as string);
+      return next;
     });
-    if (used) this.pageKeys.shift();
   }
 
   /** What identifies a list (its place and heading) and its records, without what is typed into them. */
   private pageView(screen: ScreenSnapshot, area: SubfileArea): PageView {
-    let body = '';
-    for (let i = area.top * screen.cols; i < area.bottom * screen.cols; i++) body += this.fieldMask[i] === 1 ? ' ' : screen.text.charAt(i);
-    return { key: `${area.top}|${area.top > 0 ? rowText(screen, area.top - 1).trim() : ''}`, body, end: area.end };
+    const rows: string[] = [];
+    for (let r = area.top; r < area.bottom; r++) {
+      let row = '';
+      for (let i = r * screen.cols; i < (r + 1) * screen.cols; i++) row += this.fieldMask[i] === 1 ? ' ' : screen.text.charAt(i);
+      rows.push(row);
+    }
+    return { key: `${area.top}|${area.top > 0 ? rowText(screen, area.top - 1).trim() : ''}`, rows, end: area.end };
   }
 
   /** The scroll bars on the screen: the host's, or the synthetic subfile ones. */

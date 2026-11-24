@@ -95,6 +95,8 @@ export interface ScreenSnapshot {
     /** Pointer event codes the host programmed (Programmable Mouse Buttons); the webview reports only these. */
     mouseEvents?: number[];
   };
+  /** This screen is what the host answered to Page Down (1) or Page Up (-1). */
+  paged?: 1 | -1;
 }
 
 export type InputInhibit = 'none' | 'system' | 'error';

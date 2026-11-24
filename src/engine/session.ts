@@ -1,10 +1,11 @@
 import type { PasteSettings } from '../shared/screenText';
 import { CodePage } from './codepage';
-import { DataStreamProcessor } from './datastream';
+import { AID_ROLL_DOWN, AID_ROLL_UP, DataStreamProcessor } from './datastream';
 import {
   OP_CANCEL_INVITE,
   OP_MESSAGE_LIGHT_OFF,
   OP_MESSAGE_LIGHT_ON,
+  OP_PUT_GET,
   buildRecord,
   parseRecord,
 } from './gds';
@@ -75,6 +76,10 @@ export class Session5250 {
   private queue: QueuedKey[] = [];
   /** A PC Organizer request is being handled: nothing is published until the host writes again. */
   private quiet = false;
+  /** The page key that went to the host and is not answered yet (1 = Page Down, -1 = Page Up). */
+  private pageSent: 1 | -1 | 0 = 0;
+  /** While a screen is published: the page key it answers. */
+  private paged: 1 | -1 | 0 = 0;
 
   constructor(
     options: SessionOptions,
@@ -211,6 +216,7 @@ export class Session5250 {
   snapshot(): ScreenSnapshot {
     const snap = this.screen.toSnapshot(this.codePage);
     if (snap.gui) snap.gui.mouseEvents = this.state.mouseButtons.map((d) => d.first);
+    if (this.paged !== 0) snap.paged = this.paged;
     return snap;
   }
 
@@ -231,6 +237,8 @@ export class Session5250 {
    * that hold non-display field data: the trace copy of the frame has them blanked.
    */
   sendRecord(opcode: number, flags1: number, data: Uint8Array, secret: Array<[number, number]> = []): void {
+    // Row, column, AID: the key the host answers next.
+    if (opcode === OP_PUT_GET) this.pageSent = data[2] === AID_ROLL_UP ? 1 : data[2] === AID_ROLL_DOWN ? -1 : 0;
     const frame = buildRecord(opcode, flags1, data);
     if (secret.length === 0) {
       this.telnet.sendRecord(frame);
@@ -272,7 +280,11 @@ export class Session5250 {
         break;
     }
     this.quiet = false;
+    this.paged = 0;
     if (record.data.length > 0) {
+      // What the host writes now is its answer to the last key (type-ahead sends the next one below).
+      this.paged = this.pageSent;
+      this.pageSent = 0;
       for (const response of this.processor.process(record.data)) {
         this.sendRecord(response.opcode, 0, response.data, this.processor.takeSecretRanges());
       }
@@ -289,5 +301,6 @@ export class Session5250 {
     }
     this.drainQueue();
     this.events.update?.();
+    this.paged = 0;
   }
 }

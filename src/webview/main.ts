@@ -48,8 +48,6 @@ let keymap: Keymap = effectiveKeymap({});
 const keyLines: string[] = [];
 
 function post(message: WebviewToHost): void {
-  // Every page key, whatever sent it (key, wheel, scroll bar, menu), so the bar beside a More... list follows.
-  if (message.type === 'action' && (message.action === 'pageDown' || message.action === 'pageUp')) renderer.notePaging(message.action === 'pageDown' ? 1 : -1);
   vscode.postMessage(message);
 }
 
@@ -251,8 +249,6 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
       break;
     case 'oia':
       oia = msg.oia;
-      // A refused key (roll past the first or last record) pages nothing.
-      if (msg.oia.inputInhibited === 'error') renderer.dropPaging();
       renderOia();
       break;
     case 'config':
