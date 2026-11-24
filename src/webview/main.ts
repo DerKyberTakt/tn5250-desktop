@@ -48,6 +48,8 @@ let keymap: Keymap = effectiveKeymap({});
 const keyLines: string[] = [];
 
 function post(message: WebviewToHost): void {
+  // Every page key, whatever sent it (key, wheel, scroll bar, menu), so the bar beside a More... list follows.
+  if (message.type === 'action' && (message.action === 'pageDown' || message.action === 'pageUp')) renderer.notePaging(message.action === 'pageDown' ? 1 : -1);
   vscode.postMessage(message);
 }
 
@@ -249,6 +251,8 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
       break;
     case 'oia':
       oia = msg.oia;
+      // A refused key (roll past the first or last record) pages nothing.
+      if (msg.oia.inputInhibited === 'error') renderer.dropPaging();
       renderOia();
       break;
     case 'config':
@@ -498,7 +502,7 @@ viewport.addEventListener(
     e.preventDefault();
     wheelAccum += e.deltaY;
     if (Math.abs(wheelAccum) >= 100) {
-      post({ type: 'action', action: wheelAccum > 0 ? 'pageDown' : 'pageUp' });
+      pageKey(wheelAccum > 0);
       wheelAccum = 0;
     }
   },
@@ -586,11 +590,16 @@ function canvasPoint(e: MouseEvent): { x: number; y: number } {
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
+/** Page Down or Page Up to the host. */
+function pageKey(forward: boolean): void {
+  post({ type: 'action', action: forward ? 'pageDown' : 'pageUp' });
+}
+
 /** Sends one scroll request for a scroll bar part: arrows one row, the track a page. */
 function scrollRequest(target: ScrollBarTarget): void {
   const forward = target.hit.part === 'forward' || (target.hit.part === 'track' && target.hit.forward);
   if (target.ref.kind === 'subfile') {
-    post({ type: 'action', action: forward ? 'pageDown' : 'pageUp' });
+    pageKey(forward);
     return;
   }
   const increment = target.hit.part === 'track' ? 0 : 1;
@@ -621,7 +630,8 @@ canvas.addEventListener('mousedown', (e) => {
   const target = renderer.scrollBarAt(p.x, p.y);
   if (target) {
     e.preventDefault();
-    if (target.hit.part === 'thumb' && target.ref.kind === 'host') {
+    // The thumb is dragged, on both kinds of bar; a click on it that does not move does nothing.
+    if (target.hit.part === 'thumb') {
       thumbDrag = { target, startPx: target.geometry.horizontal ? p.x : p.y, units: 0 };
     } else {
       scrollRequest(target);
@@ -639,8 +649,14 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', (e) => {
   if (thumbDrag) {
     const { target, startPx } = thumbDrag;
-    if (target.ref.kind !== 'host') return;
     const p = canvasPoint(e);
+    if (target.ref.kind !== 'host') {
+      // A bar beside a More... list scrolls in pages.
+      const pages = renderer.subfileBar(target.ref.index);
+      thumbDrag.units = dragUnits(target.geometry, p.y - startPx, pages.total, pages.pos, 1);
+      renderer.setSubfilePreview(target.ref.index, pages.pos + thumbDrag.units);
+      return;
+    }
     const bar = target.ref.bar;
     const page = bar.horizontal ? bar.size - 2 : bar.size;
     thumbDrag.units = dragUnits(target.geometry, target.geometry.horizontal ? (p.x - startPx) / renderer.scaleX : p.y - startPx, bar.total, bar.pos, page);
@@ -675,6 +691,9 @@ window.addEventListener('mouseup', (e) => {
     renderer.clearThumbPreview();
     if (target.ref.kind === 'host' && units !== 0) {
       post({ type: 'scroll', addr: target.ref.bar.addr, forward: units > 0, increment: Math.abs(units) });
+    } else if (target.ref.kind === 'subfile') {
+      // One page key per page the thumb was moved; the host answers them in turn.
+      for (let i = 0; i < Math.abs(units); i++) pageKey(units > 0);
     }
     return;
   }
@@ -764,7 +783,7 @@ function findBarKey(info: KeyEventInfo): boolean {
     return true;
   }
   if ((result.action === 'pageUp' || result.action === 'pageDown') && !overlay.visible) {
-    post({ type: 'action', action: result.action });
+    pageKey(result.action === 'pageDown');
     return true;
   }
   return false;
