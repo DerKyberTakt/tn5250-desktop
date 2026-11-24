@@ -262,7 +262,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
       renderOia();
       break;
     case 'alarm':
-      beep(880, 0.15);
+      beep(880, 0.15, 0.3);
       break;
     case 'paste':
       // Asked for from the find bar's box: the text goes there, not to the screen.
@@ -321,13 +321,19 @@ new ResizeObserver(() => {
 fitToViewport();
 
 let audio: AudioContext | undefined;
-function beep(freq: number, seconds: number): void {
+/**
+ * A tone of `freq` Hz at `level` (1 = full scale). The levels sit where a system sound does:
+ * at 0.03 and 0.08 the click and the tones could not be heard at an ordinary volume.
+ */
+function beep(freq: number, seconds: number, level: number): void {
   try {
     audio ??= new AudioContext();
+    // Made before the page had a key or a click, the context waits: start it now.
+    if (audio.state === 'suspended') void audio.resume();
     const osc = audio.createOscillator();
     const gain = audio.createGain();
     osc.frequency.value = freq;
-    gain.gain.value = seconds < 0.05 ? 0.03 : 0.08;
+    gain.gain.value = level;
     osc.connect(gain).connect(audio.destination);
     osc.start();
     osc.stop(audio.currentTime + seconds);
@@ -343,7 +349,7 @@ let lastRefused: number | undefined;
  * session counts from 0 again, which only resets the mark.
  */
 function noteRefusals(refused = 0): void {
-  if (lastRefused !== undefined && refused > lastRefused && config.settings.errorSound) beep(220, 0.08);
+  if (lastRefused !== undefined && refused > lastRefused && config.settings.errorSound) beep(330, 0.12, 0.3);
   lastRefused = refused;
 }
 
@@ -452,7 +458,7 @@ window.addEventListener(
       else toggleRuleLine();
       return;
     }
-    if (config.settings.keyClick) beep(1200, 0.02);
+    if (config.settings.keyClick) beep(1200, 0.02, 0.15);
     // Not connected: the overlay takes Enter (reconnect) and Escape (stop); other keys go nowhere.
     if (overlay.visible) {
       overlay.handleKey(info.key);
