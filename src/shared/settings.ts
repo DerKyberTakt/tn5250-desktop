@@ -173,6 +173,8 @@ tabIcon: string;
   typeAhead: boolean;
   alarm: boolean;
   keyClick: boolean;
+  /** A short low tone when a key or a paste is refused (the ACS clicker's Error choice). */
+  errorSound: boolean;
   /** What to do with PC commands the host sends through STRPCCMD (PC Organizer). */
   pcCommands: PcCommandPolicy;
 
@@ -312,6 +314,7 @@ tabIcon: '',
   typeAhead: true,
   alarm: true,
   keyClick: false,
+  errorSound: false,
   pcCommands: 'ask',
 
   keymap: {},
@@ -579,6 +582,7 @@ export const KEY_ACTION_GROUPS: Array<{ title: string; actions: Array<[KeyAction
       ['eraseField', 'Erase Field'],
       ['copy', 'Copy'],
       ['paste', 'Paste'],
+      ['pasteNext', 'Paste Next'],
       ['find', 'Find on Screen'],
     ],
   },

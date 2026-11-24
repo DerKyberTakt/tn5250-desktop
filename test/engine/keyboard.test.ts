@@ -627,3 +627,166 @@ describe('Paste', () => {
     expect(text(h, 1)).toBe('12    ');
   });
 });
+
+describe('Paste Next', () => {
+  const GAP_FIELDS = '04110008' + '110201' + '1d4000200005' + '110401' + '1d4300200006' + '130202' + '0452' + '0000';
+  /** Like TWO_FIELDS, with the second (last) field field-exit-required (ffw 4300 -> 4340). */
+  const FER_LAST = '04110008' + '110201' + '1d4000200005' + '110301' + '1d4340200006' + '130202' + '0452' + '0000';
+  const PASTE = { fieldWrap: true, stopAtProtected: true, moveCursorToEnd: true, tabMode: 'spaces' as const, tabSpaces: 1, tabColumns: 4 };
+
+  it('keeps what a protected row stopped and pastes it at the cursor on the next screen', () => {
+    const h = harness();
+    h.host(GAP_FIELDS);
+    h.session.setCursor(1, 1);
+    h.session.paste('abc\n12\n34', PASTE);
+    expect(text(h, 0)).toBe('abc  ');
+    expect(text(h, 1)).toBe('      ');
+    expect(h.session.oia(true).pasteNext).toBe(true);
+    h.session.press('enter');
+    h.host('0440' + TWO_FIELDS);
+    expect(h.state.inputInhibited).toBe('none');
+    h.session.press('pasteNext');
+    expect(text(h, 0)).toBe('12   ');
+    expect(text(h, 1)).toBe('34    ');
+    expect(h.session.oia(true).pasteNext).toBe(false);
+  });
+
+  it('pressed while the host has the keyboard locked, waits for the next screen (type-ahead)', () => {
+    const h = harness();
+    h.host(GAP_FIELDS);
+    h.session.setCursor(1, 1);
+    h.session.paste('abc\n12', PASTE);
+    h.session.press('enter');
+    h.session.press('pasteNext');
+    expect(h.session.queuedKeys).toBe(1);
+    h.host('0440' + TWO_FIELDS);
+    expect(text(h, 0)).toBe('12   ');
+    expect(h.session.oia(true).pasteNext).toBe(false);
+  });
+
+  it('keeps the lines below the last input row, Stop at protected line on or off', () => {
+    for (const stopAtProtected of [true, false]) {
+      const h = harness();
+      h.host(TWO_FIELDS);
+      h.session.setCursor(2, 1);
+      h.session.paste('12\n34\n56', { ...PASTE, stopAtProtected });
+      expect(text(h, 1)).toBe('12    ');
+      h.session.setCursor(1, 1);
+      h.session.press('pasteNext');
+      expect(text(h, 0)).toBe('34   ');
+      expect(text(h, 1)).toBe('56    ');
+    }
+  });
+
+  it('keeps the rest from a character the field refused', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(2, 1);
+    const before = h.state.refused;
+    h.session.paste('3x4\n5', PASTE); // x is not valid in a numeric-only field
+    expect(text(h, 1)).toBe('3     ');
+    expect(h.state.inputInhibited).toBe('none');
+    expect(h.state.refused).toBe(before + 2); // the operator error, and the paste that left text over
+    h.session.setCursor(1, 1);
+    h.session.press('pasteNext');
+    expect(text(h, 0)).toBe('x4   ');
+    expect(text(h, 1)).toBe('5     ');
+  });
+
+  it('stops when the last field of the screen is full instead of going on in the first one', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(2, 1);
+    h.session.paste('1234567890', PASTE);
+    expect(text(h, 1)).toBe('123456');
+    expect(text(h, 0)).toBe('     ');
+    expect(h.session.oia(true).pasteNext).toBe(true);
+    h.session.setCursor(1, 1);
+    h.session.press('pasteNext');
+    expect(text(h, 0)).toBe('7890 ');
+  });
+
+  it('stops the same way when the last field is field exit required', () => {
+    const h = harness();
+    h.host(FER_LAST);
+    h.session.setCursor(2, 1);
+    h.session.paste('1234567', PASTE);
+    expect(text(h, 1)).toBe('123456');
+    expect(text(h, 0)).toBe('     ');
+    expect(h.session.oia(true).pasteNext).toBe(true);
+  });
+
+  it('still sends the Enter of an auto enter last field, and keeps what follows', () => {
+    const h = harness();
+    h.host(FER_LAST.replace('1d4340200006', '1d43c0200006')); // + auto enter (ffw 4340 -> 43c0)
+    h.session.setCursor(2, 1);
+    h.session.paste('1234567', PASTE);
+    expect(h.sent).toHaveLength(1);
+    expect(h.state.inputInhibited).toBe('system');
+    expect(h.session.oia(true).pasteNext).toBe(true);
+  });
+
+  it('a tab in the last field keeps the text after it instead of going back to the first field', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(2, 1);
+    h.session.paste('12\tab', { ...PASTE, tabMode: 'nextField' });
+    expect(text(h, 1)).toBe('12    ');
+    expect(text(h, 0)).toBe('     ');
+    h.session.setCursor(1, 1);
+    h.session.press('pasteNext');
+    expect(text(h, 0)).toBe('ab   ');
+  });
+
+  it('with nothing left pastes nothing and counts as a refused key', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(1, 1);
+    h.session.paste('ab', PASTE);
+    expect(h.session.oia(true).pasteNext).toBe(false);
+    const before = h.state.refused;
+    h.session.press('pasteNext');
+    expect(text(h, 0)).toBe('ab   ');
+    expect(h.state.refused).toBe(before + 1);
+  });
+
+  it('a paste the keyboard refused leaves the earlier rest in place', () => {
+    const h = harness();
+    h.host(GAP_FIELDS);
+    h.session.setCursor(1, 1);
+    h.session.paste('abc\n12', PASTE);
+    h.session.setCursor(3, 1);
+    h.session.type('x'); // operator error: numeric-only field
+    expect(h.state.inputInhibited).toBe('error');
+    h.session.paste('zz', PASTE);
+    expect(h.session.oia(true).pasteNext).toBe(true);
+  });
+});
+
+describe('Refused keys (error sound)', () => {
+  it('counts operator errors and keys pressed during one, not the arrow key that ends it', () => {
+    const h = harness();
+    h.host(TWO_FIELDS);
+    h.session.setCursor(2, 1);
+    const start = h.state.refused;
+    h.session.type('x'); // 0009 in a numeric-only field
+    expect(h.state.refused).toBe(start + 1);
+    h.session.type('y');
+    h.session.press('enter');
+    expect(h.state.refused).toBe(start + 3);
+    h.session.press('right');
+    expect(h.state.inputInhibited).toBe('none');
+    expect(h.state.refused).toBe(start + 3);
+    expect(h.session.oia(true).refused).toBe(start + 3);
+  });
+
+  it('counts keys and pastes while the host has the keyboard locked and type-ahead is off, not local actions', () => {
+    const session = new Session5250({ typeAhead: false }, { send: () => undefined });
+    expect(session.state.inputInhibited).toBe('system');
+    session.type('X');
+    session.press('pf3');
+    session.paste('abc', { fieldWrap: true, stopAtProtected: true, moveCursorToEnd: true, tabMode: 'spaces', tabSpaces: 1, tabColumns: 4 });
+    session.press('copy');
+    expect(session.state.refused).toBe(3);
+  });
+});

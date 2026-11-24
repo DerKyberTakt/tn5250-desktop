@@ -41,7 +41,7 @@ export const AID_ACTIONS: ReadonlySet<KeyAction> = new Set<KeyAction>([
 ]);
 
 /** Actions that never reach the host; a recording leaves them out. */
-const LOCAL_ACTIONS: ReadonlySet<KeyAction> = new Set<KeyAction>(['copy', 'paste', 'find', 'printScreen', 'rule']);
+const LOCAL_ACTIONS: ReadonlySet<KeyAction> = new Set<KeyAction>(['copy', 'paste', 'pasteNext', 'find', 'printScreen', 'rule']);
 
 /** Human names for the function keys and actions, for the editor and the step list. */
 export const ACTION_NAMES: Partial<Record<KeyAction, string>> = {

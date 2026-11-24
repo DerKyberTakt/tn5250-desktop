@@ -72,6 +72,8 @@ describe('ACS keymap', () => {
     expect(resolveAction(k('Enter', 'Enter', { meta: true }), ACS_KEYMAP)).toBe('insert');
     // Dup is assignable but unbound by default (ACS pastes on Shift+Insert).
     expect(Object.values(ACS_KEYMAP)).not.toContain('dup');
+    // Paste Next too: ACS has no key for it, only the Edit menu and the Keyboard page.
+    expect(Object.values(ACS_KEYMAP)).not.toContain('pasteNext');
   });
 
   it('binds Find on Screen to Ctrl+F, and to Cmd+F on macOS', () => {

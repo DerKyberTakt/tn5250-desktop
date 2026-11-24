@@ -45,6 +45,7 @@ export type KeyAction =
   | 'rule'
   | 'copy'
   | 'paste'
+  | 'pasteNext'
   | 'find'
   | 'pf1'
   | 'pf2'

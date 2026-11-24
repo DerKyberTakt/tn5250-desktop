@@ -37,6 +37,12 @@ export class TerminalState {
    * (code and text, shown by the OIA only; the error row is not written).
    */
   errorMessage = '';
+  /**
+   * Keys and pastes refused so far (an operator error, a key pressed while the keyboard is
+   * locked, a paste that left text behind): the UI sounds when it grows. It only counts up,
+   * through a reset of the terminal too, so any change means a new refusal.
+   */
+  refused = 0;
   /** Cursor saved by Write Error Code, restored on Reset. */
   savedCursor: number | undefined;
   /** Error row contents saved by Write Error Code, restored on Reset. */

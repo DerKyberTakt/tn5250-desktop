@@ -12,6 +12,7 @@ interface Stop {
   sel?: GuiSelection;
 }
 import type { KeyAction } from '../shared/keymap';
+import type { InputInhibit } from '../shared/protocol';
 import { expandTabs, type PasteSettings } from '../shared/screenText';
 
 /** Attention identifiers sent with a read response. */
@@ -77,6 +78,9 @@ export const OPERATOR_ERRORS: Record<string, string> = {
 /** Keys the host accepts while the keyboard is locked: they interrupt whatever the host is doing. */
 const OUT_OF_BAND_ACTIONS = new Set<KeyAction>(['attn', 'sysreq', 'testRequest']);
 
+/** Actions the UI or the session carries out: a locked keyboard does not refuse them. */
+const NOT_KEYBOARD_ACTIONS = new Set<KeyAction>(['printScreen', 'copy', 'paste', 'pasteNext', 'find', 'rule']);
+
 const MOVEMENT_ACTIONS = new Set<KeyAction>([
   'tab',
   'backtab',
@@ -124,9 +128,15 @@ export class Keyboard {
     private readonly out: KeyboardOutput,
   ) {}
 
-  /** Types characters as if pressed one by one. */
+  /** Types characters as if pressed one by one; a locked keyboard refuses the rest. */
   type(text: string): void {
-    for (const ch of text) this.typeChar(ch);
+    for (const ch of text) {
+      if (this.state.inputInhibited !== 'none') {
+        this.refuse();
+        return;
+      }
+      this.typeChar(ch);
+    }
   }
 
   /**
@@ -138,25 +148,50 @@ export class Keyboard {
    * protected ends the paste (Stop at protected line) or is skipped. A trailing line break
    * pastes nothing. The keyboard is left usable: an operator error the paste raised is
    * cleared.
+   *
+   * Returns what did not fit, for Paste Next: the text from the first character that was
+   * not pasted (a protected row with Stop at protected line, no input row left below, the
+   * last field of the screen full, a character the field refused, or a key that locked
+   * the keyboard), or '' when nothing is left. Text cut because Field Wrap is off is not
+   * left over. Undefined when nothing was pasted: no text, or a locked keyboard refused
+   * the paste.
    */
-  paste(text: string, opt: PasteSettings): void {
-    if (this.state.inputInhibited !== 'none' || !text) return;
+  paste(text: string, opt: PasteSettings): string | undefined {
+    if (!text) return undefined;
+    if (this.state.inputInhibited !== 'none') {
+      this.refuse();
+      return undefined;
+    }
     const s = this.screen;
     const lines = text.replace(/\r\n?/g, '\n').split('\n');
     if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
     const start = s.cursor;
     const col = s.colOf(start);
     let row = s.rowOf(start);
+    let rest = '';
     for (let i = 0; i < lines.length; i++) {
       if (i > 0) {
+        // The last key of the previous line locked the keyboard (an auto enter field).
+        if (this.lockState() !== 'none') {
+          rest = lines.slice(i).join('\n');
+          break;
+        }
         row = this.pasteRow(row + 1, col, opt.stopAtProtected);
-        if (row < 0) break;
+        if (row < 0) {
+          rest = lines.slice(i).join('\n');
+          break;
+        }
         this.leaveSelection();
         s.cursor = s.addr(row, col);
         this.state.cursorPastEnd = false;
         this.state.autoAdvanced = false;
       }
-      if (!this.pasteLine(lines[i]!, opt)) break;
+      const left = this.pasteLine(lines[i]!, opt);
+      if (left !== undefined) {
+        // An empty `left`: the line stopped at a Tab that ended it, so the rest starts with the next line.
+        rest = (left ? [left, ...lines.slice(i + 1)] : lines.slice(i + 1)).join('\n');
+        break;
+      }
     }
     this.clearError();
     if (!opt.moveCursorToEnd) {
@@ -164,6 +199,9 @@ export class Keyboard {
       this.state.autoAdvanced = false;
       s.cursor = start;
     }
+    // A paste that leaves text behind sounds like a refused key (ACS "Paste Incomplete").
+    if (rest) this.refuse();
+    return rest;
   }
 
   /** The first row at or below `from` whose cell in column `col` takes input; -1 when there is none, or `stop` and row `from` itself does not. */
@@ -178,29 +216,62 @@ export class Keyboard {
     return -1;
   }
 
-  /** Types one pasted line; false when an operator error stopped it (the rest of the paste is dropped, as typing would be). */
-  private pasteLine(line: string, opt: PasteSettings): boolean {
-    for (const part of expandTabs(line, opt)) {
+  /**
+   * Types one pasted line. Returns the part of the line that was not pasted when the paste
+   * has to stop there (see paste), with tab characters written back where the Tab key
+   * was due ('' when it stopped at a Tab that ended the line); undefined when the line is
+   * done, cut by Field Wrap being off included.
+   */
+  private pasteLine(line: string, opt: PasteSettings): string | undefined {
+    const parts = expandTabs(line, opt);
+    // The line from part p, offset o. Tabs that became spaces stay spaces, so pasting the
+    // rest again gives the same text whatever column it starts in.
+    const rest = (p: number, o: number): string =>
+      parts
+        .slice(p)
+        .map((part, j) => ('action' in part ? '\t' : j === 0 ? part.text.slice(o) : part.text))
+        .join('');
+    // The last character filled the last field of the screen and the cursor went back to
+    // the first one: what follows is left over instead of overwriting the top fields.
+    let wrapped = false;
+    for (let p = 0; p < parts.length; p++) {
+      const part = parts[p]!;
       if ('action' in part) {
+        // At the end of the screen, or with the keyboard locked, the Tab is not pressed: the
+        // rest starts with the text after it, for the field the cursor is in next time.
+        if (this.lockState() !== 'none' || wrapped || this.advanceWraps(this.screen.cursor)) return rest(p + 1, 0);
         this.press('tab');
-        if (this.state.inputInhibited !== 'none') return false;
+        if (this.lockState() === 'error') return rest(p + 1, 0);
         continue;
       }
+      let o = 0;
       for (const ch of part.text) {
+        // A key before this one locked the keyboard (an auto enter field).
+        if (this.lockState() !== 'none') return rest(p, o);
         // The previous character filled the field: Field Wrap carries on in the next field
         // (the cursor is already there, or a Field Exit takes it there), otherwise the rest
         // of the line is cut.
         if (this.state.cursorPastEnd) {
-          if (!opt.fieldWrap) return true;
+          if (!opt.fieldWrap) return undefined;
+          // An auto enter field's Field Exit sends Enter instead of moving on, so it is pressed
+          // even in the last field.
+          if (!this.currentField()?.autoEnter && this.advanceWraps(this.screen.cursor)) return rest(p, o);
           this.press('fieldExit');
-        } else if (this.state.autoAdvanced && !opt.fieldWrap) {
-          return true;
+          if (this.lockState() !== 'none') return rest(p, o);
+        } else if (this.state.autoAdvanced) {
+          if (!opt.fieldWrap) return undefined;
+          if (wrapped) return rest(p, o);
         }
+        const at = this.screen.cursor;
         this.typeChar(ch);
-        if (this.state.inputInhibited !== 'none') return false;
+        // Refused: this character starts the rest. A lock it caused (auto enter) is found
+        // before the next one.
+        if (this.lockState() === 'error') return rest(p, o);
+        wrapped = this.state.autoAdvanced && this.advanceWraps(at);
+        o += ch.length;
       }
     }
-    return true;
+    return undefined;
   }
 
   /** Leaves the operator error state (X II), as Reset does, without touching insert mode. */
@@ -225,7 +296,10 @@ export class Keyboard {
       this.outOfBand(action);
       return;
     }
-    if (this.state.inputInhibited !== 'none') return;
+    if (this.state.inputInhibited !== 'none') {
+      if (!NOT_KEYBOARD_ACTIONS.has(action)) this.refuse();
+      return;
+    }
     // A keystroke cancels a programmable two-event mouse sequence that was started.
     this.state.pendingMouse = undefined;
     // Inside a selection field most keys mean something else (choice navigation, select).
@@ -328,6 +402,8 @@ export class Keyboard {
       case 'find':
       case 'rule':
         break; // handled by the UI
+      case 'pasteNext':
+        break; // handled by the session
       default: {
         const aid = AID[action];
         if (aid !== undefined) this.sendAid(aid);
@@ -347,6 +423,17 @@ export class Keyboard {
   private error(code: string): void {
     this.state.inputInhibited = 'error';
     this.state.errorMessage = `${code} ${OPERATOR_ERRORS[code] ?? ''}`.trim();
+    this.refuse();
+  }
+
+  /** The keyboard lock, read through a call: a check before a key must not decide the check after it. */
+  private lockState(): InputInhibit {
+    return this.state.inputInhibited;
+  }
+
+  /** Counts a key or paste the terminal refused, for the error sound. */
+  private refuse(): void {
+    this.state.refused += 1;
   }
 
   private reset(): void {
@@ -434,9 +521,18 @@ export class Keyboard {
     const progression = this.progressionTarget(from);
     if (progression) return progression;
     const stops = this.stops();
+    return this.stopAfter(from, stops) ?? stops[0];
+  }
+
+  /** The first stop after the one that holds `from`, in screen order; undefined after the last one. */
+  private stopAfter(from: number, stops: Stop[]): Stop | undefined {
     const here = stops.find((st) => this.stopContains(st, from));
-    const after = stops.find((st) => st.start > from && st !== here && !this.stopContains(st, from));
-    return after ?? stops[0];
+    return stops.find((st) => st.start > from && st !== here && !this.stopContains(st, from));
+  }
+
+  /** Tab or Field Exit from `from` would go back to the first field: no stop after it and no cursor progression. */
+  private advanceWraps(from: number): boolean {
+    return !this.progressionTarget(from) && !this.stopAfter(from, this.stops());
   }
 
   private prevField(from: number): Stop | undefined {

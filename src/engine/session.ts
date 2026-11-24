@@ -74,6 +74,8 @@ export class Session5250 {
   deviceName = '';
   typeAhead: boolean;
   private queue: QueuedKey[] = [];
+  /** What the last paste left over and that paste's settings: Paste Next puts it at the cursor. */
+  private pasteRest: { text: string; options: PasteSettings } | undefined;
   /** A PC Organizer request is being handled: nothing is published until the host writes again. */
   private quiet = false;
   /** The page key that went to the host and is not answered yet (1 = Page Down, -1 = Page Up). */
@@ -126,8 +128,27 @@ export class Session5250 {
   press(action: KeyAction): void {
     if (action === 'reset') this.queue = [];
     if (!IMMEDIATE_ACTIONS.has(action) && this.enqueue({ kind: 'press', action })) return;
-    this.keyboard.press(action);
+    this.pressNow(action);
     this.notify();
+  }
+
+  private pressNow(action: KeyAction): void {
+    if (action === 'pasteNext') this.pasteNext();
+    else this.keyboard.press(action);
+  }
+
+  /** Paste Next: what the last paste left over, at the cursor. With nothing left the key is refused. */
+  private pasteNext(): void {
+    const rest = this.pasteRest;
+    if (rest) this.pasteNow(rest.text, rest.options);
+    else this.state.refused += 1;
+  }
+
+  /** Pastes and keeps what did not fit for Paste Next; a refused paste leaves the earlier rest alone. */
+  private pasteNow(text: string, options: PasteSettings): void {
+    const rest = this.keyboard.paste(text, options);
+    if (rest === undefined) return;
+    this.pasteRest = rest ? { text: rest, options } : undefined;
   }
 
   /** Moves the cursor (mouse click); also leaves an operator error state. A window that restricts the cursor keeps clicks outside it from moving it. */
@@ -176,7 +197,7 @@ export class Session5250 {
   /** Pastes a block of text at the cursor (see Keyboard.paste). */
   paste(text: string, options: PasteSettings): void {
     if (this.enqueue({ kind: 'paste', text, options })) return;
-    this.keyboard.paste(text, options);
+    this.pasteNow(text, options);
     this.notify();
   }
 
@@ -193,6 +214,7 @@ export class Session5250 {
   private enqueue(key: QueuedKey): boolean {
     if (!this.typeAhead || this.state.inputInhibited !== 'system') return false;
     if (this.queue.length < TYPE_AHEAD_LIMIT) this.queue.push(key);
+    else this.state.refused += 1;
     this.notify();
     return true;
   }
@@ -206,9 +228,9 @@ export class Session5250 {
     this.keyboard.flushQueuedMouse();
     while (this.queue.length > 0 && this.state.inputInhibited === 'none') {
       const key = this.queue.shift()!;
-      if (key.kind === 'press') this.keyboard.press(key.action);
+      if (key.kind === 'press') this.pressNow(key.action);
       else if (key.kind === 'type') this.keyboard.type(key.text);
-      else this.keyboard.paste(key.text, key.options);
+      else this.pasteNow(key.text, key.options);
     }
     if (this.state.inputInhibited === 'error') this.queue = [];
   }
@@ -229,6 +251,8 @@ export class Session5250 {
       deviceName: this.deviceName,
       message: this.state.errorMessage,
       queuedKeys: this.queue.length,
+      refused: this.state.refused,
+      pasteNext: this.pasteRest !== undefined,
     };
   }
 

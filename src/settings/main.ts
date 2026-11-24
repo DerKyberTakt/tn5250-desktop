@@ -327,6 +327,8 @@ const HELP: Partial<Record<Key, string>> = {
   warnOnCloseMultiple: 'Ask for confirmation when TN5250: Disconnect All would disconnect more than one tab.',
   alarm: 'Play a short tone when the host sounds the alarm.',
   keyClick: 'Play a quiet click for every key press.',
+  errorSound:
+    'Play a short low tone when a key or a paste is refused: an operator error (X II), a key pressed while the keyboard is locked, Paste Next with nothing left, or a paste that did not fit (Paste Next pastes the rest). Like the Error choice of the ACS clicker.',
   typeAhead:
     'Keys pressed while the keyboard is locked (X SYSTEM) are kept and replayed when the host unlocks it, so you can type the next screen before it appears. An error message or Reset discards them.',
   mouseWheelPaging: 'The mouse wheel presses Page Up and Page Down (Roll). Ctrl+wheel always zooms.',
@@ -611,7 +613,7 @@ const PAGES: Array<{ id: string; title: string; group: string; fields: FieldSpec
     id: 'sound',
     title: 'Sound',
     group: 'Preferences',
-    fields: [YESNO('alarm', 'Sound alarm'), YESNO('keyClick', 'Keyboard clicker')],
+    fields: [YESNO('alarm', 'Sound alarm'), YESNO('keyClick', 'Keyboard clicker'), YESNO('errorSound', 'Sound on keyboard error')],
   },
   {
     id: 'behavior',

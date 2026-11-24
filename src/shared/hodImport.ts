@@ -239,11 +239,16 @@ export function importHod(text: string, fileName: string): HodImport {
   const alarm = flag('soundalarm');
   if (mute) session.alarm = false;
   else if (alarm !== undefined) session.alarm = alarm;
-  // Clicker: "normal" clicks on every key typed, as the emulator's key click does; "error",
-  // the ACS default, only sounds when a key or a paste is refused, so no click here.
+  // Clicker, one choice in ACS: "normal" clicks on every key typed (key click); "error", the
+  // ACS default, only sounds when a key or a paste is refused (error sound); "off" neither.
   const clicker = get('soundclicker').toLowerCase();
-  if (clicker === 'normal' && !mute) session.keyClick = true;
-  else if (mute || clicker === 'off' || clicker === 'error') session.keyClick = false;
+  if (mute || clicker === 'off') {
+    session.keyClick = false;
+    session.errorSound = false;
+  } else if (clicker === 'normal' || clicker === 'error') {
+    session.keyClick = clicker === 'normal';
+    session.errorSound = clicker === 'error';
+  }
 
   // Display.
   const ruleLine = flag('ruleline');

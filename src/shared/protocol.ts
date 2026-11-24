@@ -111,6 +111,10 @@ export interface OiaState {
   message: string;
   /** Keys typed ahead while the keyboard is locked, waiting to be replayed. */
   queuedKeys?: number;
+  /** Keys and pastes refused so far in this session; the page plays the error sound when it grows. */
+  refused?: number;
+  /** The last paste left text over, so Paste Next has something to paste. */
+  pasteNext?: boolean;
 }
 
 /** Which application hosts the terminal page; decides what unmapped chords do. */

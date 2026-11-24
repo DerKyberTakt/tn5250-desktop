@@ -247,6 +247,7 @@ window.addEventListener('message', (ev: MessageEvent<HostToWebview>) => {
       renderOia();
       break;
     case 'oia':
+      noteRefusals(msg.oia.refused);
       oia = msg.oia;
       renderOia();
       break;
@@ -333,6 +334,17 @@ function beep(freq: number, seconds: number): void {
   } catch {
     // no audio device
   }
+}
+
+/** The session's count of refused keys and pastes at the last OIA; unknown until the first one, which never sounds. */
+let lastRefused: number | undefined;
+/**
+ * The error sound: the count grew, so a key or a paste was refused since the last OIA. A new
+ * session counts from 0 again, which only resets the mark.
+ */
+function noteRefusals(refused = 0): void {
+  if (lastRefused !== undefined && refused > lastRefused && config.settings.errorSound) beep(220, 0.08);
+  lastRefused = refused;
 }
 
 /** Shift+Arrow selection, anchored at the cursor when it starts. */
@@ -804,8 +816,8 @@ document.addEventListener('copy', (e) => {
 });
 
 // Right-click menu on the screen: Copy (the selection, or the screen), Paste, Select All
-// (the three things ACS offers there) and Find. Escape, a click elsewhere or losing focus
-// closes it.
+// (the three things ACS offers there), Paste Next (on the ACS Edit menu) and Find. Escape,
+// a click elsewhere or losing focus closes it.
 const contextMenu = document.createElement('div');
 contextMenu.id = 'ctx-menu';
 contextMenu.hidden = true;
@@ -833,6 +845,8 @@ function showContextMenu(x: number, y: number): void {
   const live = lastScreen !== undefined;
   item(renderer.hasSelection ? 'Copy' : 'Copy Screen', live, () => copySelection());
   item('Paste', live, () => post({ type: 'paste' }));
+  // Grey until a paste leaves text over, as in ACS.
+  item('Paste Next', live && oia.pasteNext === true, () => post({ type: 'action', action: 'pasteNext' }));
   item('Select All', live, () => renderer.selectAll());
   item('Find', live, () => openFind());
   contextMenu.hidden = false;

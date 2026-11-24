@@ -171,6 +171,19 @@ describe('importHod', () => {
     expect(click([])).toBeUndefined();
   });
 
+  it('turns the error sound on only for the error clicker: normal, off and muted leave it off', () => {
+    const sound = (terminal: string[]): boolean | undefined => {
+      const r = importHod(hod(['sessionType=2', 'host=h', ...terminal]), 'Click.hod');
+      if (!r.ok) throw new Error(r.reason);
+      return r.session.errorSound;
+    };
+    expect(sound(['soundClicker=error'])).toBe(true);
+    expect(sound(['soundClicker=normal'])).toBe(false);
+    expect(sound(['soundClicker=off'])).toBe(false);
+    expect(sound(['soundClicker=error', 'soundMute=true'])).toBe(false);
+    expect(sound([])).toBeUndefined();
+  });
+
   it('takes the watermark only when the profile shows one', () => {
     const shown = importHod(hod(['sessionType=2', 'host=h', 'Watermark=true', 'haveTextAsWatermark=true', 'WatermarkText=PROD', 'WatermarkOpacity=0.3', 'watermarkPosition=tile']), 'W.hod');
     if (!shown.ok) throw new Error(shown.reason);
