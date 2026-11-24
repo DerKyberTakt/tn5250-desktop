@@ -186,8 +186,6 @@ export interface RendererOptions {
   watermarkOffsetY: number;
   underlineUrls: boolean;
   keyButtons: boolean;
-  /** Draw a scroll bar beside every subfile (More... / Bottom), not only host-defined ones. */
-  subfileScrollBar: boolean;
   /** Enhanced mode: frame windows the host drew with border characters like its GUI windows. */
   textWindows: boolean;
   demoMode: boolean;
@@ -240,7 +238,6 @@ export class Renderer {
     watermarkOffsetY: 0,
     underlineUrls: true,
     keyButtons: false,
-    subfileScrollBar: false,
     textWindows: true,
     demoMode: false,
     demoLabel: 'DEMO',
@@ -323,7 +320,8 @@ export class Renderer {
     this.ranges = fieldRanges(screen);
     this.boxRanges = markedFieldRanges(screen);
     this.syntax = highlightScreen(screen);
-    this.subfiles = this.options.subfileScrollBar && !screen.gui?.scrollBars.length ? detectSubfiles(screen) : [];
+    // A list without a scroll bar of the host (More... / Bottom) gets one drawn beside it.
+    this.subfiles = !screen.gui?.scrollBars.length ? detectSubfiles(screen) : [];
     this.trackPaging(screen);
     this.refreshWindows();
     this.selectionMask = selectionWidgetCells(screen);
@@ -554,7 +552,7 @@ export class Renderer {
     if (!this.screen || this.viewportW <= 0 || this.viewportH <= 0) return;
     const { rows, cols } = this.screen;
     this.pad = this.options.uiMode === 'enhanced' ? this.theme.enhanced.padding : 0;
-    this.gutter = this.options.subfileScrollBar ? GUTTER : 0;
+    this.gutter = GUTTER;
     const m = fitFont({
       boxW: this.viewportW - this.gutter,
       boxH: this.viewportH,

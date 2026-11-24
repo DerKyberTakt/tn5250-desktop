@@ -204,7 +204,6 @@ function applyConfig(): void {
     watermarkOffsetY: st.watermarkOffsetY,
     underlineUrls: st.hotspotsUrl,
     keyButtons: st.hotspots3d || st.uiMode === 'enhanced',
-    subfileScrollBar: st.subfileScrollBar,
     demoMode: st.demoMode,
     demoLabel: st.demoLabel,
     demoColor: st.demoColor,
