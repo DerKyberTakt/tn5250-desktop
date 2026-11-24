@@ -377,7 +377,9 @@ describe('enhanced 5250: GUI windows', () => {
     const reply = t.proc.process(hexToBytes('04f30005d97000'))[0]?.data as Uint8Array;
     expect(reply.length).toBe(67);
     expect(reply[4]).toBe(0x40);
-    expect(reply[53]).toBe(0x02);
+    // Pointer device, GUI-like characters, enhanced interface level 1. The bug: only the last
+    // was set, and the host sent More... instead of the scroll bar of SFLEND(*SCRBAR).
+    expect(reply[53]).toBe(0x0e);
     expect(reply[54]).toBe(0x80);
     expect((setup('IBM-3477-FC', { enhanced: false }).proc.process(hexToBytes('04f30005d97000'))[0]?.data as Uint8Array).length).toBe(61);
   });

@@ -1009,8 +1009,11 @@ export class DataStreamProcessor {
 
   /**
    * Query reply for WSF class D9 type 70. A plain terminal answers 61 bytes; an
-   * enhanced one 67, with byte 53 bit 6 (enhanced 5250 FCWs and WDSFs) and byte 54
-   * bit 0 (enhanced user interface level 2) set, as tn5250 does.
+   * enhanced one 67. Byte 53 then says: pointer device available (bit 4), GUI-like
+   * characters available (bit 5) and enhanced user interface level 1 (bit 6); byte 54
+   * bit 0 says level 2. Without bit 5 the host takes the display for a character one:
+   * it still sends windows and selection fields, but a subfile with SFLEND(*SCRBAR)
+   * gets More... / Bottom instead of a scroll bar.
    */
   queryReply(): Uint8Array {
     const wide = this.info.terminalType.toUpperCase().startsWith('IBM-3477');
@@ -1019,7 +1022,7 @@ export class DataStreamProcessor {
     const out = new Uint8Array(enhanced ? 67 : 61);
     out.set([0x00, 0x00, 0x88, 0x00, enhanced ? 0x40 : 0x3a, 0xd9, 0x70, 0x80, 0x06, 0x00, 0x01, 0x01, 0x00], 0);
     if (enhanced) {
-      out[53] = 0x02;
+      out[53] = 0x0e;
       out[54] = 0x80;
     }
     out[29] = 0x01;
