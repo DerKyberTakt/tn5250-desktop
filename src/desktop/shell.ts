@@ -17,6 +17,7 @@ import { MAIN_WINDOW, windowNameFromUrl, type RegistryEntry, type ToWindow, type
 import { TerminalTab, type TabHost } from './remoteTab';
 import { buildTree, tabsBadge } from './sessionTree';
 import { TabDrag, reorderWithin, type DragHost, type Point } from './tabDrag';
+import { backTarget } from './backBar';
 import { ACS_EMULATOR_DIR, HOD_FILTERS, credentialsToDrop, importMessage, importRows, mergeImported, nothingImported, readProfiles, unreadableNote, type FoundSession } from './importConnections';
 import { watchRecording, MacroRecorder, describeStep, macrosFromJson, macrosToJson, mergeMacros, newMacroId, runMacro, type Macro, type MacroTarget } from '../shared/macros';
 import { macroEditorDialog } from './macroEditor';
@@ -71,6 +72,10 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
 
   private entries: Entry[] = [];
   private active: Entry | undefined;
+  /** The session that was in front last: where the bar over a tool page leads back to. */
+  private lastSession: Entry | undefined;
+  /** The session the back bar shows now. */
+  private backEntry: Entry | undefined;
   /** Session tabs live in the tab bar; the tools (IFS, SQL, viewers, Settings) in the strip right of the tool bar. */
   private readonly drag = new TabDrag<Entry>(this.dragHost(byId<HTMLDivElement>('tabbar'), (e) => e.kind === 'terminal' && e !== this.split));
   /** The session shown in the pane right of the others (View/Window > Split Right); its tab sits above that pane. */
@@ -121,6 +126,8 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
 
   private readonly tabbar = byId<HTMLDivElement>('tabbar');
   private readonly toolstrip = byId<HTMLDivElement>('toolstrip');
+  private readonly backbar = byId<HTMLDivElement>('backbar');
+  private readonly backLabel = byId<HTMLSpanElement>('backbar-label');
   private readonly frames = byId<HTMLElement>('frames');
   private readonly pane2 = byId<HTMLElement>('pane2');
   private readonly paneSplit = byId<HTMLDivElement>('pane-split');
@@ -888,6 +895,7 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     }
     const previous = this.active;
     this.active = entry;
+    if (entry.kind === 'terminal') this.lastSession = entry;
     for (const e of this.entries) {
       e.tab.frame.classList.toggle('active', e === entry || e === this.split);
       e.button.classList.toggle('active', e === entry || e === this.split);
@@ -984,6 +992,15 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
     this.tabbar.hidden = sessions === 0 || (sessions < 2 && windows.size < 2 && !this.split);
     this.tabrow.hidden = this.tabbar.hidden && this.paneTabs.hidden;
     this.toolstrip.classList.toggle('has-tools', sessions < this.entries.length);
+    // One session has no tab: a tool page in front of it gets a bar that leads back.
+    this.backEntry = backTarget({
+      tabBarHidden: this.tabbar.hidden,
+      sessionInFront: !this.active || this.active.kind === 'terminal',
+      sessions: this.entries.filter((e) => e.kind === 'terminal' && e !== this.split),
+      last: this.lastSession,
+    });
+    this.backbar.hidden = !this.backEntry;
+    if (this.backEntry) this.backLabel.textContent = `Back to ${this.backEntry.tab.title}`;
     const t = this.activeTerminal();
     const title = this.active ? `${this.active.tab.title} - ${APP_NAME}` : APP_NAME;
     document.title = title;
@@ -1380,6 +1397,9 @@ class Shell implements TabHost, IfsHost, IfsViewHost, SqlHost {
       if (tab?.kind === 'settings') void tab.tab.handle({ type: 'addSession' });
     });
     byId<HTMLButtonElement>('side-previous').addEventListener('click', () => this.connectPrevious());
+    byId<HTMLButtonElement>('backbar-go').addEventListener('click', () => {
+      if (this.backEntry) this.activate(this.backEntry);
+    });
   }
 
   /** The Connections tree: saved sessions with their open tabs (in every window) as children. */

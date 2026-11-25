@@ -2130,3 +2130,35 @@ dialog.modal.macro-editor .buttons button.keycap {
   font-size: 12px;
   text-transform: uppercase;
 }
+
+/* The way back to the session while a tool page (Settings, IFS, SQL) is in front. */
+#backbar {
+  display: flex;
+  align-items: center;
+  padding: 3px 6px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+#backbar[hidden] {
+  display: none;
+}
+
+#backbar-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 6px;
+  font: inherit;
+  color: var(--tab-accent);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#backbar-go:hover,
+#backbar-go:focus-visible {
+  background: var(--chrome-hover);
+  border-color: var(--chrome-border);
+}
