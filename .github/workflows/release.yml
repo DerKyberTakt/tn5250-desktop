@@ -23,6 +23,12 @@ name: Release
 # the run. It signs in to Azure with OpenID Connect (no stored secret) and signs the app
 # exe before it is packed, then the installer and the MSI, with Azure Artifact Signing.
 # The environment only admits v* tags and dry-run/* branches.
+#
+# macOS signing: the macos job also runs in "release". It imports the Developer ID
+# Application certificate (secrets.APPLE_CERT_P12 / APPLE_CERT_PASSWORD) into a temporary
+# keychain, signs the .app with the hardened runtime, notarizes it with the App Store
+# Connect API key (secrets.APPLE_API_KEY_P8, vars.APPLE_API_KEY_ID / APPLE_API_ISSUER_ID)
+# and staples the ticket; the .dmg is then signed, notarized and stapled too.
 
 on:
   push:
@@ -345,6 +351,9 @@ jobs:
   macos:
     needs: version
     runs-on: macos-latest
+    environment: release
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -365,8 +374,8 @@ jobs:
       - name: Build (universal .app)
         run: |
           set -o pipefail
-          # build:universal + .app bundle + ad-hoc signature (the app is not notarized; an ad-hoc
-          # signed binary runs after the user allows it: right-click > Open, or xattr -dr com.apple.quarantine).
+          # build:universal + .app bundle + ad-hoc signature; the Developer ID signature and the
+          # notarization follow below.
           wails3 task darwin:package:universal 2>&1 | tee build.log || {
             echo "::error title=wails3 task darwin:package:universal::$(tail -n 40 build.log | tr '\n' '|' | cut -c1-3800)"; exit 1; }
           ls -la build/bin
@@ -374,6 +383,66 @@ jobs:
           app="build/bin/TN5250 Terminal.app"
           lipo -archs "$app/Contents/MacOS/tn5250-terminal"
           codesign --verify --verbose=2 "$app"
+
+      - name: Developer ID certificate into a temporary keychain
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpw=$(openssl rand -base64 24)
+          printf '%s' "$APPLE_CERT_P12" | base64 --decode > "$RUNNER_TEMP/devid.p12"
+          curl -fsSL -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$kc" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/devid.p12" -k "$kc" -f pkcs12 -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/devid.p12"
+          id=$(security find-identity -v -p codesigning "$kc" | sed -n 's/.*) \([0-9A-F]\{40\}\) "Developer ID Application:.*/\1/p' | head -n 1)
+          if [ -z "$id" ]; then echo "::error title=keychain::no Developer ID Application identity in the certificate"; exit 1; fi
+          security find-identity -v -p codesigning "$kc" | grep 'Developer ID Application'
+          echo "SIGN_ID=$id" >> "$GITHUB_ENV"
+          echo "SIGN_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+
+      - name: App Store Connect API key for notarization
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$APPLE_API_KEY_P8" > "$key"
+          chmod 600 "$key"
+          echo "NOTARY_KEY=$key" >> "$GITHUB_ENV"
+          # notarize <file>: submit, wait, and print Apple's log when it is not Accepted.
+          cat > "$RUNNER_TEMP/notarize.sh" <<'EOF'
+          set -euo pipefail
+          out=$(xcrun notarytool submit "$1" --key "$NOTARY_KEY" --key-id "$KEY_ID" --issuer "$ISSUER" \
+                --wait --timeout 45m --output-format json) || true
+          echo "$out"
+          id=$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          status=$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+          if [ "$status" != "Accepted" ]; then
+            xcrun notarytool log "$id" --key "$NOTARY_KEY" --key-id "$KEY_ID" --issuer "$ISSUER" || true
+            echo "::error title=notarization::$1 was $status (submission $id)"; exit 1
+          fi
+          EOF
+
+      - name: Sign and notarize the app
+        env:
+          KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          ISSUER: ${{ vars.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          app="build/bin/TN5250 Terminal.app"
+          codesign --force --options runtime --timestamp --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_ID" "$app"
+          codesign --verify --strict --verbose=2 "$app"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/notarize-app.zip"
+          bash "$RUNNER_TEMP/notarize.sh" "$RUNNER_TEMP/notarize-app.zip"
+          xcrun stapler staple "$app"
 
       - name: Package (.dmg, .zip)
         run: |
@@ -394,6 +463,34 @@ jobs:
           done
           ls -la out
 
+      - name: Sign and notarize the .dmg
+        env:
+          KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          ISSUER: ${{ vars.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          dmg=out/tn5250-terminal-macos-universal.dmg
+          codesign --force --timestamp --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_ID" "$dmg"
+          bash "$RUNNER_TEMP/notarize.sh" "$dmg"
+          xcrun stapler staple "$dmg"
+
+      - name: Gatekeeper accepts the app, the zip and the .dmg
+        run: |
+          set -euo pipefail
+          app="build/bin/TN5250 Terminal.app"
+          spctl --assess --type execute --verbose=4 "$app" 2>&1 | tee gk-app.txt
+          grep -q 'source=Notarized Developer ID' gk-app.txt
+          xcrun stapler validate "$app"
+          mkdir -p zipcheck && ditto -x -k out/tn5250-terminal-macos-universal.zip zipcheck
+          xcrun stapler validate "zipcheck/TN5250 Terminal.app"
+          spctl --assess --type execute --verbose=4 "zipcheck/TN5250 Terminal.app"
+          rm -rf zipcheck
+          dmg=out/tn5250-terminal-macos-universal.dmg
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" 2>&1 | tee gk-dmg.txt
+          grep -q 'source=Notarized Developer ID' gk-dmg.txt
+          xcrun stapler validate "$dmg"
+          codesign -dvv "$app" 2>&1 | grep -E '^(Authority|TeamIdentifier|Timestamp)='
+
       - name: Smoke test (the app starts and stays up for 8 s)
         run: |
           app="build/bin/TN5250 Terminal.app"
@@ -410,6 +507,12 @@ jobs:
         with:
           name: macos
           path: out/
+
+      - name: Remove the keychain and the API key
+        if: always()
+        run: |
+          [ -n "${SIGN_KEYCHAIN:-}" ] && security delete-keychain "$SIGN_KEYCHAIN" || true
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/devid.p12"
 
   # The packaged Linux files, installed and started the way a user would, on a clean container
   # per distribution (sketch from docs/CI-AND-PACKAGING.md, corrected: the WebKitGTK web process
