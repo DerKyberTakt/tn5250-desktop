@@ -1,12 +1,12 @@
 {
 	"fixed": {
-		"file_version": "0.3.6",
-		"product_version": "0.3.6"
+		"file_version": "0.3.7",
+		"product_version": "0.3.7"
 	},
 	"info": {
 		"0409": {
-			"FileVersion": "0.3.6",
-			"ProductVersion": "0.3.6",
+			"FileVersion": "0.3.7",
+			"ProductVersion": "0.3.7",
 			"CompanyName": "DerKyberTakt",
 			"FileDescription": "5250 terminal emulator for IBM i",
 			"LegalCopyright": "Copyright (c) 2026 Kyle Ward. MIT License.",

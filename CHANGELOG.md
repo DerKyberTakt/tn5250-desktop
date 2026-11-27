@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.7 - 2026-11-27
+- Windows: the app, the installer and the MSI are code-signed (Azure Artifact Signing). Windows shows the publisher instead of "unknown publisher". A new certificate builds its reputation with Microsoft over the first downloads, so SmartScreen can still ask once on some PCs.
+- macOS: the app is signed with an Apple Developer ID and notarized by Apple, and the ticket is stapled to the app and to the .dmg. It opens with a double-click; the right-click > Open step is gone.
+- Nothing else changed in the app. Help > Check for Updates in an older copy installs the signed files over it (the file names are the same); settings, saved sessions and passwords stay. Releases up to 0.3.6 were not signed.
+- README: links to the latest downloads at the top, and how to check a download's signature.
+
 ## 0.3.6 - 2026-11-24
 - Scroll bars of the host: a subfile compiled with `SFLEND(*SCRBAR)` now gets its scroll bar. The terminal told the host it had the enhanced interface, but not that it has a pointer device and GUI characters, so the host sent More... / Bottom text in place of the bar (windows, check boxes and the other enhanced fields did arrive). With the bar of the host an arrow moves one record, the track one page, and a drag repositions the list when the mouse is released.
 - Scroll bar beside lists that end in More... or Bottom (display files without `SFLEND(*SCRBAR)`): the thumb follows the page, it can be dragged (the pages are sent when the mouse is released), and a click on it sends nothing. Before, the thumb stood at the top on every page but the last and a click on it sent Page Up. The pages are counted from what the host answers, so a key the host refuses (roll past the first or last record) does not move it, a page seen before is recognised, and a last page that is not full keeps its bar. The host does not say how many pages there are: the bar grows by one page for each new page until Bottom is seen. The setting for it is gone: the bar is always drawn when the host sends none.
