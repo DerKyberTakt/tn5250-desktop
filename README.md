@@ -9,6 +9,20 @@ app uses the system's GTK 4 and WebKitGTK 6.0 libraries ([Linux requirements](#l
 It shares its TN5250 engine and terminal UI with the
 [TN5250 Terminal VS Code extension](https://github.com/DerKyberTakt/tn5250-terminal).
 
+### Download the signed app
+
+| | Recommended | Other choices |
+| --- | --- | --- |
+| **Windows 10 / 11** | [Installer (.exe)](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest/download/tn5250-terminal-setup-x64.exe) | [MSI for IT](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest/download/tn5250-terminal-x64.msi) · [Portable (.zip)](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest/download/tn5250-terminal-portable-x64.zip) |
+| **macOS 11+** | [Disk image (.dmg)](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest/download/tn5250-terminal-macos-universal.dmg) | [App (.zip)](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest/download/tn5250-terminal-macos-universal.zip) |
+| **Linux x86_64** | [AppImage](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest/download/tn5250-terminal-x86_64.AppImage) | [.deb and .tar.gz](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest) |
+
+The Windows files are code-signed and the macOS app is signed with an Apple Developer ID and
+notarized by Apple, so they install without "unknown publisher" or "cannot be opened"
+warnings. Always download from this page or the
+[latest release](https://github.com/DerKyberTakt/tn5250-desktop/releases/latest); a copy
+built from source or found elsewhere is not signed. [How to check a download](#check-a-download).
+
 ## Features
 
 - 24x80 and 27x132 sessions over telnet or TLS, auto-fit, ACS-style keyboard map,
@@ -83,8 +97,10 @@ Get the latest release from
   installed this way does not update itself; roll out the next MSI.
 - `tn5250-terminal-portable-x64.zip`: one exe to run from any folder. Updates itself.
 
-Builds are not code-signed yet, so Windows SmartScreen may say "Windows protected your
-PC" the first time: choose **More info > Run anyway**. Settings are kept in
+The exe, the installer and the MSI are signed through Azure Artifact Signing. A new
+certificate builds its reputation with Microsoft over the first downloads, so SmartScreen
+may still ask once on some PCs; it then names the publisher instead of "unknown
+publisher". Settings are kept in
 `%APPDATA%\tn5250-terminal` and survive updates and uninstalls. For a rollout to many PCs,
 put the company's connections, defaults and macros in `%ProgramData%\tn5250-terminal\settings.json`:
 every user of the machine sees them read-only next to their own, and a change there reaches
@@ -126,13 +142,27 @@ targets webkit2gtk-4.1 and GTK 3 instead; the release does not ship that build.
 - `tn5250-terminal-macos-universal.dmg`: open and drag TN5250 Terminal to Applications.
 - `tn5250-terminal-macos-universal.zip`: the same app, zipped.
 
-The app is signed ad hoc, not notarized, so the first start needs **right-click > Open**
-(or `xattr -dr com.apple.quarantine "/Applications/TN5250 Terminal.app"`). Updates: download
-the next .dmg. Settings are kept in `~/Library/Application Support/tn5250-terminal`;
-passwords in the Keychain.
+The app is signed with a Developer ID and notarized by Apple, so it opens with a double-click.
+A copy in a folder you can write to (Applications on an admin account) updates itself. Settings
+are kept in `~/Library/Application Support/tn5250-terminal`; passwords in the Keychain.
 
 `SHA256SUMS` lists the checksums of every file (`sha256sum -c SHA256SUMS`, or
 `Get-FileHash <file>` in PowerShell).
+
+### Check a download
+
+- **Windows**: right-click the file > **Properties** > **Digital Signatures**; the list shows
+  the signer and a timestamp. In PowerShell: `Get-AuthenticodeSignature <file>` must say
+  `Valid`.
+- **macOS**: `spctl --assess --type execute --verbose "/Applications/TN5250 Terminal.app"`
+  must say `accepted` and `source=Notarized Developer ID`.
+- **Any platform**: compare the file with `SHA256SUMS` of the same release.
+
+### Already running an older, unsigned copy?
+
+Help > Check for Updates (or the green ↓ button) installs the signed release over it; your
+settings, saved sessions and passwords stay. A copy installed from the MSI is updated by
+rolling out the new MSI. Releases up to 0.3.6 were not signed.
 
 ## Troubleshooting
 
