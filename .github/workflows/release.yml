@@ -17,6 +17,12 @@ name: Release
 #   tn5250-terminal-macos-universal.dmg  macOS 11+, Intel and Apple silicon
 #   tn5250-terminal-macos-universal.zip  the same .app, zipped
 #   SHA256SUMS                           sha256sum format, checked by Check for Updates
+#
+# Windows signing: the windows job runs in the GitHub environment "release", which holds
+# the Azure identifiers (vars.AZURE_*, vars.SIGNING_*) and waits for a reviewer to approve
+# the run. It signs in to Azure with OpenID Connect (no stored secret) and signs the app
+# exe before it is packed, then the installer and the MSI, with Azure Artifact Signing.
+# The environment only admits v* tags and dry-run/* branches.
 
 on:
   push:
@@ -53,6 +59,10 @@ jobs:
   windows:
     needs: version
     runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         shell: pwsh
@@ -93,6 +103,35 @@ jobs:
           }
           Get-ChildItem build/bin
 
+      - name: Azure sign-in (OpenID Connect, no stored secret)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign the app
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\build\bin\tn5250-terminal.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: TN5250 Terminal
+          description-url: https://github.com/DerKyberTakt/tn5250-desktop
+
+      - name: Installer around the signed app
+        run: |
+          # The installer of the Build step packed the exe before it was signed: pack it again.
+          Push-Location build/windows/nsis
+          makensis -DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user "-DARG_WAILS_AMD64_BINARY=$env:GITHUB_WORKSPACE\build\bin\tn5250-terminal.exe" project.nsi
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0) { Write-Host "::error title=makensis::exit $code"; exit 1 }
+
       - name: MSI (per-machine, for IT deployment)
         run: |
           New-Item -ItemType Directory -Force out | Out-Null
@@ -114,6 +153,34 @@ jobs:
           Compress-Archive -Path build/bin/tn5250-terminal.exe, LICENSE, README.md -DestinationPath out/tn5250-terminal-portable-x64.zip
           Get-ChildItem out
 
+      - name: Sign the installer and the MSI
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\out\tn5250-terminal-setup-x64.exe
+            ${{ github.workspace }}\out\tn5250-terminal-x64.msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: TN5250 Terminal
+          description-url: https://github.com/DerKyberTakt/tn5250-desktop
+
+      - name: Every Windows file carries a valid, timestamped signature
+        run: |
+          Expand-Archive out/tn5250-terminal-portable-x64.zip -DestinationPath portable-check
+          $files = 'build/bin/tn5250-terminal.exe', 'portable-check/tn5250-terminal.exe',
+                   'out/tn5250-terminal-setup-x64.exe', 'out/tn5250-terminal-x64.msi'
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f
+            if ($sig.Status -ne 'Valid') { Write-Host "::error title=signature::$f is $($sig.Status): $($sig.StatusMessage)"; exit 1 }
+            if (-not $sig.TimeStamperCertificate) { Write-Host "::error title=signature::$f has no timestamp"; exit 1 }
+            Write-Host "$f signed by $($sig.SignerCertificate.Subject)"
+          }
+          Remove-Item -Recurse portable-check
+
       - name: Smoke test the MSI (silent install, exe present, uninstall)
         run: |
           $msi = (Resolve-Path out/tn5250-terminal-x64.msi).Path
@@ -121,6 +188,7 @@ jobs:
           $c = (Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v msi-install.log" -Wait -PassThru).ExitCode
           if ($c -ne 0) { Write-Host "::error title=msi install::exit $c; $((Get-Content msi-install.log | Select-String 'Error|error 1|return value 3' | Select-Object -Last 10) -join ' | ')"; exit 1 }
           if (-not (Test-Path $exe)) { throw "MSI did not install $exe" }
+          if ((Get-AuthenticodeSignature $exe).Status -ne 'Valid') { throw "the exe the MSI installed is not signed" }
           $c = (Start-Process msiexec -ArgumentList "/x `"$msi`" /qn" -Wait -PassThru).ExitCode
           if ($c -ne 0) { throw "msi uninstall exit code $c" }
           if (Test-Path $exe) { throw 'MSI uninstall left the exe' }
@@ -136,6 +204,7 @@ jobs:
 
           if (($c = Run $setup '/S') -ne 0) { throw "install exit code $c" }
           if (-not (Test-Path $exe)) { throw "not installed to $dir" }
+          if ((Get-AuthenticodeSignature $exe).Status -ne 'Valid') { throw "the exe setup installed is not signed" }
           $shown = (Get-ItemProperty $key).DisplayVersion
           if ($shown -ne '${{ needs.version.outputs.version }}') { throw "uninstall key shows version '$shown'" }
           $fileVersion = (Get-Item $exe).VersionInfo.ProductVersion
